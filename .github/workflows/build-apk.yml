@@ -91,36 +91,56 @@ jobs:
       # ─────────────────────────────────────────────────────────────────────────────────────
       - name: "Gate G5 — loops and waits, counted"
         run: |
-          set -euo pipefail
+          # NOT set -e for the counting. The first run of this gate failed the build with no
+          # output at all, because a grep in a pipeline that matches nothing exits 1 and under
+          # pipefail that aborts the assignment BEFORE the echo that was supposed to explain it.
+          # A check that dies silently is worse than no check. The counts are computed with
+          # every pipeline guarded, printed, and only then asserted, so a red gate always
+          # arrives with the number that made it red.
+          #
+          # POSIX classes rather than \s and \b: those are GNU extensions and this file should
+          # not depend on which grep the runner happens to ship.
+          set -uo pipefail
           SRC=app/src/main/java/com/mantra/stopwatch
-          LOOPS=$(grep -rnE '\b(while|for|repeat)\s*[({]' --include=*.kt "$SRC" | grep -v '^\s*\*' | wc -l)
-          UNBOUNDED=$(grep -rn --include=*.kt -F 'while (true)' "$SRC" | wc -l)
-          WAITS=$(grep -rn --include=*.kt -E '\bdelay\(' "$SRC" | wc -l)
-          echo "loops examined:            $LOOPS"
-          echo "written as while(true):    $UNBOUNDED"
-          echo "waits (delay) examined:    $WAITS"
+          echo "source files examined:"
+          find "$SRC" -name '*.kt' | sed 's/^/  /'
+          LOOPS=$(grep -rnE '(while|for|repeat)[[:space:]]*[({]' --include='*.kt' "$SRC" | wc -l)
+          UNBOUNDED=$(grep -rnF 'while (true)' --include='*.kt' "$SRC" | wc -l)
+          WAITS=$(grep -rnE 'delay\(' --include='*.kt' "$SRC" | wc -l)
+          echo "loops examined:         $LOOPS"
+          echo "written as while(true): $UNBOUNDED"
+          echo "waits (delay):          $WAITS"
           # There is no network, no file wait and no IPC in this app, so the only external wait
           # is the timer, and its interval is bounded to 1..100ms by Face.untilNextTenth, which
-          # Test 1 asserts. If either number moves, somebody has added a wait and this line is
-          # where the reader is told to go and find its deadline.
-          [ "$UNBOUNDED" = "0" ]
-          [ "$LOOPS" -ge 2 ]
+          # Test 1 asserts. If either number moves, somebody has added a wait, and this line is
+          # where the reader is sent to find its deadline.
+          [ "$UNBOUNDED" = "0" ] || { echo "an unbounded loop is present"; exit 1; }
+          [ "$LOOPS" -ge 2 ] || { echo "found fewer loops than exist: this check is broken, not the code"; exit 1; }
+          [ "$WAITS" -ge 1 ] || { echo "the tick has no delay: this check is broken, not the code"; exit 1; }
 
       # ─────────────────────────────────────────────────────────────────────────────────────
       # TEST 1 — the mechanism, alone. Thirty cases, on a plain JVM, no emulator.
       # ─────────────────────────────────────────────────────────────────────────────────────
       - name: "Test 1 — the timing logic"
         run: |
-          set -euo pipefail
-          ./gradlew :app:testReleaseUnitTest --no-daemon
-          R=app/build/test-results/testReleaseUnitTest
-          TOTAL=$(grep -ho 'tests="[0-9]*"' $R/*.xml | grep -o '[0-9]*' | paste -sd+ | bc)
-          FAIL=$(grep -ho 'failures="[0-9]*"' $R/*.xml | grep -o '[0-9]*' | paste -sd+ | bc)
-          echo "tests run: $TOTAL   failures: $FAIL"
-          # A zero is a failure of the check until proven otherwise: assert the suite is really
-          # there rather than that it found nothing.
-          [ "$TOTAL" -ge 30 ]
-          [ "$FAIL" = "0" ]
+          set -uo pipefail
+          ./gradlew :app:testReleaseUnitTest --no-daemon || true
+          python3 - <<'EOF'
+          import glob, sys, xml.etree.ElementTree as ET
+          files = glob.glob("app/build/test-results/testReleaseUnitTest/*.xml")
+          total = fails = errors = 0
+          for f in files:
+              r = ET.parse(f).getroot()
+              total += int(r.get("tests", 0))
+              fails += int(r.get("failures", 0))
+              errors += int(r.get("errors", 0))
+          print(f"result files: {len(files)}   tests run: {total}   failures: {fails}   errors: {errors}")
+          # A zero is a failure of the check until proven otherwise. Assert the suite is really
+          # there, not merely that it reported nothing wrong.
+          if len(files) == 0: sys.exit("no test results at all: the suite did not run")
+          if total < 30: sys.exit(f"expected at least 30 cases, found {total}")
+          sys.exit(1 if (fails or errors) else 0)
+          EOF
 
       # One permanent key, kept as an encrypted repository secret, so every build is signed
       # identically and a new version installs straight over the old one without Android asking
