@@ -91,12 +91,21 @@ jobs:
       # ─────────────────────────────────────────────────────────────────────────────────────
       - name: "Gate G5 — loops and waits, counted"
         run: |
-          # NOT set -e for the counting. The first run of this gate failed the build with no
-          # output at all, because a grep in a pipeline that matches nothing exits 1 and under
-          # pipefail that aborts the assignment BEFORE the echo that was supposed to explain it.
-          # A check that dies silently is worse than no check. The counts are computed with
-          # every pipeline guarded, printed, and only then asserted, so a red gate always
-          # arrives with the number that made it red.
+          # THIS GATE WENT RED TWICE BEFORE IT WORKED, AND BOTH TIMES BECAUSE THE CODE WAS FINE.
+          #
+          # Run 1: a grep in a pipeline that matches nothing exits 1, pipefail turns that into a
+          # failed assignment, and bash -e killed the step before the echo that would have
+          # explained it. No output at all, which is the worst shape a failure can have.
+          #
+          # Run 2: the same thing, one line further down. The grep counting unbounded loops
+          # FOUND NONE, exited 1, and failed the build BECAUSE THERE ARE NO UNBOUNDED LOOPS.
+          # A check that goes red on success is worse than no check: it teaches you that red
+          # means nothing. TTT_MINI's workflow carries the same scar on its secret scan, and
+          # this one was walked into anyway, which is the argument for the || true being
+          # load-bearing rather than defensive noise.
+          #
+          # So: every counting pipeline is guarded, every count is printed, and only then is
+          # anything asserted. A red gate now always arrives with the number that made it red.
           #
           # POSIX classes rather than \s and \b: those are GNU extensions and this file should
           # not depend on which grep the runner happens to ship.
@@ -104,9 +113,9 @@ jobs:
           SRC=app/src/main/java/com/mantra/stopwatch
           echo "source files examined:"
           find "$SRC" -name '*.kt' | sed 's/^/  /'
-          LOOPS=$(grep -rnE '(while|for|repeat)[[:space:]]*[({]' --include='*.kt' "$SRC" | wc -l)
-          UNBOUNDED=$(grep -rnF 'while (true)' --include='*.kt' "$SRC" | wc -l)
-          WAITS=$(grep -rnE 'delay\(' --include='*.kt' "$SRC" | wc -l)
+          LOOPS=$( { grep -rnE '(while|for|repeat)[[:space:]]*[({]' --include='*.kt' "$SRC" || true; } | wc -l)
+          UNBOUNDED=$( { grep -rnF 'while (true)' --include='*.kt' "$SRC" || true; } | wc -l)
+          WAITS=$( { grep -rnE 'delay\(' --include='*.kt' "$SRC" || true; } | wc -l)
           echo "loops examined:         $LOOPS"
           echo "written as while(true): $UNBOUNDED"
           echo "waits (delay):          $WAITS"
