@@ -218,7 +218,19 @@ jobs:
       # versioning.md 2: the number is written at both ends of the name and the two are the same
       # number, always. Both come from $V, so a name whose ends disagree is impossible rather
       # than merely discouraged.
+      # A DOCUMENTS-ONLY PUSH MUST NOT FAIL THE BUILD, AND MUST NOT SILENTLY DO NOTHING EITHER.
+      #
+      # Before this, any push to main tried to create a release for whatever appVersion said. Fix
+      # a typo in HANDOFF.md without bumping the version and the whole run went red on the last
+      # step, after every gate had passed — which is a red that means "you edited a comment",
+      # and a red that means nothing teaches you to ignore reds.
+      #
+      # So an existing tag is now a SKIP rather than a failure. The loud part matters as much as
+      # the skip: it prints, in as many words, that nothing was published and what to do about
+      # it, because the opposite mistake — changing the app and forgetting to bump, then
+      # wondering why the phone still has the old one — is the more expensive of the two.
       - name: Publish
+        id: publish
         env:
           GH_TOKEN: ${{ github.token }}
           V: ${{ steps.provenance.outputs.version }}
@@ -227,15 +239,29 @@ jobs:
           APK=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
           OUT="${V}-stopwatch-v${V}.apk"
           cp "$APK" "$OUT"
+          if gh release view "v${V}" >/dev/null 2>&1; then
+            echo "=============================================================="
+            echo " NOTHING WAS PUBLISHED."
+            echo " appVersion is ${V} and release v${V} already exists."
+            echo " Every gate passed and the APK built cleanly, but this run"
+            echo " produced no artefact anybody can install."
+            echo " If you changed the app, bump appVersion in gradle.properties."
+            echo " If you only changed documents, this is the expected outcome."
+            echo "=============================================================="
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "publishing $OUT as tag v${V}"
           gh release create "v${V}" "$OUT" \
             --title "Stopwatch v${V}" \
-            --notes "Minimalist stopwatch by Mantra Productions. Black screen, white digits, three transport buttons and an orientation lock. Build ${GITHUB_RUN_NUMBER} from $(git rev-parse --short HEAD)."
+            --notes "Minimalist stopwatch by Mantra Productions. Black screen, six digits, three transport controls, an orientation lock and a swatch grid. Build ${GITHUB_RUN_NUMBER} from $(git rev-parse --short HEAD)."
+          echo "published=true" >> "$GITHUB_OUTPUT"
 
       # versioning.md 4: only the last two builds stay. Runs only after publish succeeds, so a
       # failed build never deletes a good release. There is no way back to a deleted artefact;
       # the tag and the source survive, the APK does not.
       - name: Keep the two newest releases
+        if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

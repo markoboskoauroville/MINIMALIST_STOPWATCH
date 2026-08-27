@@ -35,6 +35,20 @@ the 25-mutation sweep affordable.
 **Nothing on the background is tappable, and that is enforced.** Tap-anywhere was removed
 deliberately on 27.8.2026 and `verify.py` goes red if a `clickable` returns to it.
 
+**Play and pause are ONE TOGGLE wearing two glyphs.** Either flips between running and paused.
+The symbols never morph. `Stopwatch.press()` says what each control does and `Stopwatch.tone()`
+says how it looks, nine cases each, both in the pure file where Test 1 walks them.
+
+**There are THREE tones, not two, and the third one is load-bearing.** HIGHLIGHT 40%, SECONDARY
+24%, DEAD 12%. Before v4, dim meant dead. After v4, play is dim while running and pressing it
+still pauses the clock, so dim alone would have carried two meanings. If anybody ever collapses
+this back to two tones, `verify.py` goes red — it reads the actual colour expression, not whether
+the constant exists.
+
+**The face shows all six numbers from zero and the width never changes.** `HH:MM:SS`, one format
+string, no branch, no step at the hour. v1 and v3 both rejected this and v4 reversed them on
+Baba's instruction.
+
 **There is no landscape layout.** One strip along the bottom in both orientations, with two sets
 of sizes. v2 had a right-edge column and it was wrong on the phone. `verify.py` counts each
 transport glyph and fails if one appears twice, which is how a second layout would announce
@@ -58,6 +72,27 @@ compile takes `Stopwatch.kt`, `Palette.kt` and the test file, in that order.
 three times. It stashes to `.sabotage-stash` before it starts and restores on the next run. If a
 baseline ever comes up red for no reason, look for that directory first. Use `SABOTAGE_SLICE`
 to run it in pieces when the thing running it has a time limit.
+
+## A documents-only push does not publish, and says so
+
+Pushing a README fix without bumping `appVersion` used to fail the whole run on the last step,
+after every gate had passed. The publish step now skips when the tag already exists and prints a
+loud block saying nothing was published and what to do about it. **If you changed the app and see
+that block, you forgot to bump the version.**
+
+## Every check in verify.py has been wrong at least once
+
+Six faults so far, across three sessions, and every one of them read as a PASS:
+
+- a phase counter whose regex matched nothing, printing "0 cases" and passing;
+- a field counter that counted the whole file, so a preference masked a missing timing field;
+- an `apply()` check that forbade it everywhere, including where it is correct;
+- a hidden-button check searching for `canPause` after `canPause` was deleted;
+- a three-tone check asking whether a colour constant existed rather than whether anything read
+  it, which let two separate mutations through;
+- a check that read `ui` before the line defining it, and only worked by accident of ordering.
+
+**The mutation sweep found five of the six.** Run it before believing verify.py.
 
 ## Two anchors have gone stale and reported SKIP
 
