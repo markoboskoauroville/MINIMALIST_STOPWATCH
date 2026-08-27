@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:supportsRtl="false"
+        android:theme="@style/Theme.Stopwatch">
+
+        <!--
+          configChanges: the activity handles rotation itself rather than being destroyed and
+          rebuilt. The state would survive either way, because it is written to disk on every
+          transition, but not being recreated means the digits do not blink at the moment the
+          phone turns, and rotating is the one thing a person does WHILE watching the number.
+
+          screenOrientation is not set here. It is set at run time from the lock button, and
+          leaving it unset in the manifest means the app follows the phone until it is told not
+          to, which is what "not locked" means.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|density|fontScale|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

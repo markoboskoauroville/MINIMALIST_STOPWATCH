@@ -1,0 +1,13 @@
+# The vault lives outside the repository entirely, but these two exist inside it during a CI run
+# and must never be committed under any circumstance.
+keystore.properties
+*.jks
+*.keystore
+
+.gradle/
+build/
+app/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
