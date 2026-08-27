@@ -348,3 +348,84 @@ looked like a real regression. It now stashes every file it can touch before sta
 restores any stash left by a run that did not finish. **The guard fired on its first outing** and
 the recovery cost nothing. A tool that edits source in place has to assume it will be
 interrupted, because it will be.
+
+---
+
+# v4 — 27.8.2026, two instructions after v3
+
+## All six numbers from the start
+
+**Chosen: `HH:MM:SS`, always, from zero. This reverses v1 and v3.**
+
+Both earlier versions rejected exactly this, on the grounds that showing an hour field from zero
+makes the digits permanently smaller to defend against an hour that almost never arrives. That
+argument was correct and it is still the price: eight glyphs instead of five means every digit is
+roughly a third smaller than v3's.
+
+**What it buys is worth more than what it costs.** The width now never changes, so there is no
+step at the hour, no moment where the digits resize under you, and no branch in the formatter at
+all — one format string, one length, one measured size for the life of the app. v3 had exactly
+one discontinuity left in it and this removes it.
+
+The width test got stronger rather than weaker as a result: it used to assert one length below
+the hour and a different one above, and now asserts a single length across the whole range.
+
+Past 100 hours the hour field takes a third glyph and the digits step once. Documented rather
+than prevented; a stopwatch running for four days has other problems.
+
+## Play and pause both toggle
+
+**Chosen: either glyph flips the clock between running and paused. The symbols never morph.**
+
+Pressing play while it runs pauses it. Pressing pause while it is paused starts it again. What
+moves is the highlight, which says which of the two the state suggests next. Baba's words: "So
+symbol is not changing. So there is a play. I click play one more time. And then what is
+highlighted is pause."
+
+**Rejected: one button that swaps its own glyph between play and pause,** which is what most
+media players do. A symbol that changes under your thumb has to be read before every press, and
+the whole point of a fixed layout is that the hand learns where things are and stops looking.
+
+**Rejected: making pause start the clock from zeros,** which strict toggle logic would require.
+Beginning to time something by pressing PAUSE is a surprise, not a convenience. Pause from a
+stopwatch showing zeros is the one DEAD cell in the table, along with stop from zeros.
+
+## The change that was not asked for, and had to happen anyway
+
+**v4 made "dim" ambiguous, and a third tone was the honest fix.**
+
+Before v4, dim meant unavailable: a dim button did nothing when pressed. After v4, play is dim
+while the clock runs and pressing it still pauses the clock. So the same appearance would have
+meant two different things on the same screen — "does nothing" and "not the obvious next move" —
+which is precisely the confusion a person discovers by pressing a button and being surprised.
+
+    HIGHLIGHT  40%   what the next press would produce
+    SECONDARY  24%   live, pressable, not the suggestion
+    DEAD       12%   inert, and looks it
+
+Three tones is one more thing on a screen whose design is what is absent, and it was not asked
+for. It is here because the alternative was one appearance carrying two meanings, and that is a
+worse kind of clutter than a third grey. **Worth arguing with on the phone:** if 24% and 12% are
+not clearly different at arm's length, the answer is to widen the gap, not to collapse them.
+
+## What the sweep found in the checks, again
+
+Three UI mutations survived the first v4 sweep, and all three were failures of `verify.py`
+rather than of the app:
+
+- the hidden-button check searched for the word `canPause`, which v4 deleted. **It was checking
+  for a shape that could no longer exist**, so it passed on everything. It now looks for any
+  conditional wrapping a transport emission, whatever the condition is written in;
+- the three-tone check asked whether `GLYPH_SECOND` existed. A val that nothing reads exists
+  perfectly well, so collapsing the colour expression back to two tones sailed through. It now
+  reads the actual colour expression and the actual `enabled` expression;
+- the same weakness let a mutation disable every secondary control without anything noticing.
+
+A fourth mutation survived and that one was the sweep's own fault: it misspelled
+`disabledContentColor` to break the tint, which **would not compile**, so catching it would have
+proved nothing about anything. A mutation has to be a plausible bug. It now sets the disabled
+tint to the highlight colour, which is a regression somebody could actually ship.
+
+`verify.py` also had a latent ordering fault: the new check read `ui` before the line that
+defined it, and only ran at all because it happened to sit after that line in the old file. All
+three sources are now read once at the top, so check order cannot matter.

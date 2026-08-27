@@ -1,7 +1,7 @@
 # HANDOFF — Minimalist Stopwatch
 
-**Current version: 3.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
-Latest artefact: `3-stopwatch-v3.apk`, tag `v3`.
+**Current version: 4.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
+Latest artefact: `4-stopwatch-v4.apk`, tag `v4`.
 
 This is the briefing. The reasoning behind each decision, including what was tried and rejected,
 is in [`NEXT_DEFAULTS.md`](NEXT_DEFAULTS.md). What was and was not proven about the shipped
@@ -14,21 +14,33 @@ artefact is in [`DELIVERY_RECORD.md`](DELIVERY_RECORD.md).
 A stopwatch. Black screen, white digits, three transport circles and an orientation lock.
 Nothing else, ever.
 
-    play    starts from zero, or resumes from where pause left it. Never a restart
-    pause   freezes the digits and keeps the elapsed time
+    play    toggle. Starts from zero, resumes from a pause, and PAUSES A RUNNING CLOCK
+    pause   toggle. Freezes a running clock, resumes a paused one. Does nothing from zeros
     stop    back to zeros
+
+**Play and pause are one toggle wearing two glyphs.** Either one flips between running and
+paused, so there is no wrong button to hit. The symbols never morph — play stays a triangle
+whether pressing it will start or stop the counting — and what moves is the highlight.
 
 **The three sit along the bottom in BOTH orientations.** There is no landscape branch. v2 put
 them down the right-hand edge because the spec said so, and on the phone that was wrong.
 
-A button that cannot act right now is dimmed and inert. **No button is ever hidden**, because a
-control that disappears moves the layout, and a stopwatch whose buttons shuffle is worse than one
-with a dim button.
+**THREE TONES, THREE MEANINGS**, and this is the part most likely to be misread later:
+
+    HIGHLIGHT  40%   what the next press would produce, given where the clock is
+    SECONDARY  24%   live and pressable, but not the thing the state suggests
+    DEAD       12%   pressing it does nothing and it looks like nothing will
+
+The third tone exists because v4 made dim ambiguous. Play is dim while the clock runs AND
+pressing it still pauses, so dim alone would have meant two different things on one screen.
+
+**No button is ever hidden**, because a control that disappears moves the layout.
 
 ## The five files
 
-    Stopwatch.kt     the whole timing model, and it imports nothing from android.*
-                     That is enforced by verify.py, not merely intended
+    Stopwatch.kt     the whole timing model, plus the two button tables — press() for what
+                     each control does and tone() for how it looks, nine cases each. Imports
+                     nothing from android.*, and verify.py enforces that
     Palette.kt       the 24 swatches and the two weights. Also imports nothing, so the grid is
                      attacked by Test 1 the same way the clock is
     Store.kt         one SharedPreferences file, written with commit rather than apply
@@ -85,8 +97,12 @@ Each of these is argued in NEXT_DEFAULTS.md. Read that before changing one.
     WHOLE SECONDS, no tenths      removed at v3. The last digit was the only thing on the
                                   screen moving at a speed the eye cannot rest on. The cost:
                                   this cannot time a photo finish any more
-    MM:SS, growing to H:MM:SS     the size steps down once at one hour and never again
-      at one hour
+    HH:MM:SS FROM ZERO            all six numbers, always, from v4. The width now NEVER changes
+                                  and there is no step at the hour. The cost: eight glyphs
+                                  instead of five makes every digit about a third smaller
+    play and pause both toggle    v4. Either glyph flips the clock. Pause from zeros is the one
+                                  exception and does nothing, because starting a measurement by
+                                  pressing PAUSE would be a surprise
     the system bars are LEFT ON   black background, so they sit on black. Hiding them is one
                                   line and was deliberately not taken
     screen stays awake while      only STOPPED lets the phone sleep. A paused stopwatch is
@@ -124,9 +140,9 @@ use the icon.
 
 ## How to check it
 
-    python3 scripts/verify.py                       14 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest              Test 1, 36 cases
-    python3 scripts/sabotage.py                     31 mutations, each one broken on purpose
+    python3 scripts/verify.py                       15 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest              Test 1, 38 cases
+    python3 scripts/sabotage.py                     35 mutations, each one broken on purpose
 
 The sweep edits source in place, so it stashes every file it can touch before it starts and
 restores any stash left by a run that did not finish. It has been killed mid-mutation three

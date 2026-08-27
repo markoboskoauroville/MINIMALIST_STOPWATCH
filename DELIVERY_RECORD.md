@@ -1,25 +1,28 @@
-# DELIVERY RECORD — Minimalist Stopwatch v3 — 27.8.2026
+# DELIVERY RECORD — Minimalist Stopwatch v4 — 27.8.2026
 
 The shape is fixed so that two releases can be compared. The **NOT TESTED** block is the most
 valuable part of this document.
 
 ---
 
-    ARTEFACT   3-stopwatch-v3.apk, built by GitHub Actions from the commit tagged v3
-    VERSION    new: 3   previous: 2, still downloadable at the releases page
+    ARTEFACT   4-stopwatch-v4.apk, built by GitHub Actions from the commit tagged v4
+    VERSION    new: 4   previous: 3, still downloadable at the releases page
     SIGNED BY  the permanent repository key, SHA-256 D9:3E:6B:00:...:D9:62
 
-## What changed since v2, and why
+## What changed since v3, and why
 
-All six changes came from Baba after v2 was on the phone. Every one was a correction to something
-decided on a build server. The reasoning is in NEXT_DEFAULTS.md; the short list:
+Two instructions from Baba, plus one change neither of us asked for that the first made necessary.
 
-    the transport moved to the bottom in BOTH orientations, and the landscape branch was deleted
-    the circles around the glyphs were removed; the touch targets were not
-    the glyphs went from 55% to 40%, disabled from 22% to 16%
-    the tenth was dropped: MM:SS, growing to H:MM:SS at the hour
-    a gear top-left opens a 6x4 swatch grid that sets the digit colour, live
-    normal or bold, chosen in the same panel
+    ALL SIX NUMBERS FROM ZERO. HH:MM:SS always. Reverses v1 and v3. The digits are about a
+      third smaller and the width now NEVER changes — no step at the hour, no branch in the
+      formatter, one measured size for the life of the app
+
+    PLAY AND PAUSE BOTH TOGGLE. Either glyph flips between running and paused. The symbols do
+      not morph; the highlight moves. Pause from zeros is the one exception and does nothing
+
+    A THIRD TONE, WHICH WAS NOT ASKED FOR. v4 made dim ambiguous: play is dim while running and
+      pressing it still pauses. HIGHLIGHT 40%, SECONDARY 24%, DEAD 12%. One appearance carrying
+      two meanings is a worse kind of clutter than a third grey
 
 ## The gates
 
@@ -37,7 +40,7 @@ decided on a build server. The reasoning is in NEXT_DEFAULTS.md; the short list:
     G4  DEAD CODE    pass   5 source files. Still no -keep rules at all, which is the
                             interesting half of R8's report: nothing is held alive by a note
                             saying spare this. The UNWIRED sweep is check 4 of verify.py:
-                            3 availability rules across 3 phases, all 9 cases reachable
+                            two button tables, 3 controls x 3 phases, all 9 cases in each
 
     G5  DEAD LOOPS   pass   loops counted and printed, 0 written as while(true). The only wait
                             is the tick, now bounded to 1..1000ms by Face.untilNextSecond,
@@ -45,14 +48,15 @@ decided on a build server. The reasoning is in NEXT_DEFAULTS.md; the short list:
 
     G6  STRESS       NOT RUN, no device
 
-    G7  BUDGETS      v2 -> v3
-                            APK 794,911 bytes -> measured on this build, see the CI log
+    G7  BUDGETS      v3 -> v4
+                            APK 794,915 bytes -> measured on this build, see the CI log
                             dependencies resolved: 474 -> unchanged, no new libraries
-                            REDRAWS PER SECOND WHILE RUNNING: 10 -> 1, a tenfold reduction in
-                              wakeups on the one screen that is meant to stay lit
+                            redraws per second while running: 1, unchanged from v3
+                            DEAD CELLS IN THE BUTTON TABLE: 4 -> 2. Play is never inert now,
+                              and pause is inert only from zeros
                             cold start, frame time, memory, battery: not measured, no device
 
-    G8  UPGRADE      NOT RUN by hand. v1, v2 and v3 share a signing key, so it is testable
+    G8  UPGRADE      NOT RUN by hand. v3 and v4 share a signing key, so it is testable
 
     G9  RECORD       this document
 
@@ -63,6 +67,17 @@ step better than v2 was written from, and is not the same as having been used.
 
     TEST 2, the real thing      never run. Nothing has pressed the buttons, nothing has opened
                                 the settings panel, and no swatch has ever been tapped
+    THE TOGGLE                  the new press table is exhaustively tested as a pure function
+                                and no thumb has touched it. The specific thing to try: press
+                                PLAY while it is running and confirm it pauses rather than
+                                restarting, then press PAUSE and confirm it resumes at the
+                                figure it stopped at rather than at zero
+    THE THREE TONES             40, 24 and 12 percent have never been seen side by side on
+                                glass. If 24 and 12 are not clearly different at arm's length
+                                the gap needs widening, and only your eyes can say
+    EIGHT GLYPHS                the digits are about a third smaller than v3's and nobody has
+                                checked that they are still readable across a room, which is
+                                the entire purpose of the app
     THE SETTINGS PANEL          entirely unexercised on a device. Its height is computed from
                                 the screen width and it is aligned to the bottom; on a short
                                 landscape screen it may reach further up than intended and
@@ -107,5 +122,5 @@ releases are kept.
 
 **The quarter of an hour that is worth more than every gate above**, and which has still not been
 spent: install it, start it, put the phone in a pocket for ten minutes, and check it shows ten
-more minutes rather than ten fewer. Then pause, wait, play, and check the gap was not counted.
-Then turn the phone sideways and look at the bottom strip.
+more minutes rather than ten fewer. Then press PLAY to pause it, wait, press PAUSE to resume, and
+check the gap was not counted. Then turn the phone sideways and look at the bottom strip.

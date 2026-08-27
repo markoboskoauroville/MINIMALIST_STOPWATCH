@@ -5,9 +5,12 @@ gear. Nothing else, ever.
 
 By **Mantra Productions**, Zagreb. Built for reading across a room.
 
-    play    starts from zero, or resumes from where pause left it. Never a restart
-    pause   freezes the digits and keeps the elapsed time
+    play    toggle. Starts, resumes, and pauses a running clock
+    pause   toggle. Freezes a running clock, resumes a paused one
     stop    back to zeros
+
+Play and pause are one toggle wearing two glyphs, so there is no wrong one to hit. The symbols
+never change; the highlight moves between them to say what the next press would do.
 
 A button that cannot act is dimmed and inert. No button is ever hidden, because a control that
 disappears moves the layout, and a stopwatch whose buttons shuffle is worse than one with a dim
@@ -17,8 +20,9 @@ The three sit along the bottom in **both** orientations, evenly spaced, well cle
 There is no ring drawn around them, and the touch target is the full circle's worth of space all
 the same.
 
-Hours, minutes and seconds. Nothing finer: the last digit of a tenths display is the only thing
-on the screen moving at a speed the eye cannot rest on.
+Hours, minutes and seconds, all six numbers, from the moment it opens. Nothing finer: the last
+digit of a tenths display is the only thing on a screen moving at a speed the eye cannot rest on.
+The width never changes, ever.
 
 The gear opens a six by four swatch grid for the digit colour, and a choice of normal or bold.
 Every press applies live, over the black below the digits, so you are looking at the thing you
@@ -43,9 +47,9 @@ is worse than no answer.
 
 ## Checking it
 
-    python3 scripts/verify.py            14 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest   36 cases, plain JVM, no emulator
-    python3 scripts/sabotage.py          31 mutations, each rule broken on purpose
+    python3 scripts/verify.py            15 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest   38 cases, plain JVM, no emulator
+    python3 scripts/sabotage.py          35 mutations, each rule broken on purpose
 
 The last one is the important one. A test you have never seen fail is a rumour.
 

@@ -80,8 +80,13 @@ import kotlinx.coroutines.isActive
 // inside it. What was removed is the drawing, not the hot zone.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-private val GLYPH = Color(0xFF666666)          // 40%
-private val GLYPH_OFF = Color(0xFF292929)      // 16%
+// v4 needed a THIRD tone. Play is now dim while the clock runs AND pressing it still pauses,
+// so dim on its own would have meant two different things on the same screen: "not the obvious
+// next move" and "does nothing". Three tones, three meanings, and the mapping from phase to
+// tone lives in Stopwatch.kt where Test 1 walks all nine cases of it.
+private val GLYPH = Color(0xFF666666)          // 40%  HIGHLIGHT: what the next press would do
+private val GLYPH_SECOND = Color(0xFF3D3D3D)   // 24%  SECONDARY: live, but not the suggestion
+private val GLYPH_OFF = Color(0xFF1F1F1F)      // 12%  DEAD: pressing it does nothing
 private val BACKGROUND = Color.Black
 private val PANEL_CHOSEN = Color(0xFF1F1F1F)
 private val PANEL_IDLE = Color(0xFF0D0D0D)
@@ -205,15 +210,11 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Glyph(Icons.Default.PlayArrow, "Play", state.canPlay(), button) {
-                    commit(state.play(SystemClock.elapsedRealtime()))
-                }
-                Glyph(Icons.Default.Pause, "Pause", state.canPause(), button) {
-                    commit(state.pause(SystemClock.elapsedRealtime()))
-                }
-                Glyph(Icons.Default.Stop, "Stop", state.canStop(), button) {
-                    commit(state.stop())
-                }
+                // Three controls, one call each, and the tone comes from the model rather than
+                // from a condition written here. The Activity does not know what a phase is.
+                Transport(Icons.Default.PlayArrow, "Play", Control.PLAY, state, button, ::commit)
+                Transport(Icons.Default.Pause, "Pause", Control.PAUSE, state, button, ::commit)
+                Transport(Icons.Default.Stop, "Stop", Control.STOP, state, button, ::commit)
             }
         }
 
@@ -223,7 +224,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         Glyph(
             icon = if (settingsOpen) Icons.Default.Close else Icons.Default.Settings,
             label = if (settingsOpen) "Close settings" else "Settings",
-            enabled = true,
+            tone = Tone.HIGHLIGHT,
             size = 40.dp,
             modifier = Modifier.align(Alignment.TopStart).padding(EDGE),
         ) { settingsOpen = !settingsOpen }
@@ -231,7 +232,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         Glyph(
             icon = if (locked) Icons.Default.ScreenRotation else Icons.Default.ScreenLockRotation,
             label = if (locked) "Follow the phone" else "Lock this orientation",
-            enabled = true,
+            tone = Tone.HIGHLIGHT,
             size = 40.dp,
             modifier = Modifier.align(Alignment.TopEnd).padding(EDGE),
         ) {
@@ -266,6 +267,30 @@ private fun Screen(store: Store, activity: ComponentActivity) {
 }
 
 /**
+ * One transport control. The glyph never changes: play stays a triangle whether pressing it will
+ * start the clock or pause it, because a symbol that morphs under your thumb is a symbol you have
+ * to read before every press. What moves is the HIGHLIGHT, which says which of the two the state
+ * suggests you want next.
+ */
+@Composable
+private fun Transport(
+    icon: ImageVector,
+    label: String,
+    control: Control,
+    state: Stopwatch,
+    size: Dp,
+    commit: (Stopwatch) -> Unit,
+) {
+    val tone = state.tone(control)
+    Glyph(
+        icon = icon,
+        label = label,
+        tone = tone,
+        size = size,
+    ) { commit(state.press(control, SystemClock.elapsedRealtime())) }
+}
+
+/**
  * A glyph with a hot zone and nothing drawn around it.
  *
  * IconButton still does the work, so the touch target is the full `size` and the press is taken
@@ -277,17 +302,20 @@ private fun Screen(store: Store, activity: ComponentActivity) {
 private fun Glyph(
     icon: ImageVector,
     label: String,
-    enabled: Boolean,
+    tone: Tone,
     size: Dp,
     modifier: Modifier = Modifier,
     onPress: () -> Unit,
 ) {
+    // enabled = false on a DEAD control does two things at once and both are wanted: it takes
+    // the colour to the disabled tint and it stops the press being delivered. A SECONDARY
+    // control stays enabled — that is the whole point of the third tone.
     IconButton(
         onClick = onPress,
-        enabled = enabled,
+        enabled = tone != Tone.DEAD,
         modifier = modifier.size(size),
         colors = IconButtonDefaults.iconButtonColors(
-            contentColor = GLYPH,
+            contentColor = if (tone == Tone.HIGHLIGHT) GLYPH else GLYPH_SECOND,
             disabledContentColor = GLYPH_OFF,
         ),
     ) {

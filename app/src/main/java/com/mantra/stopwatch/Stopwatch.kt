@@ -32,6 +32,12 @@ package com.mantra.stopwatch
 
 enum class Phase { STOPPED, RUNNING, PAUSED }
 
+/** The three transport controls, named so the button table can be walked case by case. */
+enum class Control { PLAY, PAUSE, STOP }
+
+/** How a control is drawn. See Stopwatch.tone for what each one means. */
+enum class Tone { HIGHLIGHT, SECONDARY, DEAD }
+
 data class Stopwatch(
     val phase: Phase = Phase.STOPPED,
     val startedAt: Long = 0L,
@@ -73,13 +79,62 @@ data class Stopwatch(
     /** Back to zeros. Clears BOTH fields; leaving accumulated behind is the classic half-reset. */
     fun stop(): Stopwatch = Stopwatch()
 
-    // The nine cases of the button table live here rather than in the Activity, so they can be
-    // walked in Test 1. A control that cannot act is dimmed and inert — never hidden, because a
-    // control that disappears moves the layout and a stopwatch whose buttons shuffle is worse
-    // than one with a dim button.
-    fun canPlay(): Boolean = phase != Phase.RUNNING
-    fun canPause(): Boolean = phase == Phase.RUNNING
-    fun canStop(): Boolean = phase != Phase.STOPPED
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE BUTTON TABLE. Nine cases for what each control DOES, nine for how each control LOOKS,
+    // and both live here rather than in the Activity so Test 1 can walk all eighteen.
+    //
+    // v4 CHANGED WHAT A PRESS MEANS. Play and pause are now the same toggle: pressing play while
+    // it runs pauses it, pressing pause while it is paused starts it again. The two glyphs stay
+    // as two glyphs — the symbol does not morph — and the highlight moves between them to say
+    // which one the next press would produce.
+    //
+    // A control that disappears moves the layout, so nothing is ever hidden. What changed is
+    // that dim no longer means dead. See tone() for how the two are told apart.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * What pressing a control does. Returning `this` means the press was received and changed
+     * nothing, which is not the same as the press being refused: it is the honest answer for
+     * pause on a stopwatch that was never started.
+     */
+    fun press(control: Control, now: Long): Stopwatch = when (control) {
+        // Both halves of the toggle. Either glyph, same behaviour, so there is no wrong one to
+        // hit — which matters more here than the usual objection to two controls for one thing,
+        // because the alternative was a dead button sitting where a live one used to be.
+        Control.PLAY -> if (phase == Phase.RUNNING) pause(now) else play(now)
+        Control.PAUSE -> when (phase) {
+            Phase.RUNNING -> pause(now)
+            Phase.PAUSED -> play(now)
+            // NOT a toggle from zero, deliberately. Under a strict toggle, pressing pause on a
+            // stopwatch showing zeros would START a measurement, and beginning to time something
+            // by pressing PAUSE is a surprise rather than a convenience.
+            Phase.STOPPED -> this
+        }
+        Control.STOP -> stop()
+    }
+
+    /**
+     * How a control looks, which is now three states rather than two.
+     *
+     *   HIGHLIGHT   what the next press would produce, given where the clock is
+     *   SECONDARY   live, pressable, but not the thing the state suggests
+     *   DEAD        pressing it does nothing and it looks like nothing will
+     *
+     * The third tone exists because v4 made dim ambiguous. Before, dim meant unavailable. Now
+     * play is dim while running and pressing it still pauses the clock, so dim on its own would
+     * have meant two different things on the same screen. Three tones, three meanings.
+     */
+    fun tone(control: Control): Tone = when (control) {
+        Control.PLAY -> if (phase == Phase.RUNNING) Tone.SECONDARY else Tone.HIGHLIGHT
+        Control.PAUSE -> when (phase) {
+            Phase.RUNNING -> Tone.HIGHLIGHT
+            Phase.PAUSED -> Tone.SECONDARY
+            Phase.STOPPED -> Tone.DEAD
+        }
+        // Stop is never the suggested next action. There is no state of a stopwatch in which
+        // throwing the measurement away is what you probably meant to do next.
+        Control.STOP -> if (phase == Phase.STOPPED) Tone.DEAD else Tone.SECONDARY
+    }
 
     companion object {
 
@@ -150,33 +205,26 @@ data class Stopwatch(
 /**
  * THE FACE.
  *
- * MM:SS below an hour, H:MM:SS at and above it. WHOLE SECONDS, no tenths.
+ * HH:MM:SS, ALWAYS, FROM ZERO. All six numbers are on the screen the moment the app opens.
  *
- * The tenth was removed on Baba's instruction on 27.8.2026 after v2 was on the phone. It is the
- * right call and the reason is not only taste: the last digit was the only part of the display
- * that changed at a speed the eye cannot rest on, and everything else on this screen exists to
- * be readable across a room. Dropping it also takes the string from seven glyphs to five, which
- * makes every remaining digit substantially larger for free, and takes the redraw from ten a
- * second to one.
+ * This reverses the decision taken at v1 and repeated at v3, and Baba asked for it after using
+ * the thing. The old argument was that showing an hour field from zero makes the digits
+ * permanently smaller in order to defend against an hour that almost never arrives. That is
+ * still true and it is still the cost: eight glyphs instead of five means each digit is roughly
+ * a third smaller than v3's.
  *
- * WHAT THE TENTH COST US, said plainly so nobody restores it by accident: the app can no longer
- * be used to time anything where a fraction of a second matters. It is a clock for minutes, not
- * a photo finish.
+ * WHAT IT BUYS IS WORTH MORE. The width now NEVER changes. There is no step at the hour, no
+ * moment where the digits resize under you, and no branch in the formatter at all — one format
+ * string, one length, one measured size for the life of the app. The v3 arrangement had exactly
+ * one discontinuity in it and this removes the last one.
  *
  * TRUNCATED, NOT ROUNDED. A stopwatch reports completed time. Rounding would show 10 while 9.6
  * seconds had passed, putting the display ahead of the measurement, which is the wrong direction
- * for a thing whose only job is to be trusted. It also means the first second after start reads
- * 00:00, which is correct: no whole second has elapsed.
+ * for a thing whose only job is to be trusted. The first second after start reads 00:00:00,
+ * which is correct: no whole second has elapsed.
  *
- * THE WIDTH NEVER CHANGES WHILE COUNTING. Every field is zero-padded to a fixed number of glyphs
- * and the typeface is monospaced, so 11 occupies exactly what 00 does and nothing shuffles.
- *
- * WHAT HAPPENS AT THE HOUR, DECIDED IN ADVANCE. The string grows from 5 glyphs to 7 and the
- * autosizing digits shrink once, at 1:00:00, and do not change again. The alternative was to show
- * H:MM:SS from zero so nothing ever resizes — rejected, because it makes the digits permanently
- * smaller on every ordinary use to defend against an hour that almost never arrives. Past ten
- * hours the hour field takes a second glyph and it steps once more. Documented rather than
- * prevented; a stopwatch running for ten hours has other problems.
+ * PAST 100 HOURS the hour field takes a third glyph and the digits step down once. Documented
+ * rather than prevented; a stopwatch running for four days has other problems.
  */
 object Face {
     fun format(ms: Long): String {
@@ -186,11 +234,7 @@ object Face {
         val minutes = seconds / 60L
         val m = minutes % 60L
         val h = minutes / 60L
-        return if (h > 0L) {
-            "%d:%02d:%02d".format(h, m, s)
-        } else {
-            "%02d:%02d".format(m, s)
-        }
+        return "%02d:%02d:%02d".format(h, m, s)
     }
 
     /**

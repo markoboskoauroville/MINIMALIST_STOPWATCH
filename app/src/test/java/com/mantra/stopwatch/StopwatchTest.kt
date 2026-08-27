@@ -28,19 +28,20 @@ class StopwatchTest {
 
     @Test
     fun formatsAtTheBoundaries() {
-        assertEquals("00:00", Face.format(0))
-        assertEquals("00:00", Face.format(999))         // not yet a whole second
-        assertEquals("00:01", Face.format(1_000))
-        assertEquals("00:09", Face.format(9_900))
-        assertEquals("00:10", Face.format(10_000))
-        assertEquals("00:59", Face.format(59_999))
-        assertEquals("01:00", Face.format(60_000))      // the minute
-        assertEquals("59:59", Face.format(3_599_999))
-        assertEquals("1:00:00", Face.format(3_600_000)) // the hour, where the field appears
-        assertEquals("1:00:01", Face.format(3_601_000))
-        assertEquals("1:59:59", Face.format(7_199_999))
-        assertEquals("2:00:00", Face.format(7_200_000))
-        assertEquals("10:00:00", Face.format(36_000_000)) // the second step, documented not prevented
+        assertEquals("00:00:00", Face.format(0))
+        assertEquals("00:00:00", Face.format(999))         // not yet a whole second
+        assertEquals("00:00:01", Face.format(1_000))
+        assertEquals("00:00:09", Face.format(9_900))
+        assertEquals("00:00:10", Face.format(10_000))
+        assertEquals("00:00:59", Face.format(59_999))
+        assertEquals("00:01:00", Face.format(60_000))      // the minute
+        assertEquals("00:59:59", Face.format(3_599_999))
+        assertEquals("01:00:00", Face.format(3_600_000))   // the hour, and the width does not move
+        assertEquals("01:00:01", Face.format(3_601_000))
+        assertEquals("01:59:59", Face.format(7_199_999))
+        assertEquals("02:00:00", Face.format(7_200_000))
+        assertEquals("10:00:00", Face.format(36_000_000))
+        assertEquals("99:59:59", Face.format(359_999_999)) // the last figure that fits in six
     }
 
     /**
@@ -49,10 +50,10 @@ class StopwatchTest {
      */
     @Test
     fun truncatesRatherThanRounds() {
-        assertEquals("00:09", Face.format(9_600))
-        assertEquals("00:00", Face.format(500))
-        assertEquals("00:59", Face.format(59_999))
-        assertEquals("00:00", Face.format(999))
+        assertEquals("00:00:09", Face.format(9_600))
+        assertEquals("00:00:00", Face.format(500))
+        assertEquals("00:00:59", Face.format(59_999))
+        assertEquals("00:00:00", Face.format(999))
     }
 
     /**
@@ -62,17 +63,18 @@ class StopwatchTest {
      */
     @Test
     fun widthNeverChangesWithinAField() {
-        val belowAnHour = (0 until 3_600_000 step 7_919).map { Face.format(it.toLong()).length }
-        assertEquals(setOf(5), belowAnHour.toSet())
-
-        val aboveAnHour = (3_600_000 until 7_200_000 step 7_919).map { Face.format(it.toLong()).length }
-        assertEquals(setOf(7), aboveAnHour.toSet())
+        // v4 shows all six numbers from zero, so there is no longer a step at the hour and this
+        // check is stronger than it was: ONE length, across the whole range, for ever.
+        val everything = (0 until 7_200_000 step 7_919).map { Face.format(it.toLong()).length }
+        assertEquals(setOf(8), everything.toSet())
+        assertEquals(8, Face.format(0).length)
+        assertEquals(8, Face.format(359_999_999).length)
     }
 
     @Test
     fun neverPrintsANegative() {
-        assertEquals("00:00", Face.format(-1))
-        assertEquals("00:00", Face.format(-100_000))
+        assertEquals("00:00:00", Face.format(-1))
+        assertEquals("00:00:00", Face.format(-100_000))
     }
 
     /** A repost delay of zero is an unbounded loop wearing a timer's clothes. */
@@ -163,7 +165,7 @@ class StopwatchTest {
         val running = Stopwatch().play(10_000)
         assertEquals(0L, running.elapsed(9_999))   // one millisecond backwards
         assertEquals(0L, running.elapsed(0))
-        assertEquals("00:00", Face.format(running.elapsed(9_999)))
+        assertEquals("00:00:00", Face.format(running.elapsed(9_999)))
     }
 
     /** Ten minutes in the background is ten more minutes, not ten fewer. */
@@ -218,7 +220,7 @@ class StopwatchTest {
         s = s.play(100_000)
         assertEquals(6_000L, s.elapsed(100_000))
         assertEquals(10_000L, s.elapsed(104_000))   // +4s = 10s
-        assertEquals("00:10", Face.format(s.elapsed(104_000)))
+        assertEquals("00:00:10", Face.format(s.elapsed(104_000)))
     }
 
     @Test
@@ -257,7 +259,7 @@ class StopwatchTest {
         assertEquals(0L, s.accumulated)
         assertEquals(0L, s.startedAt)
         assertEquals(0L, s.elapsed(999_999))
-        assertEquals("00:00", Face.format(s.elapsed(999_999)))
+        assertEquals("00:00:00", Face.format(s.elapsed(999_999)))
     }
 
     @Test
@@ -280,8 +282,16 @@ class StopwatchTest {
     // THE NINE CASES. Three states, three buttons, walked exhaustively rather than sampled.
     // -----------------------------------------------------------------------------------------
 
+    /**
+     * THE NINE CASES OF HOW EACH CONTROL LOOKS. Three controls, three phases, walked exhaustively
+     * rather than sampled, and written as a table so a change to one cell is visible as a change
+     * to one cell.
+     *
+     * HIGHLIGHT is what the next press would produce. SECONDARY is live but not suggested. DEAD
+     * is the only one that does nothing, and after v4 there are just two of those.
+     */
     @Test
-    fun everyButtonInEveryStateHasTheRightAvailability() {
+    fun everyControlInEveryPhaseHasTheRightTone() {
         val stopped = Stopwatch()
         val running = stopped.play(0)
         val paused = running.pause(1_000)
@@ -290,28 +300,93 @@ class StopwatchTest {
         assertEquals(Phase.RUNNING, running.phase)
         assertEquals(Phase.PAUSED, paused.phase)
 
-        // stopped: only play can do anything
-        assertTrue(stopped.canPlay()); assertFalse(stopped.canPause()); assertFalse(stopped.canStop())
-        // running: play is inert, pause and stop are live
-        assertFalse(running.canPlay()); assertTrue(running.canPause()); assertTrue(running.canStop())
-        // paused: play resumes, pause is inert, stop clears
-        assertTrue(paused.canPlay()); assertFalse(paused.canPause()); assertTrue(paused.canStop())
+        //                        PLAY                PAUSE               STOP
+        // stopped:               start it            nothing to freeze   already zero
+        assertEquals(Tone.HIGHLIGHT, stopped.tone(Control.PLAY))
+        assertEquals(Tone.DEAD, stopped.tone(Control.PAUSE))
+        assertEquals(Tone.DEAD, stopped.tone(Control.STOP))
+        // running:               also pauses         freeze it           throw it away
+        assertEquals(Tone.SECONDARY, running.tone(Control.PLAY))
+        assertEquals(Tone.HIGHLIGHT, running.tone(Control.PAUSE))
+        assertEquals(Tone.SECONDARY, running.tone(Control.STOP))
+        // paused:                resume              also resumes        throw it away
+        assertEquals(Tone.HIGHLIGHT, paused.tone(Control.PLAY))
+        assertEquals(Tone.SECONDARY, paused.tone(Control.PAUSE))
+        assertEquals(Tone.SECONDARY, paused.tone(Control.STOP))
+
+        // Every one of the nine was named above. If a phase or a control is ever added, this
+        // count fails before anybody notices the table is short.
+        val cases = Phase.entries.size * Control.entries.size
+        assertEquals(9, cases)
     }
 
     /**
-     * A dim button does nothing when pressed — proven on the state rather than assumed from the
-     * flag. The Activity guards the press with canX(); this is the other half of that contract:
-     * even if a press slipped through, the model would not move.
+     * THE NINE CASES OF WHAT EACH CONTROL DOES, which after v4 is not the same table.
+     *
+     * Play and pause are one toggle wearing two glyphs: pressing play while it runs pauses it,
+     * pressing pause while it is paused starts it again. This is the behaviour Baba asked for
+     * after using v3, and it is the reason tone() had to grow a third value — play is dim while
+     * running AND still does something, so dim could no longer mean dead.
      */
     @Test
-    fun anUnavailableButtonChangesNothingIfItIsSomehowPressed() {
-        val running = Stopwatch().play(0)
-        assertEquals(running, running.play(9_999))          // play while running
+    fun pressingEachControlInEachPhaseDoesTheRightThing() {
         val stopped = Stopwatch()
-        assertEquals(stopped, stopped.pause(9_999))         // pause while stopped
-        assertEquals(stopped, stopped.stop())               // stop while stopped
+        val running = stopped.play(0)
         val paused = running.pause(1_000)
-        assertEquals(paused, paused.pause(9_999))           // pause while paused
+
+        // PLAY is a full toggle
+        assertEquals(Phase.RUNNING, stopped.press(Control.PLAY, 0).phase)
+        assertEquals(Phase.PAUSED, running.press(Control.PLAY, 1_000).phase)
+        assertEquals(Phase.RUNNING, paused.press(Control.PLAY, 2_000).phase)
+
+        // PAUSE toggles between running and paused, and does NOT start from zeros: beginning to
+        // time something by pressing PAUSE would be a surprise rather than a convenience.
+        assertEquals(stopped, stopped.press(Control.PAUSE, 5_000))
+        assertEquals(Phase.PAUSED, running.press(Control.PAUSE, 1_000).phase)
+        assertEquals(Phase.RUNNING, paused.press(Control.PAUSE, 2_000).phase)
+
+        // STOP always means zeros
+        assertEquals(Phase.STOPPED, stopped.press(Control.STOP, 0).phase)
+        assertEquals(Phase.STOPPED, running.press(Control.STOP, 1_000).phase)
+        assertEquals(Phase.STOPPED, paused.press(Control.STOP, 2_000).phase)
+    }
+
+    /**
+     * The toggle must not restart or double-count. Pressing play to pause banks the segment
+     * exactly once, and pressing pause to resume carries the banked figure forward.
+     */
+    @Test
+    fun theToggleBanksTimeExactlyOnceHoweverItIsPressed() {
+        val a = Stopwatch().play(0)
+        val pausedByPlay = a.press(Control.PLAY, 30_000)          // play used as pause
+        assertEquals(30_000L, pausedByPlay.elapsed(90_000))       // the gap after it is not counted
+
+        val resumedByPause = pausedByPlay.press(Control.PAUSE, 100_000)  // pause used as play
+        assertEquals(30_000L, resumedByPause.elapsed(100_000))
+        assertEquals(35_000L, resumedByPause.elapsed(105_000))
+
+        val pausedAgain = resumedByPause.press(Control.PLAY, 110_000)
+        assertEquals(40_000L, pausedAgain.elapsed(999_999))       // 30 + 10, banked twice, never doubled
+    }
+
+    /**
+     * A DEAD control changes nothing when pressed — proven on the state rather than assumed from
+     * the flag. The Activity guards the press with tone(); this is the other half of that
+     * contract: even if a press slipped through, the model would not move.
+     */
+    @Test
+    fun aDeadControlChangesNothingIfItIsSomehowPressed() {
+        val stopped = Stopwatch()
+        assertEquals(Tone.DEAD, stopped.tone(Control.PAUSE))
+        assertEquals(stopped, stopped.press(Control.PAUSE, 9_999))
+        assertEquals(Tone.DEAD, stopped.tone(Control.STOP))
+        assertEquals(stopped, stopped.press(Control.STOP, 9_999))
+
+        // And the underlying transitions stay idempotent whatever route reaches them.
+        val running = Stopwatch().play(0)
+        assertEquals(running, running.play(9_999))
+        val paused = running.pause(1_000)
+        assertEquals(paused, paused.pause(9_999))
     }
 
     // -----------------------------------------------------------------------------------------
@@ -414,7 +489,7 @@ class StopwatchTest {
         )
         assertEquals(Phase.PAUSED, back.phase)
         assertEquals(123_400L, back.elapsed(15_000))
-        assertEquals("02:03", Face.format(back.elapsed(15_000)))
+        assertEquals("00:02:03", Face.format(back.elapsed(15_000)))
     }
 
     /**
@@ -458,7 +533,7 @@ class StopwatchTest {
             assertEquals(t, s.elapsed(t))
             t += 100L
         }
-        assertEquals("1:00:00", Face.format(s.elapsed(3_600_000)))
+        assertEquals("01:00:00", Face.format(s.elapsed(3_600_000)))
     }
 
     @Test
@@ -472,6 +547,6 @@ class StopwatchTest {
             clock += 911L               // not measured
         }
         assertEquals(137_000L, s.elapsed(clock))
-        assertEquals("02:17", Face.format(s.elapsed(clock)))
+        assertEquals("00:02:17", Face.format(s.elapsed(clock)))
     }
 }

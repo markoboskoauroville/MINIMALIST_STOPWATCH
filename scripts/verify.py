@@ -36,6 +36,9 @@ def check(name, ok, detail):
 # The timing logic must not import anything from Android. The moment it does, Test 1 stops being
 # a test of the mechanism and becomes a test of an emulator that is not present.
 src = LOGIC.read_text()
+ui = UI.read_text()
+store = STORE.read_text()
+
 imports = re.findall(r"^import\s+(\S+)", src, re.M)
 android = [i for i in imports if i.startswith("android")]
 check("the timing logic touches nothing Android",
@@ -69,12 +72,36 @@ check("elapsed is subtraction, never an accumulating delta",
 # ── 4 ────────────────────────────────────────────────────────────────────────────────────────
 # The nine cases. Three buttons times three phases, and every one of them has to have an answer
 # that the screen can ask for without knowing what a phase is.
-enum_body = re.search(r"enum class Phase\s*\{([^}]*)\}", src)
-phases = [p.strip() for p in enum_body.group(1).split(",") if p.strip()] if enum_body else []
-cans = re.findall(r"fun (can\w+)\(", src)
-check("every button has an availability rule for every phase",
-      sorted(cans) == ["canPause", "canPlay", "canStop"] and len(phases) == 3,
-      f"{len(set(cans))} rules x {len(phases)} phases = {len(set(cans)) * len(phases)} cases: {', '.join(phases)}")
+def enum_members(name):
+    m = re.search(rf"enum class {name}\s*\{{([^}}]*)\}}", src)
+    return [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+
+phases = enum_members("Phase")
+controls = enum_members("Control")
+tones = enum_members("Tone")
+# Both tables must exist and both must be total. `when` over an enum with no else is exhaustive
+# in Kotlin, so the compiler enforces the rows; this asserts the tables are the size they claim.
+has_press = re.search(r"fun press\(control: Control, now: Long\)", src) is not None
+has_tone = re.search(r"fun tone\(control: Control\)", src) is not None
+check("both button tables are total for every control and phase",
+      has_press and has_tone and len(phases) == 3 and len(controls) == 3 and len(tones) == 3,
+      f"{len(controls)} controls x {len(phases)} phases = {len(controls) * len(phases)} cases, "
+      f"two tables (press, tone), {len(tones)} tones: {', '.join(tones)}")
+
+# ── 4b ───────────────────────────────────────────────────────────────────────────────────────
+# v4 made dim ambiguous: play is dim while running and pressing it still pauses the clock. If
+# the third tone is ever collapsed back into two, dim means two things again and this goes red.
+# Declaring the colour is not using it. Three mutations survived the first version of this check
+# because it asked whether GLYPH_SECOND EXISTED, and a val that nothing reads exists perfectly
+# well. It now reads the actual colour expression and the actual enabled expression.
+colours = re.search(r"iconButtonColors\((.*?)\)\s*,\s*\)", ui, re.S)
+colour_body = colours.group(1) if colours else ""
+tones_used = {t for t in ("GLYPH", "GLYPH_SECOND", "GLYPH_OFF") if t in colour_body}
+enabled_expr = re.search(r"enabled\s*=\s*(tone[^,\n]*)", ui)
+enabled_text = enabled_expr.group(1).strip() if enabled_expr else ""
+check("a dim glyph does not mean two different things",
+      tones_used == {"GLYPH", "GLYPH_SECOND", "GLYPH_OFF"} and enabled_text == "tone != Tone.DEAD",
+      f"{len(tones_used)} of 3 tones reach the drawn colour, and only DEAD is inert: `enabled = {enabled_text}`")
 
 # ── 5 ────────────────────────────────────────────────────────────────────────────────────────
 # G5. Every loop in the tree, counted, and each one read for what bounds it. The count is the
@@ -100,7 +127,6 @@ check("the redraw delay can never be zero",
 # ── 7 ────────────────────────────────────────────────────────────────────────────────────────
 # Tap-anywhere is gone and its absence is a decision. If a clickable ever reappears on the
 # background this goes red, because that is the stray touch that destroys a measurement.
-ui = UI.read_text()
 background_click = re.search(r"\.background\(BACKGROUND\)[\s\S]{0,200}?\.clickable", ui)
 clickables = len(re.findall(r"\.clickable\(", ui))
 check("nothing on the background is tappable",
@@ -110,10 +136,14 @@ check("nothing on the background is tappable",
 # ── 8 ────────────────────────────────────────────────────────────────────────────────────────
 # Never hide a control that is temporarily unavailable. A disabled button is dimmed; a button
 # removed from the tree moves everything beside it.
-hidden = re.search(r"if\s*\([^)]*can(Play|Pause|Stop)\(\)\s*\)\s*\{?\s*Glyph", ui)
+# The mutation sweep walked straight through the old version of this: it looked for the word
+# canPause, which v4 deleted, so it was checking for a shape that could no longer exist. It now
+# looks for ANY conditional wrapping a transport emission, whatever the condition is written in.
+hidden = re.search(r"\bif\s*\(.*?\)\s*\{?\s*(Transport|Glyph)\s*\(", ui)
+emitted = len(re.findall(r"^\s*Transport\(", ui, re.M))
 check("no button is hidden when it cannot act",
-      hidden is None and "disabledContentColor" in ui,
-      "availability reaches the button as enabled=, and a disabled tint exists")
+      hidden is None and emitted == 3,
+      f"{emitted} transport controls emitted unconditionally, 0 wrapped in a condition")
 
 # ── 8b ───────────────────────────────────────────────────────────────────────────────────────
 # The circles were removed on 27.8.2026 because on glass they read as three more shapes on a
