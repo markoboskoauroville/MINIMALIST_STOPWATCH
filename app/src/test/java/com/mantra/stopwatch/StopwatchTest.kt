@@ -308,17 +308,23 @@ class StopwatchTest {
     }
 
     /**
-     * THE CASE ONLY THE BACKWARDS CHECK CAN CATCH, and it was missing until the mutation sweep
-     * removed that check and nothing went red.
+     * THE CASE ONLY THE BACKWARDS CHECK CAN CATCH.
      *
      * A reboot moves the boot marker by the previous uptime plus the time powered off. When both
      * are small — a device up fifty seconds, restarted, back in five — the marker moves less than
      * the tolerance and the marker detector says nothing. The monotonic clock still went
      * backwards, and that is proof.
+     *
+     * THIS TEST WAS PASSING FOR THE WRONG REASON UNTIL THE MUTATION SWEEP SAID SO. It used to
+     * start the clock at 10_000 and restore at 3_000, which meant the saved instant was in the
+     * FUTURE, and the belt-and-braces guard at the end of restore() caught it. Deleting the
+     * backwards detector entirely changed nothing and this test stayed green. `startedAt` is now
+     * 1_000, safely behind `now`, so the future guard cannot fire and the only thing standing
+     * between this and a wrong answer is the detector the test claims to be about.
      */
     @Test
     fun aQuickRebootIsCaughtByTheBackwardsClockAlone() {
-        val s = Stopwatch().play(10_000)
+        val s = Stopwatch().play(1_000)
         val back = Stopwatch.restore(
             s.phase, s.startedAt, s.accumulated,
             savedBootMarker = 1_000_000, bootMarkerNow = 1_050_000,   // 50s: inside the tolerance

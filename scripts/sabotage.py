@@ -93,6 +93,10 @@ LOGIC_MUTATIONS = [
      "        return r - 1L"),
 ]
 
+_APP_VERSION_LINE = next(
+    line + "\n" for line in PROPS.read_text().splitlines() if line.startswith("appVersion=")
+)
+
 SHAPE_MUTATIONS = [
     (UI, "tap-anywhere comes back on the background",
      "            .background(BACKGROUND)",
@@ -112,9 +116,12 @@ SHAPE_MUTATIONS = [
     (STORE, "accumulated is not persisted, so a paused stopwatch comes back at zero",
      "            .putLong(K_ACCUMULATED, s.accumulated)\n",
      ""),
+    # Read the current number rather than hardcoding it. An anchor with a version in it stops
+    # matching the first time the version is bumped, and a SKIPPED mutation reads almost like a
+    # caught one in a long list. This bit this sweep once already.
     (PROPS, "the version acquires a dot",
-     "appVersion=1\n",
-     "appVersion=1.0\n"),
+     _APP_VERSION_LINE,
+     _APP_VERSION_LINE.rstrip("\n") + ".0\n"),
 ]
 
 

@@ -1,0 +1,221 @@
+# NEXT_DEFAULTS — why each decision was made
+
+Every entry names what was chosen, what was rejected, and what the rejected option would have
+cost. Read this before undoing anything in HANDOFF.md.
+
+---
+
+## 27.8.2026 — tap-anywhere versus three buttons
+
+**Chosen: the buttons are the control. Tap-anywhere is gone entirely.**
+
+The original spec said tap anywhere to start, tap again to reset. Three explicit transport
+buttons then arrived, and Baba asked which one survives, recommending the buttons.
+
+Agreed, and the reason is stronger than tidiness. **The two would have disagreed about what a tap
+means.** The gesture said start-then-reset; play says start-or-resume. Keeping both would have
+put a full-screen reset target directly above a resume button, which is not two ways to do one
+thing, it is two contradictory things sharing a surface. The dangerous half is that the gesture's
+second state is destructive: a stray touch during a real measurement would have destroyed it,
+and the surface area of that mistake is the entire screen.
+
+**Rejected: keeping tap-anywhere but redefining it as play/pause.** That is a third semantics
+for the same surface, and it leaves the person working out whether the black area is a control
+or a background. Rejected: long-press to reset. Same objection, plus it hides a destructive
+action behind a gesture nobody can see.
+
+**What it costs, said plainly.** You lose starting it without aiming, which matters more for low
+vision than it does for most people. The mitigation is size rather than gesture: 72dp circles in
+portrait and 64dp in landscape, both well above the 48dp minimum touch target, in fixed
+positions that never move because no button is ever hidden.
+
+**Enforced, not merely intended.** `verify.py` check 7 goes red if a `clickable` modifier ever
+appears on the background again.
+
+## 27.8.2026 — the version is 1, not 2
+
+The repository did not exist. All 83 repositories on the account were listed and none was named
+for a stopwatch, a watch, a timer or a clock. The previous session wrote the timing logic and
+its test suite on a scratch machine and was cut off before creating anything.
+
+So there was nothing to bump, and calling this v2 would have been a fiction that the next
+session would have had to unpick. The transport buttons go in from the start.
+
+## 27.8.2026 — what the digits show
+
+**Chosen: `MM:SS.d` below an hour, `H:MM:SS.d` at and above it. Tenths, truncated.**
+
+Hundredths are a blur while running and the last digit does nothing but flicker; tenths move at
+a speed the eye can follow, which is the whole point of a number read across a room.
+
+**Truncated rather than rounded.** A stopwatch reports completed time. Rounding would show 10.0
+while 9.96 seconds had passed, and the first frame after start would read 00:00.0 and then jump,
+which puts the display ahead of the measurement. That is the wrong direction for a thing whose
+only job is to be trusted.
+
+**Rejected: showing `H:MM:SS.d` from zero so the width never changes.** It makes the digits
+permanently smaller on every ordinary use in order to defend against an hour that almost never
+arrives. One discrete step down in size, an hour into a measurement nobody is staring at, is the
+cheaper trade. Past ten hours it steps once more; documented rather than prevented, because a
+stopwatch running for ten hours has other problems.
+
+## 27.8.2026 — how the digits are sized
+
+**Chosen: binary search against the real text measurer, on a probe string of the same LENGTH as
+the text, not on the text itself.**
+
+This is the whole defence against the commonest way to get a stopwatch wrong. In a monospaced
+face every glyph has the same advance, so a string of the same length is exactly the same width.
+The computed size therefore depends on the length and nothing else, which means 00:00.0 and
+59:59.9 are drawn at the same size and nothing shuffles sideways as it counts. The size changes
+at exactly one moment, when the string grows from seven glyphs to nine at one hour.
+
+**Rejected: a formula from the screen width.** It would be a guess about a font that had never
+been measured, and it would be wrong by a different amount on every device.
+
+## 27.8.2026 — pause did not change the timing model
+
+The original forbade accumulating deltas. Pause makes subtraction feel awkward, because
+`accumulated` sounds like a field that wants to be incremented on a timer. **It is not.** It
+changes at exactly one moment, when a run segment ends, and its new value is computed by
+subtraction from the segment that just ended. Nothing anywhere adds a tick to a total.
+
+The mutation sweep carries the check: `a paused clock keeps counting` and `pause banks a second
+time when already paused` both go red.
+
+## 27.8.2026 — what a reboot costs each phase
+
+**Chosen: RUNNING goes to zeros; PAUSED is kept intact; STOPPED was already zero.**
+
+**Rejected: returning a running stopwatch as PAUSED at the banked figure after a reboot.** It
+looks like a preserved measurement and is silently short by however long the device had been up.
+A wrong answer delivered confidently is worse than no answer. **Also rejected: throwing away a
+paused measurement.** A paused stopwatch holds its whole value in `accumulated` and never
+consults the clock, so a reboot costs it nothing and discarding it would be a loss with no cause.
+
+**Two detectors rather than one**, because each has a hole the other covers, and together they
+fail towards zeros, which is the safe direction. The boot-marker detector costs one false
+positive: moving the phone's clock by more than a minute during a running measurement reads as a
+reboot. Rare, deliberate, and it fails to zeros.
+
+## 27.8.2026 — the glyph grey is 55%
+
+Chosen by rendering the play glyph beside the white digits at 40, 45, 50, 55, 60 and 70 percent
+and looking at the result, rather than by picking a number in the band that sounded right. Below
+50 it starts sinking into the black. Above 60 it begins reading as a second white thing and
+competes with the number, which is the one thing the brief forbids.
+
+The ring is an **outline at 18%, not a fill**. A filled disc at any brightness visible enough to
+mark a target is a shape with weight, and there are three of them in a row.
+
+Disabled is 22% glyph on a 10% ring: dimmer still, plainly present, and never removed.
+
+## 27.8.2026 — the system bars are left on
+
+**Chosen: edge to edge, black background, bars left where they are.**
+
+The digits are limited by the WIDTH of the screen in both orientations, so hiding the status bar
+buys height the digits cannot use. Against that, hiding it takes away the phone's own clock and
+battery during a measurement. The background is black, so the bars sit on black and read as part
+of the screen.
+
+**Not built, offered instead:** full immersive is one line. It was deliberately not taken,
+because "resist adding things" cuts both ways and removing the person's clock is a change to
+their phone, not to this app.
+
+## 27.8.2026 — the screen stays awake while PAUSED as well as RUNNING
+
+The original said keep the screen on while running and let it sleep when stopped. Pause did not
+exist then. A paused stopwatch is mid-measurement and is precisely the state in which somebody
+is reading the number, so it keeps the screen awake. Only STOPPED lets the phone sleep.
+
+## 27.8.2026 — commit rather than apply
+
+`Store.save` uses `commit()`, which writes on the calling thread. `apply()` writes on a
+background thread, and the moment it is called from `onStop` the process may be killed before
+that thread runs. The write is a handful of primitives and happens on a state change or once
+every ten seconds, never per frame. A stopwatch that comes back at the wrong value because a
+write lost a race is exactly the bug the brief called the one worth testing hardest.
+
+## 27.8.2026 — one storage mechanism, not three
+
+**Rejected: `rememberSaveable` for rotation, a ViewModel for configuration changes, and a file
+for process death.** Rotation, backgrounding and a process kill are three lifecycles with three
+survival mechanisms, and carrying the state in all three is three places to disagree. One file,
+written on every transition, is one place and survives all three.
+
+The activity also declares `configChanges` for orientation, so rotating does not destroy it and
+the digits do not blink at the moment the phone turns, which is the one time a person is
+watching the number while rotating.
+
+## 27.8.2026 — no Gradle wrapper was going to be committed, and then one was
+
+**Rejected: `setup-gradle` with a `gradle-version` input and no wrapper**, to avoid committing a
+binary. Reversed: the wrapper is the standard mechanism, and pinning the distribution by sha256
+in `gradle-wrapper.properties` is strictly better provenance than naming a version in a workflow
+file. The wrapper jar is the one at Gradle's own `v8.11.1` tag,
+`2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046`.
+
+## 27.8.2026 — lint is blocking from the first build
+
+TTT mini builds with `-x lintVitalRelease` and a comment recording that the noise was never
+measured, so the gate was deferred rather than skipped by accident. This app is four source
+files. The noise was measured by turning it on: **zero findings**, with
+`warningsAsErrors = true` and `allWarningsAsErrors = true` on the Kotlin compiler as well. It
+blocks. If it ever cries wolf, the rule is to narrow it in the session that made the noise.
+
+---
+
+## What CI taught, and it cost four runs
+
+**Runs 1 and 2: gate G5 failed because the code was clean.** A grep in a pipeline that matches
+nothing exits 1, `pipefail` turns that into a failed assignment, and `bash -e` kills the step
+before the echo that would have explained it. Run 1 died with no output at all. Run 2 died one
+line further down, on the grep counting unbounded loops, which correctly found none.
+
+TTT mini's workflow carries a comment describing this exact scar on its secret scan and calls its
+`|| true` load-bearing. It was walked into anyway. **Every counting pipeline is now guarded, every
+count is printed, and only then is anything asserted**, so a red gate always arrives with the
+number that made it red. Confirmed both ways: green on the clean tree, red when an unbounded loop
+is appended on purpose.
+
+**Run 3: three compile errors, all in the layout.** `maxWidth` and `maxHeight` belong to
+`BoxWithConstraintsScope` and that receiver is gone the moment a `Row` lambda opens; they are now
+read once into plain values. `2 * EDGE` does not exist, because `Int.times` has no `Dp` overload
+while `Dp.times(Int)` does. And `::apply` on a local function named `apply` asks both the reader
+and the compiler to disambiguate it from the stdlib extension every object carries.
+
+**Run 4: green.**
+
+## What the mutation sweep found
+
+25 mutations. On the first full sweep, **24 were caught and one survived**:
+
+    SURVIVED   the backwards-clock reboot detector is removed
+
+The test written to isolate that detector was passing for the wrong reason. It started the clock
+at `10_000` and restored at `3_000`, which made the saved instant lie in the FUTURE, so the
+belt-and-braces guard at the end of `restore()` caught the case and the detector under test was
+never exercised. Deleting the detector entirely changed nothing and the suite stayed green.
+
+`startedAt` is now `1_000`, safely behind `now`, so the future guard cannot fire. Confirmed by
+deleting the detector again and watching the suite go red.
+
+**This is the finding that justifies the whole sweep.** A passing test that proves nothing is
+invisible, and this one had a docstring claiming precisely the thing it was not checking.
+
+## What the structural checks got wrong about themselves
+
+`verify.py` came up 9 of 11 on its first run and **three of its eleven checks were faulty**:
+
+- one counted phases with a regex that matched none of them and printed `3 rules for 0 phases =
+  0 cases` while reporting PASS. A check that finds nothing and a check that runs nothing look
+  identical from outside;
+- one counted persisted fields across the whole file, so the orientation lock's own setter made
+  the count 6 of 5 and a genuinely missing timing field could have hidden behind it. It now reads
+  only the body of `save()`;
+- one asserted `.apply()` appeared nowhere in `Store.kt`, which is wrong: the orientation lock is
+  a preference and `apply` is correct for it. It now checks the body of `save()` and prints how
+  many `apply` calls exist elsewhere.
+
+All three would have read as passes.
