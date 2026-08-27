@@ -119,7 +119,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // accumulates into it: every frame asks the pure model what has passed, by subtraction.
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
 
-    fun apply(next: Stopwatch) {
+    fun commit(next: Stopwatch) {
         state = next
         now = SystemClock.elapsedRealtime()
         store.save(next)
@@ -193,7 +193,11 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             .background(BACKGROUND)
             .safeDrawingPadding()
     ) {
-        val landscape = maxWidth > maxHeight
+        // maxWidth and maxHeight belong to BoxWithConstraintsScope, and that receiver is gone
+        // the moment a Row or Column lambda is opened. Read them once, here, into plain values.
+        val screenW = maxWidth
+        val screenH = maxHeight
+        val landscape = screenW > screenH
         val text = Face.format(elapsed)
 
         if (landscape) {
@@ -201,13 +205,13 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             // centred in the space BELOW the lock button rather than in the whole height, which
             // is what keeps the two apart on a short screen.
             val column = 84.dp
-            val available = maxHeight - LOCK_ZONE - EDGE
-            val size = minOf(64.dp, (available - 2 * EDGE) / 3)
+            val available = screenH - LOCK_ZONE - EDGE
+            val size = minOf(64.dp, (available - EDGE * 2) / 3)
             Row(Modifier.fillMaxSize()) {
                 Digits(
                     text = text,
-                    width = maxWidth - column - EDGE,
-                    height = maxHeight - 2 * EDGE,
+                    width = screenW - column - EDGE,
+                    height = screenH - EDGE * 2,
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                 )
                 Column(
@@ -215,7 +219,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Transport(state, size, EDGE, vertical = true, ::apply)
+                    Transport(state, size, EDGE, vertical = true) { commit(it) }
                 }
             }
         } else {
@@ -223,8 +227,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             Column(Modifier.fillMaxSize()) {
                 Digits(
                     text = text,
-                    width = maxWidth - 2 * EDGE,
-                    height = maxHeight - strip - LOCK_ZONE,
+                    width = screenW - EDGE * 2,
+                    height = screenH - strip - LOCK_ZONE,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 )
                 Row(
@@ -232,7 +236,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Transport(state, 72.dp, EDGE, vertical = false, ::apply)
+                    Transport(state, 72.dp, EDGE, vertical = false) { commit(it) }
                 }
             }
         }
@@ -263,20 +267,20 @@ private fun Transport(
     size: Dp,
     gap: Dp,
     vertical: Boolean,
-    apply: (Stopwatch) -> Unit,
+    onChange: (Stopwatch) -> Unit,
 ) {
     val spacer = if (vertical) Modifier.height(gap) else Modifier.width(gap)
 
     Circle(Icons.Default.PlayArrow, "Play", state.canPlay(), size, true) {
-        apply(state.play(SystemClock.elapsedRealtime()))
+        onChange(state.play(SystemClock.elapsedRealtime()))
     }
     Box(spacer)
     Circle(Icons.Default.Pause, "Pause", state.canPause(), size, true) {
-        apply(state.pause(SystemClock.elapsedRealtime()))
+        onChange(state.pause(SystemClock.elapsedRealtime()))
     }
     Box(spacer)
     Circle(Icons.Default.Stop, "Stop", state.canStop(), size, true) {
-        apply(state.stop())
+        onChange(state.stop())
     }
 }
 
