@@ -37,9 +37,15 @@ class Store(context: Context) {
     /** Wall clock minus monotonic clock: approximately the instant this device booted. */
     fun bootMarker(): Long = System.currentTimeMillis() - SystemClock.elapsedRealtime()
 
-    var locked: Boolean
-        get() = p.getBoolean(K_LOCKED, false)
-        set(v) = p.edit().putBoolean(K_LOCKED, v).apply()
+    /**
+     * Which way up the app sits. v5 replaced the old lock/unlock flag with this, and the old key
+     * is deliberately NOT read: "was locked" carries no information about which orientation the
+     * person would now choose, so guessing from it would be inventing an answer. Everybody
+     * starts in portrait once, and one press fixes it for good.
+     */
+    var orientation: Orientation
+        get() = if (p.getBoolean(K_LANDSCAPE, false)) Orientation.LANDSCAPE else Orientation.PORTRAIT
+        set(v) = p.edit().putBoolean(K_LANDSCAPE, v == Orientation.LANDSCAPE).apply()
 
     /**
      * The digit colour, always run through Palette.sanitise on the way out. A value that is no
@@ -101,7 +107,7 @@ class Store(context: Context) {
         const val K_ACCUMULATED = "accumulated"
         const val K_LAST_SEEN = "lastSeen"
         const val K_BOOT_MARKER = "bootMarker"
-        const val K_LOCKED = "locked"
+        const val K_LANDSCAPE = "landscape"
         const val K_COLOUR = "colour"
         const val K_BOLD = "bold"
     }

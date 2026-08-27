@@ -1,7 +1,7 @@
 # HANDOFF — Minimalist Stopwatch
 
-**Current version: 4.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
-Latest artefact: `4-stopwatch-v4.apk`, tag `v4`.
+**Current version: 5.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
+Latest artefact: `5-stopwatch-v5.apk`, tag `v5`.
 
 This is the briefing. The reasoning behind each decision, including what was tried and rejected,
 is in [`NEXT_DEFAULTS.md`](NEXT_DEFAULTS.md). What was and was not proven about the shipped
@@ -25,14 +25,21 @@ whether pressing it will start or stop the counting — and what moves is the hi
 **The three sit along the bottom in BOTH orientations.** There is no landscape branch. v2 put
 them down the right-hand edge because the spec said so, and on the phone that was wrong.
 
-**THREE TONES, THREE MEANINGS**, and this is the part most likely to be misread later:
+**FOUR TONES, FOUR MEANINGS**, and this is the part most likely to be misread later:
 
+    PRIMARY   100%   WHITE. One cell of the nine: play, while the clock is not running
     HIGHLIGHT  40%   what the next press would produce, given where the clock is
     SECONDARY  24%   live and pressable, but not the thing the state suggests
     DEAD       12%   pressing it does nothing and it looks like nothing will
 
-The third tone exists because v4 made dim ambiguous. Play is dim while the clock runs AND
-pressing it still pauses, so dim alone would have meant two different things on one screen.
+HIGHLIGHT and SECONDARY are separate because v4 made dim ambiguous: play is dim while the clock
+runs AND pressing it still pauses, so dim alone would have meant two things on one screen.
+
+**PRIMARY is a deliberate hole in "the digits are the only white thing", and the hole has edges
+that are tested.** It is only defensible because it closes the instant a measurement starts: on
+an idle screen there is nothing to compete with, and the moment it runs the white is gone. Test 1
+asserts that exactly one control is white at a time, that it is always play, and that nothing is
+white while running.
 
 **No button is ever hidden**, because a control that disappears moves the layout.
 
@@ -103,6 +110,10 @@ Each of these is argued in NEXT_DEFAULTS.md. Read that before changing one.
     play and pause both toggle    v4. Either glyph flips the clock. Pause from zeros is the one
                                   exception and does nothing, because starting a measurement by
                                   pressing PAUSE would be a surprise
+    THE APP NO LONGER FOLLOWS     v5. The corner button SETS the orientation: one press portrait,
+      THE PHONE AT ALL            the next landscape. There is no sensor-following state left,
+                                  so the phone's own auto-rotate is ignored entirely
+    play is WHITE when idle       v5. See the tone table above
     the system bars are LEFT ON   black background, so they sit on black. Hiding them is one
                                   line and was deliberately not taken
     screen stays awake while      only STOPPED lets the phone sleep. A paused stopwatch is
@@ -140,9 +151,9 @@ use the icon.
 
 ## How to check it
 
-    python3 scripts/verify.py                       15 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest              Test 1, 38 cases
-    python3 scripts/sabotage.py                     35 mutations, each one broken on purpose
+    python3 scripts/verify.py                       18 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest              Test 1, 39 cases
+    python3 scripts/sabotage.py                     39 mutations, each one broken on purpose
 
 The sweep edits source in place, so it stashes every file it can touch before it starts and
 restores any stash left by a run that did not finish. It has been killed mid-mutation three

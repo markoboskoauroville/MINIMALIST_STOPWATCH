@@ -84,7 +84,7 @@ tones = enum_members("Tone")
 has_press = re.search(r"fun press\(control: Control, now: Long\)", src) is not None
 has_tone = re.search(r"fun tone\(control: Control\)", src) is not None
 check("both button tables are total for every control and phase",
-      has_press and has_tone and len(phases) == 3 and len(controls) == 3 and len(tones) == 3,
+      has_press and has_tone and len(phases) == 3 and len(controls) == 3 and len(tones) >= 3,
       f"{len(controls)} controls x {len(phases)} phases = {len(controls) * len(phases)} cases, "
       f"two tables (press, tone), {len(tones)} tones: {', '.join(tones)}")
 
@@ -96,12 +96,44 @@ check("both button tables are total for every control and phase",
 # well. It now reads the actual colour expression and the actual enabled expression.
 colours = re.search(r"iconButtonColors\((.*?)\)\s*,\s*\)", ui, re.S)
 colour_body = colours.group(1) if colours else ""
-tones_used = {t for t in ("GLYPH", "GLYPH_SECOND", "GLYPH_OFF") if t in colour_body}
+tones_used = {t for t in ("GLYPH_PRIMARY", "GLYPH", "GLYPH_SECOND", "GLYPH_OFF") if t in colour_body}
 enabled_expr = re.search(r"enabled\s*=\s*(tone[^,\n]*)", ui)
 enabled_text = enabled_expr.group(1).strip() if enabled_expr else ""
-check("a dim glyph does not mean two different things",
-      tones_used == {"GLYPH", "GLYPH_SECOND", "GLYPH_OFF"} and enabled_text == "tone != Tone.DEAD",
-      f"{len(tones_used)} of 3 tones reach the drawn colour, and only DEAD is inert: `enabled = {enabled_text}`")
+check("every tone reaches the drawn colour, and only DEAD is inert",
+      tones_used == {"GLYPH_PRIMARY", "GLYPH", "GLYPH_SECOND", "GLYPH_OFF"}
+      and enabled_text == "tone != Tone.DEAD",
+      f"{len(tones_used)} of 4 tones reach the drawn colour: `enabled = {enabled_text}`")
+
+# ── 4c ───────────────────────────────────────────────────────────────────────────────────────
+# The white play glyph is a deliberate hole in "the digits are the only white thing". The hole is
+# only defensible because it closes the instant a measurement starts. If PRIMARY is ever handed
+# to a control other than play, or survives into RUNNING, this goes red.
+primary_rows = re.findall(r"Tone\.PRIMARY", src)
+play_row = re.search(r"Control\.PLAY -> if \(phase == Phase\.RUNNING\) Tone\.SECONDARY else Tone\.PRIMARY", src)
+check("white is only ever play, and only while the clock is idle",
+      play_row is not None and len(primary_rows) == 1,
+      f"{len(primary_rows)} PRIMARY cell in the table of 9, on play, absent while running")
+
+# ── 4d ───────────────────────────────────────────────────────────────────────────────────────
+# v5 replaced the orientation LOCK with an orientation CHOICE. The app no longer follows the
+# phone at all, and both branches force a sensor-class orientation so a phone laid on a table
+# can still turn 180 degrees within the orientation that was chosen.
+forced = re.findall(r"SCREEN_ORIENTATION_SENSOR_(PORTRAIT|LANDSCAPE)", ui)
+check("the corner button sets the orientation rather than locking it",
+      sorted(forced) == ["LANDSCAPE", "PORTRAIT"] and "SCREEN_ORIENTATION_LOCKED" not in ui,
+      f"{len(forced)} forced orientations, no lock, no unspecified: {', '.join(sorted(forced))}")
+
+# ── 4e ───────────────────────────────────────────────────────────────────────────────────────
+# design-language.md 5: a control says what the next press DOES, not what is currently true. In
+# portrait the button must show the LANDSCAPE glyph. Getting this backwards is invisible in a
+# screenshot and obvious in the hand, which is exactly the kind of fault a check should hold.
+# The mutation sweep walked through the first version of this file with it reversed.
+says_next = re.search(
+    r"Orientation\.PORTRAIT\)\s*Icons\.Default\.StayCurrentLandscape\s*\n\s*else Icons\.Default\.StayCurrentPortrait", ui)
+label_next = re.search(r'Orientation\.PORTRAIT\)\s*"Turn landscape"\s*else\s*"Turn portrait"', ui)
+check("the orientation button shows where the next press goes, not where you are",
+      says_next is not None and label_next is not None,
+      "in portrait it offers landscape, and the spoken label agrees with the glyph")
 
 # ── 5 ────────────────────────────────────────────────────────────────────────────────────────
 # G5. Every loop in the tree, counted, and each one read for what bounds it. The count is the

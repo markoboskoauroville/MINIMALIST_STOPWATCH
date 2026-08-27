@@ -429,3 +429,75 @@ tint to the highlight colour, which is a regression somebody could actually ship
 `verify.py` also had a latent ordering fault: the new check read `ui` before the line that
 defined it, and only ran at all because it happened to sit after that line in the old file. All
 three sources are now read once at the top, so check order cannot matter.
+
+---
+
+# v5 — 27.8.2026, two more from the phone
+
+## The corner button sets the orientation instead of locking it
+
+**Chosen: two states, PORTRAIT and LANDSCAPE, and no sensor-following state at all.**
+
+Until v5 the button locked whatever the phone had already decided. Baba's instruction was that
+it should CHOOSE: one press portrait, the next landscape. That is a different control wearing
+the same corner.
+
+**Say plainly what was lost: the app no longer follows the phone, ever.** There is no third
+state, so turning the handset does nothing until the button is pressed. That is a real
+capability removed, and it is removed on purpose — a stopwatch propped on a table wants to be
+told which way up it is, not to guess from an accelerometer that a system-wide rotation lock may
+be overriding anyway. If a "follow the phone" state is ever wanted back it is a third value in
+the `Orientation` enum and one more branch, not a rewrite.
+
+**SENSOR_PORTRAIT and SENSOR_LANDSCAPE, not the plain constants.** The plain ones pin a single
+way up, so a phone laid flat and turned to face somebody across the table stays upside down. The
+sensor variants hold the CLASS of orientation and still allow the 180-degree flip inside it,
+which is what a person means by "landscape".
+
+**The glyph shows where the next press GOES, not where you are.** In portrait it shows the
+landscape phone. design-language.md 5. You can already see which way up you are by looking at
+the screen; what you cannot see is what the button will do.
+
+**The old preference key is deliberately not migrated.** "Was locked" carries no information
+about which orientation somebody would now choose, so reading it would be inventing an answer.
+Everyone starts in portrait once and a single press settles it.
+
+## Play is white while the clock is idle
+
+**Chosen: a fourth tone at the top of the ladder, PRIMARY, white, on exactly one cell of nine.**
+
+This is a hole in the oldest rule in the brief — that the digits are the only white thing on the
+screen and nothing may compete with them. It is worth stating why the hole is acceptable rather
+than pretending it is not a hole.
+
+**It closes the instant a measurement starts.** While the clock is stopped or paused there is no
+measurement to compete with; the digits are frozen or at zero, and the one thing a person
+almost certainly wants is to start. The moment it runs, play drops to SECONDARY and the digits
+have the screen to themselves again, which is the situation the original rule was written for.
+
+**Rejected: making the whole HIGHLIGHT tone white,** which would have been the tidier change and
+would have put a white pause glyph on screen while the clock runs. That is precisely the moment
+the rule exists to protect, and it would have broken it at the only time it matters.
+
+**The edges are asserted, not assumed.** Test 1 walks all nine cells and checks that exactly one
+is PRIMARY at a time, that it is always play, and that nothing is PRIMARY while running. Three
+mutations attack it: white surviving into RUNNING, white leaking onto stop, and play losing its
+white when idle.
+
+**Four rungs is more than a screen like this wants.** The defence is that each means exactly one
+thing and they only ever run one direction. If it grows a fifth, that is the point to stop and
+redesign rather than to add.
+
+## What the sweep found, again, in a check rather than in the app
+
+One mutation survived: reversing the orientation glyph so the button shows where you ARE instead
+of where the next press GOES. Nothing was watching it, because nothing had been written to.
+**That fault is invisible in a screenshot and obvious in the hand**, which is exactly the kind a
+check has to hold, since screenshots are all this repository gets. `verify.py` now asserts the
+mapping and that the spoken label agrees with the glyph.
+
+A second check had to be loosened rather than tightened: the totality check asserted "three
+tones", which was a fact about v4 rather than an invariant. What matters is that both tables
+cover every control and every phase; how many rungs the prominence ladder has is a design choice
+allowed to change. **A check that encodes today's design as a law fails the next time the design
+is right to change**, and it fails in the most expensive way, by looking like a regression.

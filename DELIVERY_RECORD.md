@@ -1,15 +1,29 @@
-# DELIVERY RECORD — Minimalist Stopwatch v4 — 27.8.2026
+# DELIVERY RECORD — Minimalist Stopwatch v5 — 27.8.2026
 
 The shape is fixed so that two releases can be compared. The **NOT TESTED** block is the most
 valuable part of this document.
 
 ---
 
-    ARTEFACT   4-stopwatch-v4.apk, built by GitHub Actions from the commit tagged v4
-    VERSION    new: 4   previous: 3, still downloadable at the releases page
+    ARTEFACT   5-stopwatch-v5.apk, built by GitHub Actions from the commit tagged v5
+    VERSION    new: 5   previous: 4, still downloadable at the releases page
     SIGNED BY  the permanent repository key, SHA-256 D9:3E:6B:00:...:D9:62
 
-## What changed since v3, and why
+## What changed since v4, and why
+
+Two instructions from Baba.
+
+    THE CORNER BUTTON NOW SETS THE ORIENTATION. One press portrait, the next landscape. There is
+      no sensor-following state left at all, so the app ignores the phone's own auto-rotate.
+      That capability is GONE, deliberately. SENSOR_PORTRAIT and SENSOR_LANDSCAPE rather than the
+      plain constants, so a phone laid on a table can still flip 180 degrees within the
+      orientation that was chosen
+
+    PLAY IS WHITE WHILE THE CLOCK IS IDLE. A fourth tone, PRIMARY, on exactly one cell of the
+      nine. This is a hole in the oldest rule in the brief and it is only defensible because it
+      closes the moment a measurement starts. Test 1 asserts the edges
+
+## What changed at v4, and why
 
 Two instructions from Baba, plus one change neither of us asked for that the first made necessary.
 
@@ -48,15 +62,16 @@ Two instructions from Baba, plus one change neither of us asked for that the fir
 
     G6  STRESS       NOT RUN, no device
 
-    G7  BUDGETS      v3 -> v4
+    G7  BUDGETS      v4 -> v5
                             APK 794,915 bytes -> measured on this build, see the CI log
                             dependencies resolved: 474 -> unchanged, no new libraries
                             redraws per second while running: 1, unchanged from v3
-                            DEAD CELLS IN THE BUTTON TABLE: 4 -> 2. Play is never inert now,
-                              and pause is inert only from zeros
+                            dead cells in the button table: 2, unchanged
+                            TONES ON THE PROMINENCE LADDER: 3 -> 4. Worth watching. If it
+                              reaches five, stop and redesign rather than add
                             cold start, frame time, memory, battery: not measured, no device
 
-    G8  UPGRADE      NOT RUN by hand. v3 and v4 share a signing key, so it is testable
+    G8  UPGRADE      NOT RUN by hand. v4 and v5 share a signing key, so it is testable
 
     G9  RECORD       this document
 
@@ -67,7 +82,16 @@ step better than v2 was written from, and is not the same as having been used.
 
     TEST 2, the real thing      never run. Nothing has pressed the buttons, nothing has opened
                                 the settings panel, and no swatch has ever been tapped
-    THE TOGGLE                  the new press table is exhaustively tested as a pure function
+    THE ORIENTATION BUTTON      never pressed. The specific risk: SENSOR_LANDSCAPE forces the
+                                app sideways whatever the phone's own rotation lock says, and
+                                nobody has checked how that feels when the handset is already
+                                held upright. Also unchecked: whether the glyph reads as "go
+                                here" rather than "you are here" to a hand rather than to me
+    THE WHITE PLAY GLYPH        never seen. It is the first thing on this screen other than the
+                                digits ever to be pure white, and whether it competes with a
+                                paused figure sitting above it is exactly the judgement a
+                                contrast argument cannot make
+    THE TOGGLE                  the press table is exhaustively tested as a pure function
                                 and no thumb has touched it. The specific thing to try: press
                                 PLAY while it is running and confirm it pauses rather than
                                 restarting, then press PAUSE and confirm it resumes at the

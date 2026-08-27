@@ -301,16 +301,16 @@ class StopwatchTest {
         assertEquals(Phase.PAUSED, paused.phase)
 
         //                        PLAY                PAUSE               STOP
-        // stopped:               start it            nothing to freeze   already zero
-        assertEquals(Tone.HIGHLIGHT, stopped.tone(Control.PLAY))
+        // stopped:               start it, WHITE     nothing to freeze   already zero
+        assertEquals(Tone.PRIMARY, stopped.tone(Control.PLAY))
         assertEquals(Tone.DEAD, stopped.tone(Control.PAUSE))
         assertEquals(Tone.DEAD, stopped.tone(Control.STOP))
         // running:               also pauses         freeze it           throw it away
         assertEquals(Tone.SECONDARY, running.tone(Control.PLAY))
         assertEquals(Tone.HIGHLIGHT, running.tone(Control.PAUSE))
         assertEquals(Tone.SECONDARY, running.tone(Control.STOP))
-        // paused:                resume              also resumes        throw it away
-        assertEquals(Tone.HIGHLIGHT, paused.tone(Control.PLAY))
+        // paused:                resume, WHITE       also resumes        throw it away
+        assertEquals(Tone.PRIMARY, paused.tone(Control.PLAY))
         assertEquals(Tone.SECONDARY, paused.tone(Control.PAUSE))
         assertEquals(Tone.SECONDARY, paused.tone(Control.STOP))
 
@@ -318,6 +318,31 @@ class StopwatchTest {
         // count fails before anybody notices the table is short.
         val cases = Phase.entries.size * Control.entries.size
         assertEquals(9, cases)
+    }
+
+    /**
+     * WHITE IS THE ONE HOLE IN THE ORIGINAL RULE, so its edges are asserted rather than assumed.
+     *
+     * The rule was that the digits are the only white thing on the screen. v5 makes play white
+     * while the clock is idle, and the defence is that an idle screen has no measurement to
+     * compete with. That defence only holds if the white DISAPPEARS the moment it runs, so:
+     * exactly one cell of the nine is PRIMARY at a time, it is always play, and it is never
+     * PRIMARY while running.
+     */
+    @Test
+    fun exactlyOneControlIsWhiteAndOnlyWhileTheClockIsIdle() {
+        val stopped = Stopwatch()
+        val running = stopped.play(0)
+        val paused = running.pause(1_000)
+
+        for (state in listOf(stopped, running, paused)) {
+            val white = Control.entries.filter { state.tone(it) == Tone.PRIMARY }
+            if (state.phase == Phase.RUNNING) {
+                assertEquals("nothing may be white while it runs", emptyList<Control>(), white)
+            } else {
+                assertEquals("only play is white, and only when idle", listOf(Control.PLAY), white)
+            }
+        }
     }
 
     /**

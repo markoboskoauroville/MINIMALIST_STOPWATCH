@@ -25,9 +25,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.ScreenLockRotation
-import androidx.compose.material.icons.filled.ScreenRotation
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.StayCurrentLandscape
+import androidx.compose.material.icons.filled.StayCurrentPortrait
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,10 +80,12 @@ import kotlinx.coroutines.isActive
 // inside it. What was removed is the drawing, not the hot zone.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
 
-// v4 needed a THIRD tone. Play is now dim while the clock runs AND pressing it still pauses,
-// so dim on its own would have meant two different things on the same screen: "not the obvious
-// next move" and "does nothing". Three tones, three meanings, and the mapping from phase to
-// tone lives in Stopwatch.kt where Test 1 walks all nine cases of it.
+// v4 needed a THIRD tone. Play is dim while the clock runs AND pressing it still pauses, so dim
+// on its own would have meant two different things on the same screen: "not the obvious next
+// move" and "does nothing". v5 added a FOURTH at the top, white, on the single cell where the
+// clock is idle and play is what you want. The mapping from phase to tone lives in Stopwatch.kt
+// where Test 1 walks all nine cases of it; nothing here decides which cell is which.
+private val GLYPH_PRIMARY = Color.White        // 100% PRIMARY: play, while the clock is idle
 private val GLYPH = Color(0xFF666666)          // 40%  HIGHLIGHT: what the next press would do
 private val GLYPH_SECOND = Color(0xFF3D3D3D)   // 24%  SECONDARY: live, but not the suggestion
 private val GLYPH_OFF = Color(0xFF1F1F1F)      // 12%  DEAD: pressing it does nothing
@@ -110,7 +112,7 @@ class MainActivity : ComponentActivity() {
 private fun Screen(store: Store, activity: ComponentActivity) {
 
     var state by remember { mutableStateOf(store.load()) }
-    var locked by remember { mutableStateOf(store.locked) }
+    var orientation by remember { mutableStateOf(store.orientation) }
     var colour by remember { mutableLongStateOf(store.colour) }
     var weight by remember { mutableStateOf(store.weight) }
     var settingsOpen by remember { mutableStateOf(false) }
@@ -154,10 +156,18 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         onDispose { w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    DisposableEffect(locked) {
-        activity.requestedOrientation =
-            if (locked) ActivityInfo.SCREEN_ORIENTATION_LOCKED
-            else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    // SENSOR_ rather than plain PORTRAIT and LANDSCAPE. The plain constants pin one specific
+    // way up, so a phone laid on a table and turned to face somebody across it stays upside
+    // down. The sensor variants hold the CLASS of orientation and still let it flip 180
+    // degrees within it, which is what somebody means when they say "landscape".
+    //
+    // Both are forced, so the app ignores the system auto-rotate setting entirely. That is the
+    // point: the button chooses, not the phone.
+    DisposableEffect(orientation) {
+        activity.requestedOrientation = when (orientation) {
+            Orientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            Orientation.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
         onDispose { }
     }
 
@@ -229,15 +239,20 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             modifier = Modifier.align(Alignment.TopStart).padding(EDGE),
         ) { settingsOpen = !settingsOpen }
 
+        // design-language.md 5: a control says what the next press DOES. In portrait it shows
+        // the landscape glyph, because pressing it gives you landscape. It is not a readout of
+        // where you are — you can see where you are by looking at the screen.
         Glyph(
-            icon = if (locked) Icons.Default.ScreenRotation else Icons.Default.ScreenLockRotation,
-            label = if (locked) "Follow the phone" else "Lock this orientation",
+            icon = if (orientation == Orientation.PORTRAIT) Icons.Default.StayCurrentLandscape
+                   else Icons.Default.StayCurrentPortrait,
+            label = if (orientation == Orientation.PORTRAIT) "Turn landscape" else "Turn portrait",
             tone = Tone.HIGHLIGHT,
             size = 40.dp,
             modifier = Modifier.align(Alignment.TopEnd).padding(EDGE),
         ) {
-            locked = !locked
-            store.locked = locked
+            orientation = if (orientation == Orientation.PORTRAIT) Orientation.LANDSCAPE
+                          else Orientation.PORTRAIT
+            store.orientation = orientation
         }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
@@ -315,7 +330,11 @@ private fun Glyph(
         enabled = tone != Tone.DEAD,
         modifier = modifier.size(size),
         colors = IconButtonDefaults.iconButtonColors(
-            contentColor = if (tone == Tone.HIGHLIGHT) GLYPH else GLYPH_SECOND,
+            contentColor = when (tone) {
+                Tone.PRIMARY -> GLYPH_PRIMARY
+                Tone.HIGHLIGHT -> GLYPH
+                else -> GLYPH_SECOND
+            },
             disabledContentColor = GLYPH_OFF,
         ),
     ) {

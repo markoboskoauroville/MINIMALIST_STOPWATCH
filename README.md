@@ -10,7 +10,12 @@ By **Mantra Productions**, Zagreb. Built for reading across a room.
     stop    back to zeros
 
 Play and pause are one toggle wearing two glyphs, so there is no wrong one to hit. The symbols
-never change; the highlight moves between them to say what the next press would do.
+never change; the highlight moves between them to say what the next press would do. While the
+clock is not running the play glyph is white, and it is the only thing on the screen besides the
+digits that ever is.
+
+The corner button sets which way up the app sits: one press portrait, the next landscape. It does
+not follow the phone.
 
 A button that cannot act is dimmed and inert. No button is ever hidden, because a control that
 disappears moves the layout, and a stopwatch whose buttons shuffle is worse than one with a dim
@@ -47,9 +52,9 @@ is worse than no answer.
 
 ## Checking it
 
-    python3 scripts/verify.py            15 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest   38 cases, plain JVM, no emulator
-    python3 scripts/sabotage.py          35 mutations, each rule broken on purpose
+    python3 scripts/verify.py            18 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest   39 cases, plain JVM, no emulator
+    python3 scripts/sabotage.py          39 mutations, each rule broken on purpose
 
 The last one is the important one. A test you have never seen fail is a rumour.
 

@@ -35,8 +35,23 @@ enum class Phase { STOPPED, RUNNING, PAUSED }
 /** The three transport controls, named so the button table can be walked case by case. */
 enum class Control { PLAY, PAUSE, STOP }
 
-/** How a control is drawn. See Stopwatch.tone for what each one means. */
-enum class Tone { HIGHLIGHT, SECONDARY, DEAD }
+/**
+ * How a control is drawn — a ladder of prominence, four rungs, each with exactly one meaning.
+ * See Stopwatch.tone for which cell gets which.
+ *
+ * PRIMARY is white, and it is the ONLY thing on this screen other than the digits that ever is.
+ * It appears on one cell of the nine: play, while the clock is not running. That is a screen
+ * with no measurement in progress and nothing to compete with, and the white says start here.
+ * THE MOMENT IT RUNS, THE WHITE IS GONE and the digits are alone again, which is the whole
+ * point of the original rule and the reason the exception stops where it does.
+ */
+enum class Tone { PRIMARY, HIGHLIGHT, SECONDARY, DEAD }
+
+/**
+ * Which way up the app sits. There is no "follow the phone" any more: from v5 the corner button
+ * SETS the orientation rather than locking whatever the phone happened to be doing.
+ */
+enum class Orientation { PORTRAIT, LANDSCAPE }
 
 data class Stopwatch(
     val phase: Phase = Phase.STOPPED,
@@ -114,18 +129,25 @@ data class Stopwatch(
     }
 
     /**
-     * How a control looks, which is now three states rather than two.
+     * How a control looks.
      *
+     *   PRIMARY     white, and only ever play while the clock is not running
      *   HIGHLIGHT   what the next press would produce, given where the clock is
      *   SECONDARY   live, pressable, but not the thing the state suggests
      *   DEAD        pressing it does nothing and it looks like nothing will
      *
-     * The third tone exists because v4 made dim ambiguous. Before, dim meant unavailable. Now
-     * play is dim while running and pressing it still pauses the clock, so dim on its own would
-     * have meant two different things on the same screen. Three tones, three meanings.
+     * HIGHLIGHT and SECONDARY exist because v4 made dim ambiguous: play is dim while running and
+     * pressing it still pauses the clock, so dim alone would have meant two different things on
+     * one screen. PRIMARY was added at v5. Four rungs is more than a screen like this wants, and
+     * the defence is that each one means exactly one thing and they only ever go one direction.
      */
     fun tone(control: Control): Tone = when (control) {
-        Control.PLAY -> if (phase == Phase.RUNNING) Tone.SECONDARY else Tone.HIGHLIGHT
+        // WHITE WHEN THE CLOCK IS NOT RUNNING, and only then. Baba asked for this after v4, and
+        // it is a deliberate hole in the rule that the digits are the only white thing: on an
+        // idle screen there is no measurement to compete with, and the one thing you almost
+        // certainly want is enormous and unmissable. While it runs, play drops to SECONDARY and
+        // the digits have the screen to themselves again.
+        Control.PLAY -> if (phase == Phase.RUNNING) Tone.SECONDARY else Tone.PRIMARY
         Control.PAUSE -> when (phase) {
             Phase.RUNNING -> Tone.HIGHLIGHT
             Phase.PAUSED -> Tone.SECONDARY
