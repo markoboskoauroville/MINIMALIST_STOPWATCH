@@ -28,18 +28,19 @@ class StopwatchTest {
 
     @Test
     fun formatsAtTheBoundaries() {
-        assertEquals("00:00.0", Face.format(0))
-        assertEquals("00:00.0", Face.format(99))          // not yet a tenth
-        assertEquals("00:00.1", Face.format(100))
-        assertEquals("00:09.9", Face.format(9_900))
-        assertEquals("00:10.0", Face.format(10_000))
-        assertEquals("00:59.9", Face.format(59_900))
-        assertEquals("01:00.0", Face.format(60_000))      // the minute
-        assertEquals("59:59.9", Face.format(3_599_900))
-        assertEquals("1:00:00.0", Face.format(3_600_000)) // the hour, where the field appears
-        assertEquals("1:00:00.1", Face.format(3_600_100))
-        assertEquals("1:59:59.9", Face.format(7_199_900))
-        assertEquals("2:00:00.0", Face.format(7_200_000))
+        assertEquals("00:00", Face.format(0))
+        assertEquals("00:00", Face.format(999))         // not yet a whole second
+        assertEquals("00:01", Face.format(1_000))
+        assertEquals("00:09", Face.format(9_900))
+        assertEquals("00:10", Face.format(10_000))
+        assertEquals("00:59", Face.format(59_999))
+        assertEquals("01:00", Face.format(60_000))      // the minute
+        assertEquals("59:59", Face.format(3_599_999))
+        assertEquals("1:00:00", Face.format(3_600_000)) // the hour, where the field appears
+        assertEquals("1:00:01", Face.format(3_601_000))
+        assertEquals("1:59:59", Face.format(7_199_999))
+        assertEquals("2:00:00", Face.format(7_200_000))
+        assertEquals("10:00:00", Face.format(36_000_000)) // the second step, documented not prevented
     }
 
     /**
@@ -48,9 +49,10 @@ class StopwatchTest {
      */
     @Test
     fun truncatesRatherThanRounds() {
-        assertEquals("00:09.9", Face.format(9_960))
-        assertEquals("00:00.0", Face.format(50))
-        assertEquals("00:59.9", Face.format(59_999))
+        assertEquals("00:09", Face.format(9_600))
+        assertEquals("00:00", Face.format(500))
+        assertEquals("00:59", Face.format(59_999))
+        assertEquals("00:00", Face.format(999))
     }
 
     /**
@@ -61,28 +63,95 @@ class StopwatchTest {
     @Test
     fun widthNeverChangesWithinAField() {
         val belowAnHour = (0 until 3_600_000 step 7_919).map { Face.format(it.toLong()).length }
-        assertEquals(setOf(7), belowAnHour.toSet())
+        assertEquals(setOf(5), belowAnHour.toSet())
 
         val aboveAnHour = (3_600_000 until 7_200_000 step 7_919).map { Face.format(it.toLong()).length }
-        assertEquals(setOf(9), aboveAnHour.toSet())
+        assertEquals(setOf(7), aboveAnHour.toSet())
     }
 
     @Test
     fun neverPrintsANegative() {
-        assertEquals("00:00.0", Face.format(-1))
-        assertEquals("00:00.0", Face.format(-100_000))
+        assertEquals("00:00", Face.format(-1))
+        assertEquals("00:00", Face.format(-100_000))
     }
 
     /** A repost delay of zero is an unbounded loop wearing a timer's clothes. */
     @Test
-    fun theRedrawDelayIsAlwaysBetweenOneAndAHundred() {
-        for (ms in 0L..1000L) {
-            val d = Face.untilNextTenth(ms)
-            assertTrue("delay $d out of range at $ms", d in 1L..100L)
+    fun theRedrawDelayIsAlwaysBetweenOneAndASecond() {
+        for (ms in 0L..10_000L) {
+            val d = Face.untilNextSecond(ms)
+            assertTrue("delay $d out of range at $ms", d in 1L..1000L)
         }
-        assertEquals(100L, Face.untilNextTenth(0))
-        assertEquals(1L, Face.untilNextTenth(99))
-        assertEquals(100L, Face.untilNextTenth(-5))
+        assertEquals(1000L, Face.untilNextSecond(0))
+        assertEquals(1L, Face.untilNextSecond(999))
+        assertEquals(1000L, Face.untilNextSecond(-5))
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // THE PALETTE. A swatch that cannot be read is a setting that turns the app off.
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * design-language.md 13: a control should not offer settings that defeat it. The thing this
+     * one could defeat is legibility, so every swatch has to clear a real contrast ratio against
+     * the only background this app has. 4.5 is the WCAG threshold for ordinary text and these
+     * digits are enormous, so it is a floor with room under it rather than a target.
+     */
+    @Test
+    fun everySwatchIsLegibleOnBlack() {
+        val worst = Palette.SWATCHES.minOf { Palette.contrastOnBlack(it) }
+        for (c in Palette.SWATCHES) {
+            val ratio = Palette.contrastOnBlack(c)
+            assertTrue("swatch %08X has contrast %.2f".format(c, ratio), ratio >= 4.5)
+        }
+        assertTrue("worst swatch is $worst", worst >= 4.5)
+    }
+
+    /** The grid has to fill its rows exactly, or the last row is ragged and reads as a mistake. */
+    @Test
+    fun theGridIsRectangular() {
+        assertEquals(24, Palette.SWATCHES.size)
+        assertEquals(0, Palette.SWATCHES.size % Palette.COLUMNS)
+        assertEquals(4, Palette.SWATCHES.size / Palette.COLUMNS)
+    }
+
+    /** Two identical swatches in a grid is a cell that does nothing and looks like it should. */
+    @Test
+    fun noSwatchAppearsTwice() {
+        assertEquals(Palette.SWATCHES.size, Palette.SWATCHES.toSet().size)
+    }
+
+    /** White is the default and it must be reachable, or there is no way back to the original. */
+    @Test
+    fun theDefaultIsInTheGrid() {
+        assertTrue(Palette.DEFAULT in Palette.SWATCHES)
+        assertEquals(0xFFFFFFFF, Palette.DEFAULT)
+    }
+
+    /**
+     * A stored value from a future version, a corrupted preference, or a colour removed from the
+     * grid by a later edit must all land on white rather than on something invisible.
+     */
+    @Test
+    fun aColourThatIsNotInTheGridFallsBackToWhite() {
+        assertEquals(Palette.DEFAULT, Palette.sanitise(0xFF000000))
+        assertEquals(Palette.DEFAULT, Palette.sanitise(0))
+        assertEquals(Palette.DEFAULT, Palette.sanitise(-1))
+        assertEquals(0xFFE8A64B, Palette.sanitise(0xFFE8A64B))
+    }
+
+    /** The tick on the chosen swatch has to be visible on the swatch it is sitting on. */
+    @Test
+    fun theMarkOnASwatchIsAlwaysVisibleAgainstIt() {
+        for (c in Palette.SWATCHES) {
+            val mark = Palette.markOn(c)
+            val lum = Palette.luminance(c)
+            val markLum = Palette.luminance(mark)
+            val lighter = maxOf(lum, markLum)
+            val darker = minOf(lum, markLum)
+            val ratio = (lighter + 0.05) / (darker + 0.05)
+            assertTrue("mark on %08X has contrast %.2f".format(c, ratio), ratio >= 3.0)
+        }
     }
 
     // -----------------------------------------------------------------------------------------
@@ -94,7 +163,7 @@ class StopwatchTest {
         val running = Stopwatch().play(10_000)
         assertEquals(0L, running.elapsed(9_999))   // one millisecond backwards
         assertEquals(0L, running.elapsed(0))
-        assertEquals("00:00.0", Face.format(running.elapsed(9_999)))
+        assertEquals("00:00", Face.format(running.elapsed(9_999)))
     }
 
     /** Ten minutes in the background is ten more minutes, not ten fewer. */
@@ -149,7 +218,7 @@ class StopwatchTest {
         s = s.play(100_000)
         assertEquals(6_000L, s.elapsed(100_000))
         assertEquals(10_000L, s.elapsed(104_000))   // +4s = 10s
-        assertEquals("00:10.0", Face.format(s.elapsed(104_000)))
+        assertEquals("00:10", Face.format(s.elapsed(104_000)))
     }
 
     @Test
@@ -188,7 +257,7 @@ class StopwatchTest {
         assertEquals(0L, s.accumulated)
         assertEquals(0L, s.startedAt)
         assertEquals(0L, s.elapsed(999_999))
-        assertEquals("00:00.0", Face.format(s.elapsed(999_999)))
+        assertEquals("00:00", Face.format(s.elapsed(999_999)))
     }
 
     @Test
@@ -345,7 +414,7 @@ class StopwatchTest {
         )
         assertEquals(Phase.PAUSED, back.phase)
         assertEquals(123_400L, back.elapsed(15_000))
-        assertEquals("02:03.4", Face.format(back.elapsed(15_000)))
+        assertEquals("02:03", Face.format(back.elapsed(15_000)))
     }
 
     /**
@@ -389,7 +458,7 @@ class StopwatchTest {
             assertEquals(t, s.elapsed(t))
             t += 100L
         }
-        assertEquals("1:00:00.0", Face.format(s.elapsed(3_600_000)))
+        assertEquals("1:00:00", Face.format(s.elapsed(3_600_000)))
     }
 
     @Test
@@ -403,6 +472,6 @@ class StopwatchTest {
             clock += 911L               // not measured
         }
         assertEquals(137_000L, s.elapsed(clock))
-        assertEquals("02:17.0", Face.format(s.elapsed(clock)))
+        assertEquals("02:17", Face.format(s.elapsed(clock)))
     }
 }

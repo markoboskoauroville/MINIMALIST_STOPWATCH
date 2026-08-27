@@ -219,3 +219,132 @@ invisible, and this one had a docstring claiming precisely the thing it was not 
   many `apply` calls exist elsewhere.
 
 All three would have read as passes.
+
+---
+
+# v3 — 27.8.2026, after v2 was on the phone
+
+Six instructions from Baba, all of them corrections to things that were decided on a build server
+and were wrong on glass. Every one is recorded here with what it cost.
+
+## The buttons go to the bottom in landscape, and the landscape branch goes with them
+
+**Reversal of a spec instruction, on Baba's word.** The addition spec was explicit: "LANDSCAPE:
+down the RIGHT-HAND SIDE, stacked vertically, vertically centred. Landscape is not portrait
+rotated." That was built as written. On the phone it was wrong — the screenshot shows the column
+sitting directly under the orientation lock and inside the gesture-nav strip, three controls and
+a system bar all crowded into the same right-hand edge.
+
+**Chosen: one strip along the bottom, both orientations.** There is now no landscape branch at
+all, only a strip whose height (72dp against 108dp) and button size (56dp against 72dp) differ.
+
+The real gain is not the position, it is the deletion. **Two layouts were two places for the same
+thing to be different**, and the v2 landscape column had its own collision arithmetic against the
+lock button that portrait did not need and nobody would have remembered to update. `verify.py`
+now counts each transport glyph and fails if any appears more than once, so a second layout
+cannot come back by accident.
+
+## The circles go, the hot zone stays
+
+The ring was an outline at 18% marking where to press. On glass it read as three more shapes on a
+screen whose whole design is what is absent, which is what Baba said.
+
+**What was removed is the drawing, not the target.** `IconButton` still occupies the full size
+and still takes a press anywhere inside it, so nothing about aim changed — which matters, because
+the argument for removing tap-anywhere at v1 rested on the targets being large. A mutation puts a
+border back and `verify.py` goes red.
+
+## The glyphs go darker: 55% to 40%
+
+v1 chose 55% by rendering the glyph beside the digits in a mock and looking at it. The mock was
+right about the band and wrong about the phone: on a real OLED panel at real brightness, 55% was
+still reading as a second bright thing beside the numbers.
+
+**Chosen: 40% enabled, 16% disabled.** Not lower, and this is the part worth arguing with later:
+with the circles gone the glyph is the only thing marking the control, so there is no ring to
+carry it if the glyph disappears. If 40% is still too bright, the next step down should be taken
+one notch at a time and looked at, not halved.
+
+## Whole seconds, and the tenth is gone
+
+**Chosen: `MM:SS` below an hour, `H:MM:SS` above it. Truncated.**
+
+v1 argued for tenths over hundredths on the grounds that tenths move at a speed the eye can
+follow. On the phone, Baba's judgement was that the last digit was still the only thing on the
+screen moving at a speed the eye cannot rest on, and that is the right call for a display whose
+whole purpose is to be readable across a room without effort.
+
+Two side effects, both good and neither the reason: the string drops from seven glyphs to five,
+so every digit is about **a third larger for free**, and the redraw goes from ten a second to one.
+
+**What it costs, written into Face.kt so nobody restores it by accident:** the app can no longer
+time anything where a fraction of a second matters. It is a clock for minutes, not a photo
+finish. If that is ever needed it is a new decision, not a bug report.
+
+## The gear, and where it went
+
+**Chosen: top-left, balancing the orientation lock top-right.** design-language.md 10: a row has
+two ends and a middle, and a screen is read as weight before it is read as anything else. Piling
+a second control beside the lock would have made the top-right corner a cluster and left the
+top-left empty.
+
+Both corner controls say what the next press does, per rule 5: the gear becomes a close when the
+panel is open; the lock glyph becomes a rotate glyph when the orientation is locked.
+
+## The swatch grid, and the two things it must not do
+
+**Chosen: six by four, twenty-four swatches, press one and it is applied. No wheel, no hex field,
+no sliders.** A wheel offers a million colours in order to find the six anybody wants.
+
+**Rejected: a full-screen settings page.** design-language.md 11 — a thing being adjusted while it
+runs must stay visible, because covering it means adjusting blind, and colour and weight are
+judged against the digits and nothing else. The panel sits over the black BELOW the digits, so
+opening it moves nothing and every press applies live. `verify.py` fails if the panel is ever
+aligned anywhere but the bottom.
+
+**Bounded at one end, deliberately.** design-language.md 13 says a control must not offer settings
+that defeat it, and the thing this could defeat is legibility. Every swatch clears a contrast
+ratio of 4.5 against black and **Test 1 asserts it** rather than trusting the eye that picked
+them. The grid is also asserted rectangular and free of duplicates, because a ragged last row
+reads as a mistake and a repeated swatch is a cell that does nothing while looking like it should.
+
+A stored colour that is not in the grid — written by a later version, or left by a swatch removed
+in a future edit — falls back to white rather than to something invisible.
+
+## Bold or normal, and nothing between
+
+**Rejected: a weight slider.** The question is only whether the strokes are heavy enough to read
+across a room, and the answer is one of two. A dial would be a control with no purpose.
+
+The two choices are shown as cells reading `88:88` in the weight they represent, rather than as
+the word "Bold" set in bold. You are choosing how the digits look, so the sample is the digits.
+
+**The weight is part of the size measurement, not applied afterwards.** Bold digits are wider,
+and sizing a normal face then drawing a bold one is how a layout ends up over the edge.
+
+---
+
+## What Test 1 caught in the new code
+
+**A luminance threshold I guessed.** The tick marking the chosen swatch has to be drawn in black
+or white depending on the swatch under it, and the first version used a threshold of 0.35 picked
+by eye. On the orange, white gives a contrast of 2.8 and black gives 7.5 — the guess was wrong
+and the test said so immediately. It now computes both contrasts and takes the better one. The
+real crossover is at a luminance of about 0.179, which is not a number anybody arrives at by
+looking at swatches.
+
+## What the mutation sweep caught in itself
+
+**An anchor that stopped being unique.** The `tap-anywhere comes back` mutation anchored on
+`.background(BACKGROUND)`, and the settings panel added a second one. The mutation began matching
+twice and reported SKIP, **which reads almost exactly like a caught mutation in a list of thirty**.
+It now anchors on the whole modifier chain. This is the second time a non-unique or
+version-dependent anchor has produced a silent SKIP in this repository.
+
+**Three interruptions, and a guard.** The sweep edits source in place and has now been killed
+mid-mutation three times — once by a session ending, twice by a time limit. The first two left a
+deliberately broken line in the working tree, and the second cost a confusing red baseline that
+looked like a real regression. It now stashes every file it can touch before starting and
+restores any stash left by a run that did not finish. **The guard fired on its first outing** and
+the recovery cost nothing. A tool that edits source in place has to assume it will be
+interrupted, because it will be.

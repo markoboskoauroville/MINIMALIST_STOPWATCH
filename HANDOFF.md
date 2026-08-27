@@ -1,7 +1,7 @@
 # HANDOFF — Minimalist Stopwatch
 
-**Current version: 1.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
-Latest artefact: `1-stopwatch-v1.apk`, tag `v1`.
+**Current version: 3.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
+Latest artefact: `3-stopwatch-v3.apk`, tag `v3`.
 
 This is the briefing. The reasoning behind each decision, including what was tried and rejected,
 is in [`NEXT_DEFAULTS.md`](NEXT_DEFAULTS.md). What was and was not proven about the shipped
@@ -18,17 +18,22 @@ Nothing else, ever.
     pause   freezes the digits and keeps the elapsed time
     stop    back to zeros
 
+**The three sit along the bottom in BOTH orientations.** There is no landscape branch. v2 put
+them down the right-hand edge because the spec said so, and on the phone that was wrong.
+
 A button that cannot act right now is dimmed and inert. **No button is ever hidden**, because a
 control that disappears moves the layout, and a stopwatch whose buttons shuffle is worse than one
 with a dim button.
 
-## The four files
+## The five files
 
     Stopwatch.kt     the whole timing model, and it imports nothing from android.*
                      That is enforced by verify.py, not merely intended
+    Palette.kt       the 24 swatches and the two weights. Also imports nothing, so the grid is
+                     attacked by Test 1 the same way the clock is
     Store.kt         one SharedPreferences file, written with commit rather than apply
-    MainActivity.kt  the screen, the tick, the layouts, the colours
-    StopwatchTest.kt 30 cases, on a plain JVM, no emulator
+    MainActivity.kt  the screen, the tick, the strip, the settings grid, the colours
+    StopwatchTest.kt 36 cases, on a plain JVM, no emulator
 
 ## The timing model, which is the whole app
 
@@ -77,9 +82,10 @@ Each of these is argued in NEXT_DEFAULTS.md. Read that before changing one.
 
     tap-anywhere is GONE          the buttons are the control. verify.py goes red if a
                                   clickable ever returns to the background
-    tenths, not hundredths        hundredths are a blur at speed and the last digit only
-                                  flickers
-    MM:SS.d, growing to H:MM:SS.d the size steps down once at one hour and never again
+    WHOLE SECONDS, no tenths      removed at v3. The last digit was the only thing on the
+                                  screen moving at a speed the eye cannot rest on. The cost:
+                                  this cannot time a photo finish any more
+    MM:SS, growing to H:MM:SS     the size steps down once at one hour and never again
       at one hour
     the system bars are LEFT ON   black background, so they sit on black. Hiding them is one
                                   line and was deliberately not taken
@@ -88,13 +94,28 @@ Each of these is argued in NEXT_DEFAULTS.md. Read that before changing one.
 
 ## The colours
 
-    digits           white, and the only white thing on the screen
-    glyph            55%  #8C8C8C   chosen by rendering it beside the digits at 40, 45, 50,
-                                    55, 60 and 70 and looking. Below 50 it sinks into the
-                                    black, above 60 it reads as a second white thing
-    glyph disabled   22%  #383838
-    ring             18%  #2E2E2E   an outline, not a fill
-    ring disabled    10%  #1A1A1A
+    digits           chosen from the grid, white by default, and the only bright thing on screen
+    glyph            40%  #666666   taken down from 55% at v3 after v2 was on the phone. Not
+                                    lower: with the circles gone the glyph carries the whole
+                                    control on its own
+    glyph disabled   16%  #292929
+
+**THE CIRCLES ARE GONE and the hot zone is not.** `IconButton` still occupies the full 72dp
+(56dp in landscape) and still takes a press anywhere inside it. Only the drawing went.
+`verify.py` fails if a `border` modifier ever returns to the screen.
+
+## The settings grid
+
+Gear top-left, balancing the orientation lock top-right. Six columns by four rows, twenty-four
+swatches, in the manner of an Adobe swatch grid: look, press, applied. No wheel, no hex field,
+no sliders. Below them, normal and bold shown as two cells reading `88:88` in the weight they
+represent.
+
+**Every swatch clears a contrast ratio of 4.5 against black, and Test 1 asserts it.** A swatch
+dark enough to vanish would be a setting that turns the app off.
+
+**The panel sits over the black BELOW the digits and never over them.** Colour and weight are
+judged against the digits, so the digits stay visible and every press applies live.
 
 The glyphs are plain filled Material icons, `Icons.Default.PlayArrow`, `Pause`, `Stop`,
 `ScreenLockRotation` and `ScreenRotation`, from the same `material-icons-extended` artefact TTT
@@ -103,9 +124,15 @@ use the icon.
 
 ## How to check it
 
-    python3 scripts/verify.py                       11 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest              Test 1, 30 cases
-    python3 scripts/sabotage.py                     25 mutations, each one broken on purpose
+    python3 scripts/verify.py                       14 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest              Test 1, 36 cases
+    python3 scripts/sabotage.py                     31 mutations, each one broken on purpose
+
+The sweep edits source in place, so it stashes every file it can touch before it starts and
+restores any stash left by a run that did not finish. It has been killed mid-mutation three
+times. Run it in slices if whatever is running it has a time limit:
+
+    SABOTAGE_SLICE=0:11 python3 scripts/sabotage.py
 
 The sabotage sweep is the important one and it is slow through Gradle. With a local kotlinc
 harness it is minutes rather than an hour:

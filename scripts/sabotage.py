@@ -31,7 +31,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 LOGIC = ROOT / "app/src/main/java/com/mantra/stopwatch/Stopwatch.kt"
 UI = ROOT / "app/src/main/java/com/mantra/stopwatch/MainActivity.kt"
 STORE = ROOT / "app/src/main/java/com/mantra/stopwatch/Store.kt"
+PALETTE = ROOT / "app/src/main/java/com/mantra/stopwatch/Palette.kt"
 PROPS = ROOT / "gradle.properties"
+MUTABLE = [LOGIC, UI, STORE, PALETTE, PROPS]
 
 TEST_CMD = os.environ.get("SABOTAGE_RUN", "./gradlew :app:testReleaseUnitTest -q --no-daemon")
 CHECK_CMD = "python3 scripts/verify.py"
@@ -55,9 +57,6 @@ LOGIC_MUTATIONS = [
     (LOGIC, "a paused clock keeps counting",
      "            Phase.PAUSED -> accumulated\n",
      "            Phase.PAUSED -> accumulated + (now - startedAt)\n"),
-    (LOGIC, "the face rounds instead of truncating",
-     "        val tenths = t / 100L",
-     "        val tenths = (t + 50L) / 100L"),
     (LOGIC, "the hour field is shown from zero (the width changes below an hour)",
      "        return if (h > 0L) {",
      "        return if (h >= 0L) {"),
@@ -89,8 +88,23 @@ LOGIC_MUTATIONS = [
      "    fun canPause(): Boolean = phase == Phase.RUNNING",
      "    fun canPause(): Boolean = phase != Phase.PAUSED"),
     (LOGIC, "the redraw delay can reach zero (an unbounded loop wearing a timer's clothes)",
-     "        return if (r <= 0L) 100L else r",
+     "        return if (r <= 0L) 1000L else r",
      "        return r - 1L"),
+    (LOGIC, "the face rounds the seconds instead of truncating",
+     "        val seconds = t / 1000L",
+     "        val seconds = (t + 500L) / 1000L"),
+    (PALETTE, "a swatch dark enough to vanish on black is offered",
+     "        0xFFFFFFFF, 0xFFCBD5E1,",
+     "        0xFF101010, 0xFFCBD5E1,"),
+    (PALETTE, "the same swatch appears twice, so one cell does nothing",
+     "        0xFFA3E635, 0xFF4ADE80,",
+     "        0xFFEF4444, 0xFF4ADE80,"),
+    (PALETTE, "a stored colour outside the grid is trusted rather than sanitised",
+     "    fun sanitise(stored: Long): Long = if (stored in SWATCHES) stored else DEFAULT",
+     "    fun sanitise(stored: Long): Long = stored"),
+    (PALETTE, "the tick on a swatch is chosen by a guessed threshold again",
+     "        return if (onBlack >= onWhite) 0xFF000000 else 0xFFFFFFFF",
+     "        return if (l > 0.35) 0xFF000000 else 0xFFFFFFFF"),
 ]
 
 _APP_VERSION_LINE = next(
@@ -98,12 +112,22 @@ _APP_VERSION_LINE = next(
 )
 
 SHAPE_MUTATIONS = [
+    # The anchor is the whole BoxWithConstraints modifier chain, not just the background call.
+    # The settings panel added a second .background(BACKGROUND) and this mutation started
+    # matching twice and reporting SKIP, which reads almost like a caught mutation in a long
+    # list. An anchor has to be unique to the thing it means.
     (UI, "tap-anywhere comes back on the background",
-     "            .background(BACKGROUND)",
-     "            .background(BACKGROUND)\n            .clickable { }"),
+     "            .fillMaxSize()\n            .background(BACKGROUND)\n            .safeDrawingPadding()",
+     "            .fillMaxSize()\n            .background(BACKGROUND)\n            .clickable { }\n            .safeDrawingPadding()"),
     (UI, "a button is hidden rather than dimmed when it cannot act",
-     '    Circle(Icons.Default.Pause, "Pause", state.canPause(), size, true) {',
-     '    if (state.canPause()) Circle(Icons.Default.Pause, "Pause", state.canPause(), size, true) {'),
+     '                Glyph(Icons.Default.Pause, "Pause", state.canPause(), button) {',
+     '                if (state.canPause()) Glyph(Icons.Default.Pause, "Pause", state.canPause(), button) {'),
+    (UI, "the circles come back around the transport glyphs",
+     "        modifier = modifier.size(size),",
+     "        modifier = modifier.size(size).border(1.5.dp, GLYPH, CircleShape),"),
+    (UI, "the settings panel is moved over the digits, so colour is judged blind",
+     "                    .align(Alignment.BottomCenter)",
+     "                    .align(Alignment.Center)"),
     (UI, "the disabled tint is removed, so a dead button looks live",
      "            disabledContentColor = GLYPH_OFF,",
      "            disabledContentColour = GLYPH_OFF,"),
@@ -123,6 +147,46 @@ SHAPE_MUTATIONS = [
      _APP_VERSION_LINE,
      _APP_VERSION_LINE.rstrip("\n") + ".0\n"),
 ]
+
+
+# ── THE SCAR TISSUE ──────────────────────────────────────────────────────────────────────────
+# This script has now been killed mid-mutation twice — once by a session ending and once by a
+# tool timeout — and both times it left a deliberately broken line in the working tree. The
+# second time cost a confusing red baseline that looked like a real regression.
+#
+# So before touching anything, every file it can mutate is copied to a stash, and the first act
+# of every run is to restore any stash left behind by a run that did not finish. A tool that
+# edits source in place has to assume it will be interrupted, because it will be.
+STASH = ROOT / ".sabotage-stash"
+
+
+def restore_any_stash():
+    if not STASH.exists():
+        return
+    restored = []
+    for f in STASH.iterdir():
+        target = next((t for t in MUTABLE if t.name == f.name), None)
+        if target and target.read_text() != f.read_text():
+            target.write_text(f.read_text())
+            restored.append(f.name)
+    if restored:
+        print(f"restored from an interrupted run: {', '.join(restored)}")
+    for f in STASH.iterdir():
+        f.unlink()
+    STASH.rmdir()
+
+
+def take_stash():
+    STASH.mkdir(exist_ok=True)
+    for f in MUTABLE:
+        (STASH / f.name).write_text(f.read_text())
+
+
+def drop_stash():
+    if STASH.exists():
+        for f in STASH.iterdir():
+            f.unlink()
+        STASH.rmdir()
 
 
 def run(cmd):
@@ -159,10 +223,31 @@ def sweep(title, mutations, cmd):
     return bad
 
 
-bad = 0
-bad += sweep(f"LOGIC, {len(LOGIC_MUTATIONS)} mutations", LOGIC_MUTATIONS, TEST_CMD)
-bad += sweep(f"SHAPE, {len(SHAPE_MUTATIONS)} mutations", SHAPE_MUTATIONS, CHECK_CMD)
+restore_any_stash()
+take_stash()
 
-total = len(LOGIC_MUTATIONS) + len(SHAPE_MUTATIONS)
+# A slice, so a long sweep can be run in pieces that each fit inside whatever is running it.
+# SABOTAGE_SLICE="0:10" does the first ten logic mutations and nothing else. Without it the
+# whole thing runs, which is what a release should do.
+slice_spec = os.environ.get("SABOTAGE_SLICE")
+logic = LOGIC_MUTATIONS
+shape = SHAPE_MUTATIONS
+if slice_spec:
+    a, b = (int(x) for x in slice_spec.split(":"))
+    everything = [("logic", m) for m in LOGIC_MUTATIONS] + [("shape", m) for m in SHAPE_MUTATIONS]
+    chosen = everything[a:b]
+    logic = [m for kind, m in chosen if kind == "logic"]
+    shape = [m for kind, m in chosen if kind == "shape"]
+    print(f"slice {a}:{b} of {len(everything)}")
+
+bad = 0
+if logic:
+    bad += sweep(f"LOGIC, {len(logic)} mutations", logic, TEST_CMD)
+if shape:
+    bad += sweep(f"SHAPE, {len(shape)} mutations", shape, CHECK_CMD)
+
+drop_stash()
+
+total = len(logic) + len(shape)
 print(f"\n{total} mutations, {total - bad} caught, {bad} survived or skipped")
 sys.exit(1 if bad else 0)

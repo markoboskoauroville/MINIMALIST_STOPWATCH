@@ -150,51 +150,56 @@ data class Stopwatch(
 /**
  * THE FACE.
  *
- * MM:SS.d below an hour, H:MM:SS.d at and above it. Tenths, not hundredths: hundredths are a
- * blur while running and the last two digits do nothing but flicker. Tenths move at a speed the
- * eye can follow, which is the whole point of a number you read across a room.
+ * MM:SS below an hour, H:MM:SS at and above it. WHOLE SECONDS, no tenths.
  *
- * TRUNCATED, NOT ROUNDED. A stopwatch reports completed time. Rounding would show 10.0 while
- * 9.96 seconds had actually passed, and the first frame after start would read 00:00.0 for 50ms
- * and then jump — the display would be ahead of the measurement, which is the wrong direction
- * for a thing whose only job is to be trusted.
+ * The tenth was removed on Baba's instruction on 27.8.2026 after v2 was on the phone. It is the
+ * right call and the reason is not only taste: the last digit was the only part of the display
+ * that changed at a speed the eye cannot rest on, and everything else on this screen exists to
+ * be readable across a room. Dropping it also takes the string from seven glyphs to five, which
+ * makes every remaining digit substantially larger for free, and takes the redraw from ten a
+ * second to one.
  *
- * THE WIDTH NEVER CHANGES WHILE COUNTING. Minutes, seconds and the tenth are zero-padded to a
- * fixed number of glyphs and the typeface is monospaced, so 11 occupies exactly what 00 does and
- * nothing shuffles sideways.
+ * WHAT THE TENTH COST US, said plainly so nobody restores it by accident: the app can no longer
+ * be used to time anything where a fraction of a second matters. It is a clock for minutes, not
+ * a photo finish.
  *
- * WHAT HAPPENS AT THE HOUR, DECIDED IN ADVANCE. The string grows from 7 glyphs to 9 and the
- * autosizing digits shrink once, at 1:00:00.0, and do not change again. The alternative was to
- * show H:MM:SS.d from zero so nothing ever resizes — rejected, because it makes the digits
- * permanently smaller on every ordinary use to defend against an hour that almost never arrives.
- * One discrete step, an hour into a measurement nobody is staring at, is the cheaper trade.
- * Past ten hours the hour field takes a second glyph and it steps once more. Documented rather
- * than prevented; a stopwatch running for ten hours has other problems.
+ * TRUNCATED, NOT ROUNDED. A stopwatch reports completed time. Rounding would show 10 while 9.6
+ * seconds had passed, putting the display ahead of the measurement, which is the wrong direction
+ * for a thing whose only job is to be trusted. It also means the first second after start reads
+ * 00:00, which is correct: no whole second has elapsed.
+ *
+ * THE WIDTH NEVER CHANGES WHILE COUNTING. Every field is zero-padded to a fixed number of glyphs
+ * and the typeface is monospaced, so 11 occupies exactly what 00 does and nothing shuffles.
+ *
+ * WHAT HAPPENS AT THE HOUR, DECIDED IN ADVANCE. The string grows from 5 glyphs to 7 and the
+ * autosizing digits shrink once, at 1:00:00, and do not change again. The alternative was to show
+ * H:MM:SS from zero so nothing ever resizes — rejected, because it makes the digits permanently
+ * smaller on every ordinary use to defend against an hour that almost never arrives. Past ten
+ * hours the hour field takes a second glyph and it steps once more. Documented rather than
+ * prevented; a stopwatch running for ten hours has other problems.
  */
 object Face {
     fun format(ms: Long): String {
         val t = if (ms < 0L) 0L else ms
-        val tenths = t / 100L
-        val d = tenths % 10L
-        val seconds = tenths / 10L
+        val seconds = t / 1000L
         val s = seconds % 60L
         val minutes = seconds / 60L
         val m = minutes % 60L
         val h = minutes / 60L
         return if (h > 0L) {
-            "%d:%02d:%02d.%d".format(h, m, s, d)
+            "%d:%02d:%02d".format(h, m, s)
         } else {
-            "%02d:%02d.%d".format(m, s, d)
+            "%02d:%02d".format(m, s)
         }
     }
 
     /**
-     * Milliseconds until the next tenth turns over, so the redraw happens when the digits
-     * actually change instead of sixty times a second on a display that changes ten. Never
+     * Milliseconds until the next whole second turns over, so the redraw happens when the digits
+     * actually change instead of sixty times a second on a display that changes once. Never
      * returns 0 — a zero-delay repost is an unbounded loop wearing a timer's clothes.
      */
-    fun untilNextTenth(elapsedMs: Long): Long {
-        val r = 100L - (if (elapsedMs < 0L) 0L else elapsedMs) % 100L
-        return if (r <= 0L) 100L else r
+    fun untilNextSecond(elapsedMs: Long): Long {
+        val r = 1000L - (if (elapsedMs < 0L) 0L else elapsedMs) % 1000L
+        return if (r <= 0L) 1000L else r
     }
 }

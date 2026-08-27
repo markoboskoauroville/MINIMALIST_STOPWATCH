@@ -22,9 +22,11 @@ UI = MAIN / "MainActivity.kt"
 STORE = MAIN / "Store.kt"
 
 failures = []
+checks_run = []
 
 
 def check(name, ok, detail):
+    checks_run.append(name)
     print(f"{'pass' if ok else 'FAIL'}  {name}: {detail}")
     if not ok:
         failures.append(name)
@@ -92,8 +94,8 @@ check("every loop has a bound a reader can see",
 # The redraw delay can never be zero. A zero-delay repost is an unbounded loop wearing a timer's
 # clothes, and it presents as a hot phone rather than as an error.
 check("the redraw delay can never be zero",
-      "if (r <= 0L) 100L else r" in src,
-      "untilNextTenth floors at 1ms and is capped at 100ms by construction")
+      "if (r <= 0L) 1000L else r" in src and "untilNextSecond" in src,
+      "untilNextSecond floors at 1ms and is capped at 1000ms by construction")
 
 # ── 7 ────────────────────────────────────────────────────────────────────────────────────────
 # Tap-anywhere is gone and its absence is a decision. If a clickable ever reappears on the
@@ -108,10 +110,35 @@ check("nothing on the background is tappable",
 # ── 8 ────────────────────────────────────────────────────────────────────────────────────────
 # Never hide a control that is temporarily unavailable. A disabled button is dimmed; a button
 # removed from the tree moves everything beside it.
-hidden = re.search(r"if\s*\([^)]*can(Play|Pause|Stop)\(\)\s*\)\s*\{?\s*Circle", ui)
+hidden = re.search(r"if\s*\([^)]*can(Play|Pause|Stop)\(\)\s*\)\s*\{?\s*Glyph", ui)
 check("no button is hidden when it cannot act",
       hidden is None and "disabledContentColor" in ui,
       "availability reaches the button as enabled=, and a disabled tint exists")
+
+# ── 8b ───────────────────────────────────────────────────────────────────────────────────────
+# The circles were removed on 27.8.2026 because on glass they read as three more shapes on a
+# screen whose whole design is what is absent. The HOT ZONE stayed. If a border ever returns to
+# the transport, this goes red.
+borders = re.findall(r"\.border\(", ui)
+check("nothing is drawn around the transport glyphs",
+      not borders,
+      f"{len(borders)} border modifiers in the screen, and the touch target is IconButton's own size")
+
+# ── 8c ───────────────────────────────────────────────────────────────────────────────────────
+# One transport row, not one per orientation. v2 had a landscape branch putting the buttons down
+# the right edge and a portrait branch putting them at the bottom, which was two places for the
+# same thing to be different. Each glyph is now written exactly once.
+counts = {g: len(re.findall(rf"Icons\.Default\.{g}\b", ui)) for g in ("PlayArrow", "Pause", "Stop")}
+check("the transport is written once, not once per orientation",
+      set(counts.values()) == {1},
+      f"play x{counts['PlayArrow']}, pause x{counts['Pause']}, stop x{counts['Stop']}, all at the bottom")
+
+# ── 8d ───────────────────────────────────────────────────────────────────────────────────────
+# The colour and the weight are judged against the digits, so the panel may never be drawn over
+# them. It is aligned to the bottom of the screen, over the black below the numbers.
+check("the settings panel sits at the bottom and not over the digits",
+      "Alignment.BottomCenter" in ui and "SettingsGrid" in ui,
+      "the grid is aligned BottomCenter, and every press applies live")
 
 # ── 9 ────────────────────────────────────────────────────────────────────────────────────────
 # Both timing fields have to be written, or the one that is not is the one that comes back wrong.
@@ -141,7 +168,7 @@ check("the version is one whole number in one place",
       f"appVersion={m.group(1) if m else 'MISSING'}, versionCode and versionName both derived")
 
 print()
-print(f"{11 - len(failures)} of 11 checks passed")
+print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
 if failures:
     print("failed: " + ", ".join(failures))
 sys.exit(1 if failures else 0)

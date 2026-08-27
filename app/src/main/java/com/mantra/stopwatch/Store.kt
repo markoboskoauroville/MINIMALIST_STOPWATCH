@@ -42,6 +42,19 @@ class Store(context: Context) {
         set(v) = p.edit().putBoolean(K_LOCKED, v).apply()
 
     /**
+     * The digit colour, always run through Palette.sanitise on the way out. A value that is no
+     * longer in the grid — written by a later version, or left behind by a swatch that was
+     * removed — comes back as white rather than as something invisible on black.
+     */
+    var colour: Long
+        get() = Palette.sanitise(p.getLong(K_COLOUR, Palette.DEFAULT))
+        set(v) = p.edit().putLong(K_COLOUR, v).apply()
+
+    var weight: Weight
+        get() = if (p.getBoolean(K_BOLD, false)) Weight.BOLD else Weight.NORMAL
+        set(v) = p.edit().putBoolean(K_BOLD, v == Weight.BOLD).apply()
+
+    /**
      * commit() rather than apply() is deliberate and it is the whole point of this class.
      * apply() writes on a background thread, and the moment this is called from onStop the
      * process may be killed before that thread runs. A stopwatch that comes back at the wrong
@@ -89,5 +102,7 @@ class Store(context: Context) {
         const val K_LAST_SEEN = "lastSeen"
         const val K_BOOT_MARKER = "bootMarker"
         const val K_LOCKED = "locked"
+        const val K_COLOUR = "colour"
+        const val K_BOLD = "bold"
     }
 }

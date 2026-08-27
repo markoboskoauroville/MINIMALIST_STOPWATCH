@@ -1,7 +1,7 @@
 # Minimalist Stopwatch
 
-A stopwatch. Black screen, white digits, three transport buttons and an orientation lock.
-Nothing else, ever.
+A stopwatch. Black screen, enormous digits, three transport buttons, an orientation lock and a
+gear. Nothing else, ever.
 
 By **Mantra Productions**, Zagreb. Built for reading across a room.
 
@@ -13,9 +13,16 @@ A button that cannot act is dimmed and inert. No button is ever hidden, because 
 disappears moves the layout, and a stopwatch whose buttons shuffle is worse than one with a dim
 button.
 
-**Portrait:** the buttons run along the bottom, evenly spaced, well clear of the digits.
-**Landscape:** they stack down the right-hand edge, and the digits take the width they have.
-Landscape is not portrait rotated.
+The three sit along the bottom in **both** orientations, evenly spaced, well clear of the digits.
+There is no ring drawn around them, and the touch target is the full circle's worth of space all
+the same.
+
+Hours, minutes and seconds. Nothing finer: the last digit of a tenths display is the only thing
+on the screen moving at a speed the eye cannot rest on.
+
+The gear opens a six by four swatch grid for the digit colour, and a choice of normal or bold.
+Every press applies live, over the black below the digits, so you are looking at the thing you
+are choosing.
 
 ## Install
 
@@ -36,9 +43,9 @@ is worse than no answer.
 
 ## Checking it
 
-    python3 scripts/verify.py            11 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest   30 cases, plain JVM, no emulator
-    python3 scripts/sabotage.py          25 mutations, each rule broken on purpose
+    python3 scripts/verify.py            14 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest   36 cases, plain JVM, no emulator
+    python3 scripts/sabotage.py          31 mutations, each rule broken on purpose
 
 The last one is the important one. A test you have never seen fail is a rumour.
 

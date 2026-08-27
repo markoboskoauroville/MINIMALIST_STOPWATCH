@@ -21,7 +21,8 @@ release tag are all derived from it. To release: bump that number, push, done.
 
 ## Icons come from the set, never from a hand
 
-`Icons.Default.PlayArrow`, `Pause`, `Stop`, `ScreenLockRotation`, `ScreenRotation`, all from
+`Icons.Default.PlayArrow`, `Pause`, `Stop`, `ScreenLockRotation`, `ScreenRotation`, `Settings`,
+`Close` and `Check`, all from
 `androidx.compose.material:material-icons-extended`, the same artefact TTT mini uses. R8 strips
 the rest; the release APK is 795 KB with the whole library on the classpath.
 
@@ -32,7 +33,15 @@ does. The whole timing model is testable on a plain JVM in eleven seconds, which
 the 25-mutation sweep affordable.
 
 **Nothing on the background is tappable, and that is enforced.** Tap-anywhere was removed
-deliberately on 27.8.2026 and `verify.py` check 7 goes red if a `clickable` returns to it.
+deliberately on 27.8.2026 and `verify.py` goes red if a `clickable` returns to it.
+
+**There is no landscape layout.** One strip along the bottom in both orientations, with two sets
+of sizes. v2 had a right-edge column and it was wrong on the phone. `verify.py` counts each
+transport glyph and fails if one appears twice, which is how a second layout would announce
+itself.
+
+**The circles around the glyphs were removed and the touch targets were not.** If a `border`
+modifier appears anywhere in the screen, `verify.py` goes red.
 
 ## The local test harness
 
@@ -42,4 +51,17 @@ four minutes:
 
     SABOTAGE_RUN=/path/to/runtest.sh python3 scripts/sabotage.py
 
-Worth rebuilding that harness at the start of any session that touches the timing model.
+Worth rebuilding that harness at the start of any session that touches the timing model. The
+compile takes `Stopwatch.kt`, `Palette.kt` and the test file, in that order.
+
+**The sweep edits source in place and it will be interrupted.** It has been killed mid-mutation
+three times. It stashes to `.sabotage-stash` before it starts and restores on the next run. If a
+baseline ever comes up red for no reason, look for that directory first. Use `SABOTAGE_SLICE`
+to run it in pieces when the thing running it has a time limit.
+
+## Two anchors have gone stale and reported SKIP
+
+Both times the SKIP read almost exactly like a caught mutation in a list of thirty. Once because
+the anchor contained the version number and the version was bumped; once because the settings
+panel added a second `.background(BACKGROUND)` and the anchor stopped being unique. **When
+reading a sweep result, count the SKIPs before believing the caught total.**

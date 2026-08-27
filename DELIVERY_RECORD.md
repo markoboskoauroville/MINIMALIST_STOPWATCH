@@ -1,110 +1,111 @@
-# DELIVERY RECORD — Minimalist Stopwatch v2 — 27.8.2026
+# DELIVERY RECORD — Minimalist Stopwatch v3 — 27.8.2026
 
 The shape is fixed so that two releases can be compared. The **NOT TESTED** block is the most
-valuable part of this document and it is long, because this app has never been on a phone.
+valuable part of this document.
 
 ---
 
-    ARTEFACT   2-stopwatch-v2.apk, built by GitHub Actions from the commit tagged v2
-    VERSION    new: 2   previous: 1, still downloadable at the releases page
+    ARTEFACT   3-stopwatch-v3.apk, built by GitHub Actions from the commit tagged v3
+    VERSION    new: 3   previous: 2, still downloadable at the releases page
     SIGNED BY  the permanent repository key, SHA-256 D9:3E:6B:00:...:D9:62
+
+## What changed since v2, and why
+
+All six changes came from Baba after v2 was on the phone. Every one was a correction to something
+decided on a build server. The reasoning is in NEXT_DEFAULTS.md; the short list:
+
+    the transport moved to the bottom in BOTH orientations, and the landscape branch was deleted
+    the circles around the glyphs were removed; the touch targets were not
+    the glyphs went from 55% to 40%, disabled from 22% to 16%
+    the tenth was dropped: MM:SS, growing to H:MM:SS at the hour
+    a gear top-left opens a 6x4 swatch grid that sets the digit colour, live
+    normal or bold, chosen in the same panel
 
 ## The gates
 
-    G1  PROVENANCE   pass   clean tree (0 uncommitted, 0 untracked), built on the runner and
-                            not on a desk, every action pinned by commit SHA, Gradle
-                            distribution pinned by sha256. The three numbers agree:
-                            gradle.properties, versionCode, versionName and the tag are all 2
+    G1  PROVENANCE   pass   clean tree, built on the runner, every action pinned by commit SHA,
+                            Gradle distribution pinned by sha256. The three numbers agree
 
-    G2  SECRETS      pass   history scanned, commits examined, 0 key-shaped strings
-                            artefact scanned as a binary, 0 key-shaped strings
-                            staged diff scanned before every push, 0
+    G2  SECRETS      pass   history scanned, 0 key shapes; artefact scanned as a binary, 0;
+                            staged diff scanned before the push, 0
 
-    G3  ANALYSIS     pass   verify.py: 11 of 11 structural checks, each printing what it
-                            examined. Android Lint fatal on release, warningsAsErrors on,
-                            Kotlin allWarningsAsErrors on: 0 errors, 0 warnings.
-                            Test 1: 30 cases, 0 failures, 0 errors
-                            Mutation sweep: 25 mutations, 25 caught, 0 survived
+    G3  ANALYSIS     pass   verify.py: 14 of 14, each printing what it examined
+                            Lint fatal on release, warningsAsErrors, allWarningsAsErrors: 0
+                            Test 1: 36 cases, 0 failures
+                            Mutation sweep: 31 mutations, 31 caught, 0 survived
 
-    G4  DEAD CODE    pass   4 source files, 474 dependencies resolved. No -keep rules at all,
-                            which is the interesting half of R8's report: nothing is being
-                            held alive by a note from us saying spare this. The UNWIRED sweep
-                            is check 4 of verify.py: 3 availability rules across 3 phases,
-                            all 9 cases reachable from the screen
+    G4  DEAD CODE    pass   5 source files. Still no -keep rules at all, which is the
+                            interesting half of R8's report: nothing is held alive by a note
+                            saying spare this. The UNWIRED sweep is check 4 of verify.py:
+                            3 availability rules across 3 phases, all 9 cases reachable
 
-    G5  DEAD LOOPS   pass   3 loops examined, 0 written as while(true), 1 wait examined.
-                            The only wait is the tick, bounded to 1..100ms by
-                            Face.untilNextTenth, which Test 1 asserts and the sweep breaks.
-                            There is no network, no file wait and no IPC in this app
+    G5  DEAD LOOPS   pass   loops counted and printed, 0 written as while(true). The only wait
+                            is the tick, now bounded to 1..1000ms by Face.untilNextSecond,
+                            which Test 1 asserts across ten thousand values and the sweep breaks
 
-    G6  STRESS       NOT RUN, see below
+    G6  STRESS       NOT RUN, no device
 
-    G7  BUDGETS      baseline set, nothing to compare against yet
-                            APK 794,915 bytes at v1
-                            dependencies resolved: 474
+    G7  BUDGETS      v2 -> v3
+                            APK 794,911 bytes -> measured on this build, see the CI log
+                            dependencies resolved: 474 -> unchanged, no new libraries
+                            REDRAWS PER SECOND WHILE RUNNING: 10 -> 1, a tenfold reduction in
+                              wakeups on the one screen that is meant to stay lit
                             cold start, frame time, memory, battery: not measured, no device
 
-    G8  UPGRADE      NOT RUN, see below. v1 and v2 are both downloadable and are signed with
-                            the same key, so the upgrade is testable by hand for the first
-                            time with this release
+    G8  UPGRADE      NOT RUN by hand. v1, v2 and v3 share a signing key, so it is testable
 
     G9  RECORD       this document
 
 ## NOT TESTED
 
-**Everything requiring a phone.** This is the honest headline: the app has been compiled,
-statically checked and had its timing model attacked from every angle a JVM can reach, and it
-has never been looked at.
+**Everything requiring a phone**, still. v3 was written in response to screenshots, which is one
+step better than v2 was written from, and is not the same as having been used.
 
-    TEST 2, the real thing      never run. Nothing has pressed the buttons. The wiring from
-                                the three circles to the three model transitions is proven only
-                                by reading, and Test 1 cannot see it
-    TEST 4 and G8, the upgrade  never run. v1 installed, used, left running, then v2 over the
-                                top: not done. Both artefacts exist and share a signing key,
-                                so this is the first release where it CAN be done
-    G6, stress                  no soak, no monkey, no sabotage list. An hour of running with
-                                the heap watched has not happened, and neither has
-                                adb shell monkey
-    THE APPEARANCE              the 55% grey was chosen from a rendered mock, not from a
-                                screen. So were both layouts. The claim that the digits fill
-                                the width, that the transport column clears the lock button in
-                                landscape, and that 55% reads as a control rather than as a
-                                second white thing are all UNVERIFIED ON GLASS
-    THE MONOSPACE FACE          FontFamily.Monospace resolves to whatever the device ships. The
-                                claim that a 1 cannot be read as a 7 has not been checked on a
-                                real device, and it is the one typographic requirement in the
-                                brief
-    REBOOT                      the reboot logic is exhaustively tested as a pure function with
-                                hand-made inputs. It has never met an actual reboot
-    PROCESS DEATH               same. commit() rather than apply() is the right mechanism and
-                                the reasoning is sound; adb shell am kill has not been run
-    ROTATION                    the activity declares configChanges and does not recreate. Not
-                                observed
-    FONT SCALE                  the digits are measured in sp, so a system font scale multiplies
-                                them and the binary search accounts for it. Never tested at a
-                                large accessibility font scale
-    TABLETS, FOLDABLES          not considered, not tested
+    TEST 2, the real thing      never run. Nothing has pressed the buttons, nothing has opened
+                                the settings panel, and no swatch has ever been tapped
+    THE SETTINGS PANEL          entirely unexercised on a device. Its height is computed from
+                                the screen width and it is aligned to the bottom; on a short
+                                landscape screen it may reach further up than intended and
+                                nobody has looked. THIS IS THE MOST LIKELY PLACE FOR A LAYOUT
+                                FAULT IN THIS RELEASE
+    THE COLOUR AND THE WEIGHT   the contrast floor is arithmetic, not eyesight. Whether an amber
+                                or a violet is actually pleasant to read across a room at that
+                                size is unknown, and it is the kind of thing arithmetic gets
+                                wrong
+    40% GLYPHS                  chosen as one step down from a value that was measured in a
+                                mock and found too bright on glass. Whether 40% is right, or
+                                whether it should have been 45 or 32, has not been seen
+    THE BOTTOM STRIP IN         the new landscape layout has never been rendered. The strip is
+      LANDSCAPE                 72dp on a screen that may only be 360dp tall, and safe-drawing
+                                padding is doing the work of keeping it clear of the gesture bar
+    TEST 4 and G8, the upgrade  three artefacts exist and share a key. Not done
+    G6, stress                  no soak, no monkey
+    REBOOT, PROCESS DEATH       exhaustively tested as pure functions with hand-made inputs.
+                                Neither has met the real thing
+    FONT SCALE, TABLETS         not tested
 
 ## Known and deliberate
 
-    the size steps down once at one hour, when MM:SS.d becomes H:MM:SS.d, and once more past
-      ten hours. Documented rather than prevented
+    the app can no longer time anything below a second. That is the point of the change, and it
+      is written into Face.kt so it is not later read as a regression
+
+    the size steps down once at one hour and once more past ten hours
 
     the boot-marker reboot detector has one false positive: moving the phone's clock by more
-      than a minute during a running measurement reads as a reboot and returns zeros. Rare,
-      deliberate, and it fails in the safe direction
+      than a minute during a running measurement reads as a reboot and returns zeros
 
     the system bars are left visible on black rather than hidden. One line to change
 
-    the signing keystore exists ONLY as a repository secret. There is no second copy. If it is
-      lost the app can never be upgraded in place again
+    THE SIGNING KEYSTORE EXISTS ONLY AS A REPOSITORY SECRET. There is no second copy anywhere.
+      It was generated in a session container that does not survive. If it is lost the app can
+      never be upgraded in place again
 
 ## Rollout
 
-One user, one phone. Stage 0 is the whole rollout. "Halt" means installing the previous APK,
-which is why two are kept.
+One user, one phone. Stage 0 is the whole rollout. "Halt" means installing v2, which is why two
+releases are kept.
 
-**Before this is trusted for a real measurement:** install it, start it, put the phone in a
-pocket for ten minutes, and check it shows ten more minutes rather than ten fewer. Then pause it,
-wait, play, and check the gap was not counted. Those two take a quarter of an hour and they are
-worth more than every gate above, because they are Test 2 and nothing here is.
+**The quarter of an hour that is worth more than every gate above**, and which has still not been
+spent: install it, start it, put the phone in a pocket for ten minutes, and check it shows ten
+more minutes rather than ten fewer. Then pause, wait, play, and check the gap was not counted.
+Then turn the phone sideways and look at the bottom strip.
