@@ -266,3 +266,75 @@ data class Diagnostics(
      */
     fun looksLikeRestartStorm(): Boolean = sessions >= 5 && rmsCallbacks == 0
 }
+
+
+/**
+ * WHEN TO WAKE THE RECOGNISER, and this is the whole answer to the beeping.
+ *
+ * WHAT THE PHONE TOLD US. The meter runs when the app is not listening and stops when it is, and
+ * a tone goes on and off without pause the whole time. Those two facts together say something
+ * precise: AudioRecord opens the microphone on this device and works, and SpeechRecognizer takes
+ * it away and then churns — started, killed, started, killed. The tone is the session boundary.
+ * Nothing was wrong with the microphone, the permission, or the meter.
+ *
+ * SO THE RECOGNISER STOPS BEING THE THING THAT HOLDS THE MICROPHONE. AudioRecord holds it, all
+ * the time, which is why the meter now runs whether voice is on or off. The recogniser is woken
+ * only when the level says somebody actually spoke, gets one session, and hands the microphone
+ * straight back.
+ *
+ * A session per utterance instead of four a second is the difference between a tone when you
+ * speak and a tone that never stops. It also means the recogniser is listening at the moment
+ * there is something to hear, rather than spending its life timing out on a silent room.
+ *
+ * THE COOLDOWN IS NOT POLITENESS. Without it the tail of the word that opened the gate opens it
+ * again the moment the microphone comes back, and the churn returns wearing a different hat.
+ */
+class SpeechGate(
+    private val openAt: Float = OPEN_AT,
+    private val cooldownMs: Long = COOLDOWN_MS,
+) {
+    private var endedAt = 0L
+    private var everEnded = false
+
+    fun shouldOpen(level: Float, now: Long): Boolean {
+        if (level < openAt) return false
+        if (!everEnded) return true
+        return now - endedAt >= cooldownMs
+    }
+
+    fun sessionEnded(now: Long) {
+        endedAt = now
+        everEnded = true
+    }
+
+    private companion object {
+        /**
+         * On the smoother's 0..1, a room tone sits near zero and a spoken word crosses this
+         * comfortably. Low enough that a quiet voice opens it, high enough that a fan does not.
+         */
+        const val OPEN_AT = 0.30f
+        const val COOLDOWN_MS = 1_200L
+    }
+}
+
+/**
+ * WHICH WORD IS LIT, AND FOR HOW LONG.
+ *
+ * The tester lights the word that was just heard and then lets it go dark again. A light that
+ * stays on cannot show a second "start" a moment later — it is already on, so nothing happens,
+ * and the one thing being tested is invisible. Going dark is what makes the next one visible.
+ *
+ * A second is long enough to catch out of the corner of an eye and short enough that two words
+ * spoken in a row read as two events.
+ */
+data class Lit(val control: Control? = null, val untilMs: Long = 0L) {
+
+    fun isLit(candidate: Control, now: Long): Boolean =
+        control == candidate && now < untilMs
+
+    companion object {
+        const val HOLD_MS = 1_000L
+
+        fun of(control: Control, now: Long) = Lit(control, now + HOLD_MS)
+    }
+}

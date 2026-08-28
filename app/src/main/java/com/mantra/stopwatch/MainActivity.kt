@@ -155,7 +155,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var listening by remember { mutableStateOf(store.listening) }
     var level by remember { mutableFloatStateOf(0f) }
     var lastHeard by remember { mutableStateOf("") }
-    var lastMatch by remember { mutableStateOf<Control?>(null) }
     var voiceState by remember { mutableStateOf("off") }
 
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
@@ -184,7 +183,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             PackageManager.PERMISSION_GRANTED
     }
     var diagnostics by remember { mutableStateOf(Diagnostics()) }
-    var probeFault by remember { mutableStateOf("") }
+    var lit by remember { mutableStateOf(Lit()) }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // THE MICROPHONE PROBE, and the reason it exists.
@@ -202,63 +201,55 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // audio reaches this app and the fault is further down. If it does not, nothing after it can
     // work and there is no point looking at the recogniser at all.
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    val probe = remember { MicProbe(onFail = { probeFault = it }) }
-    val probing = settingsOpen && !listening && granted
-    DisposableEffect(probing) {
-        if (probing) {
-            probe.start()
-            onDispose { probe.stop() }
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // ONE OWNER OF THE MICROPHONE, AND THE METER NEVER STOPS.
+    //
+    // Until v11 there were two: MicProbe when voice was off and SpeechRecognizer when it was on.
+    // That is why the meter died the moment listening was switched on, and it is why a tone went
+    // on and off without pause — the recogniser was being started and killed several times a
+    // second while it found nothing in a silent room.
+    //
+    // VoiceEngine keeps AudioRecord on the microphone the whole time and wakes the recogniser
+    // only when the level says a word was actually spoken. The meter therefore runs whether
+    // voice is armed or not, which is what Baba asked for and was impossible before.
+    //
+    // The engine is created once and lives as long as the screen. Arming is a separate call, so
+    // switching voice on and off does not tear the microphone down and build it again.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    val engine = remember {
+        VoiceEngine(
+            context = context,
+            onLevel = { level = it },
+            onHeard = { text, control ->
+                lastHeard = text
+                if (control != null) lit = Lit.of(control, SystemClock.elapsedRealtime())
+            },
+            onCommand = { control ->
+                // DETECTION ONLY WHILE THE PANEL IS OPEN. The word lights, the clock does not
+                // move. It is the only way to tell "it did not hear me" from "it heard me and
+                // did the wrong thing", and Baba asked for exactly this test.
+                if (!settingsOpen) commit(state.press(control, SystemClock.elapsedRealtime()))
+            },
+            onState = { voiceState = it },
+            onDiagnostics = { diagnostics = it },
+        )
+    }
+
+    // The meter is up whenever the microphone is allowed and there is something to look at: the
+    // settings panel open, or voice armed. It does not depend on which of those it is.
+    val meterWanted = granted && (settingsOpen || listening)
+    DisposableEffect(meterWanted) {
+        if (meterWanted) {
+            engine.startMeter()
+            onDispose { engine.stopMeter() }
         } else {
             onDispose { }
         }
-    }
-
-    // TTT mini's sampling loop, unchanged in shape: one clock, 50ms, pulling the peak the audio
-    // thread has been collecting. The meter's speed is therefore a number written here rather
-    // than a property of whatever buffer size the device chose.
-    LaunchedEffect(probing) {
-        if (!probing) return@LaunchedEffect
-        val smoother = AudioLevelSmoother()
-        while (isActive) {
-            level = smoother.update(probe.maxAmplitude())
-            delay(AUDIO_LEVEL_SAMPLE_MS)
-        }
-    }
-    val askForMicrophone = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { allowed ->
-        listening = allowed
-        store.listening = allowed
-        if (!allowed) voiceState = "microphone refused"
     }
 
     DisposableEffect(listening, granted) {
-        if (!listening || !granted) {
-            voiceState = if (listening) "microphone refused" else "off"
-            level = 0f
-            onDispose { }
-        } else {
-            val v = VoiceListener(
-                context = context,
-                onLevel = { level = it },
-                onHeard = { text, control ->
-                    lastHeard = text
-                    lastMatch = control
-                },
-                onCommand = { control ->
-                    // DETECTION ONLY WHILE THE PANEL IS OPEN. Baba asked to be able to say the
-                    // words and watch them light up without the stopwatch moving, which is the
-                    // only way to tell "it did not hear me" from "it heard me and the action was
-                    // wrong". The word still lights up via onHeard; what is suppressed is the
-                    // press. Closing the panel makes the commands live again.
-                    if (!settingsOpen) commit(state.press(control, SystemClock.elapsedRealtime()))
-                },
-                onState = { voiceState = it },
-                onDiagnostics = { diagnostics = it },
-            )
-            v.start()
-            onDispose { v.stop() }
-        }
+        engine.setArmed(listening && granted)
+        onDispose { }
     }
 
     // THE TICK, now once a second rather than ten times. untilNextSecond is bounded to 1..1000ms
@@ -448,9 +439,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 listening = listening,
                 level = level,
                 diagnostics = diagnostics,
-                probeFault = probeFault,
+                lit = lit,
                 lastHeard = lastHeard,
-                lastMatch = lastMatch,
                 voiceState = voiceState,
                 onColour = { colour = it; store.colour = it },
                 onWeight = { weight = it; store.weight = it },
@@ -554,9 +544,8 @@ private fun SettingsGrid(
     listening: Boolean,
     level: Float,
     diagnostics: Diagnostics,
-    probeFault: String,
+    lit: Lit,
     lastHeard: String,
-    lastMatch: Control?,
     voiceState: String,
     onColour: (Long) -> Unit,
     onWeight: (Weight) -> Unit,
@@ -564,6 +553,17 @@ private fun SettingsGrid(
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // A light that expires by time cannot go out on its own: nothing recomposes when a clock
+    // passes a number. This is the panel's own tick, running only while the panel is open, fast
+    // enough that a one-second light looks like it goes out at one second.
+    var tickNow by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            tickNow = SystemClock.elapsedRealtime()
+            delay(100L)
+        }
+    }
+
     val gap = 6.dp
     val columns = if (landscape) Palette.COLUMNS_LANDSCAPE else Palette.COLUMNS_PORTRAIT
     val rows = Palette.SWATCHES.size / columns
@@ -677,10 +677,10 @@ private fun SettingsGrid(
                 }
 
                 Text(
-                    text = lastMatch?.spoken ?: voiceState,
+                    text = voiceState,
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
-                        color = if (lastMatch != null) Color(colour) else GLYPH_SECOND,
+                        color = GLYPH_SECOND,
                         fontSize = 11.sp,
                     ),
                     maxLines = 1,
@@ -708,12 +708,12 @@ private fun SettingsGrid(
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 Control.entries.forEach { control ->
-                    val lit = lastMatch == control
+                    val on = lit.isLit(control, tickNow)
                     Text(
                         text = Heard.primary(control),
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
-                            color = if (lit) Color(colour) else GLYPH_OFF,
+                            color = if (on) Color(colour) else GLYPH_OFF,
                             fontSize = 12.sp,
                         ),
                         maxLines = 1,
@@ -724,15 +724,12 @@ private fun SettingsGrid(
 
             Text(
                 text = when {
-                    probeFault.isNotEmpty() -> "mic: " + probeFault
-                    !listening -> "mic test: speak, the bar should move"
-                    diagnostics.looksLikeRestartStorm() -> diagnostics.line() + "  RESTARTING"
+                    !listening -> "meter only: speak, the bar should move"
                     else -> diagnostics.line()
                 },
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
-                    color = if (probeFault.isNotEmpty() || diagnostics.looksLikeRestartStorm())
-                        Color(0xFF9B3B33) else GLYPH_OFF,
+                    color = GLYPH_OFF,
                     fontSize = 10.sp,
                 ),
                 maxLines = 1,

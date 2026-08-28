@@ -185,6 +185,38 @@ class StopwatchTest {
         assertTrue("it must not drop to nothing in one frame, was $afterOne", afterOne > 0.5f)
     }
 
+    /**
+     * The gate is what turns a tone every quarter second into a tone when you speak. Its two
+     * edges are the two ways it can fail: never opening, and opening again on the tail of the
+     * word that just opened it.
+     */
+    @Test
+    fun theGateOpensOnSpeechAndNotOnItsOwnEcho() {
+        val gate = SpeechGate()
+        assertFalse("a silent room must not wake the recogniser", gate.shouldOpen(0.02f, 0))
+        assertFalse("a fan must not wake it", gate.shouldOpen(0.2f, 0))
+        assertTrue("a spoken word must wake it", gate.shouldOpen(0.5f, 0))
+
+        gate.sessionEnded(1_000)
+        assertFalse("the tail of that word must not reopen it", gate.shouldOpen(0.9f, 1_100))
+        assertFalse("not at the boundary either", gate.shouldOpen(0.9f, 2_100))
+        assertTrue("but the next thing said must", gate.shouldOpen(0.9f, 2_300))
+    }
+
+    /**
+     * A light that never goes out cannot show the second command. This is the whole test Baba
+     * described: say start, watch start light, watch it go dark, say it again.
+     */
+    @Test
+    fun theLitWordGoesDarkSoTheNextOneCanBeSeen() {
+        val lit = Lit.of(Control.PLAY, 5_000)
+        assertTrue(lit.isLit(Control.PLAY, 5_000))
+        assertTrue(lit.isLit(Control.PLAY, 5_900))
+        assertFalse("a second later it is dark again", lit.isLit(Control.PLAY, 6_000))
+        assertFalse("and it never lights a word that was not said", lit.isLit(Control.STOP, 5_100))
+        assertFalse("nothing is lit before anything is heard", Lit().isLit(Control.PLAY, 0))
+    }
+
     @Test
     fun theDiagnosticsLineSaysWhatItMeans() {
         assertEquals("s0  rms0  offline", Diagnostics().line())

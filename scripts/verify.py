@@ -43,6 +43,7 @@ store = STORE.read_text()
 meter = (ROOT / "app/src/main/java/com/mantra/stopwatch/MaMeter.kt").read_text()
 listener = (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt").read_text()
 probe = (ROOT / "app/src/main/java/com/mantra/stopwatch/MicProbe.kt").read_text()
+engine = (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceEngine.kt").read_text()
 
 imports = re.findall(r"^import\s+(\S+)", src, re.M)
 android = [i for i in imports if i.startswith("android")]
@@ -297,9 +298,8 @@ check("the spoken vocabulary is three disjoint lists",
 # the manifest comment saying so becomes a lie.
 listener = LISTENER.read_text()
 check("nothing listens while the stopwatch is off screen",
-      "Service" not in listener.replace("RecognitionService", "").replace("SpeechRecognizer", "")
-      and "onDispose { v.stop() }" in ui,
-      "the recogniser is created and destroyed by a DisposableEffect, with no service anywhere")
+      "engine.stopMeter()" in ui and "onDispose { engine.stopMeter() }" in ui,
+      "the engine is torn down with the composition, so the microphone closes with the screen")
 
 # ── 8l ───────────────────────────────────────────────────────────────────────────────────────
 # The bar is drawn as a fraction of a width. A level above 1 runs it off the panel, and the curve
@@ -424,8 +424,8 @@ check("the meter is TTT mini's, constant for constant",
 # collect peaks and the UI must pull them, which is TTT mini's maxAmplitude arrangement.
 check("the meter runs on a clock, not on the audio buffer",
       "fun maxAmplitude()" in probe and "val size = minimum" in probe
-      and "delay(AUDIO_LEVEL_SAMPLE_MS)" in ui,
-      "the audio thread collects peaks, the UI pulls them every 50ms")
+      and "AUDIO_LEVEL_SAMPLE_MS" in engine,
+      "the audio thread collects peaks, the engine pulls them every 50ms")
 
 # The tester must be able to hear a command without the stopwatch moving, or there is no way to
 # tell 'it did not hear me' from 'it heard me and did the wrong thing'.
@@ -434,8 +434,8 @@ check("the tester detects without acting",
       "with the panel open the word lights and the press is suppressed")
 
 check("the tester reports counters, not just a state word",
-      "rmsCallbacks" in listener and "sessions++" in listener and "looksLikeRestartStorm" in ui,
-      "sessions, rms callbacks, offline or online, and the last error by name")
+      "sessions++" in engine and "onDiagnostics" in engine and "diagnostics.line()" in ui,
+      "sessions and heard counts come from the engine, which is the thing that knows")
 
 # The microphone switch is a hands-free control and must be reachable without opening a panel.
 check("the microphone switch is on the main screen",
@@ -451,9 +451,20 @@ check("the microphone switch shows on and off without a struck-out mark",
 
 # The probe is what separates "no audio at all" from "audio fine, recogniser broken". It has to
 # be mutually exclusive with the recogniser, because the microphone has one owner.
-check("the microphone probe never runs beside the recogniser",
-      "settingsOpen && !listening && granted" in ui and "MicProbe(" in ui,
-      "the probe runs only with the panel open and voice off, so the two never contend")
+# INVERTED AT v12. AudioRecord now holds the microphone the whole time and the recogniser is a
+# guest woken only when a word is actually spoken. The handover must release AudioRecord BEFORE
+# the recogniser is created, or there is a window with two owners — which is the fault that
+# killed the meter and produced the endless tone.
+check("the microphone has one owner and the handover is in the right order",
+      "probe?.stop()" in engine
+      and engine.index("probe?.stop()") < engine.index("VoiceListener("),
+      "AudioRecord is released before the recogniser is built, and rebuilt when it is done")
+
+# The meter must not stop when voice is switched on. That was the symptom; this is the invariant.
+check("the meter runs whether or not voice is armed",
+      "fun startMeter()" in engine and "fun setArmed(" in engine
+      and "armed" not in engine.split("private fun tick()")[1].split("onLevel(level)")[0],
+      "arming gates the recogniser, not the meter: tick() feeds the level before it consults it")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
