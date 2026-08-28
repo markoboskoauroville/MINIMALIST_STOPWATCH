@@ -114,7 +114,10 @@ jobs:
           echo "source files examined:"
           find "$SRC" -name '*.kt' | sed 's/^/  /'
           LOOPS=$( { grep -rnE '(while|for|repeat)[[:space:]]*[({]' --include='*.kt' "$SRC" || true; } | wc -l)
-          UNBOUNDED=$( { grep -rnF 'while (true)' --include='*.kt' "$SRC" || true; } | wc -l)
+          # grep -v the comment lines first. A comment explaining that the code avoids
+          # while(true) is not an unbounded loop, and this gate failed on exactly that.
+          UNBOUNDED=$( { grep -rnF 'while (true)' --include='*.kt' "$SRC" || true; } \
+            | grep -v ':[[:space:]]*\(//\|\*\)' | wc -l)
           WAITS=$( { grep -rnE 'delay\(' --include='*.kt' "$SRC" || true; } | wc -l)
           echo "loops examined:         $LOOPS"
           echo "written as while(true): $UNBOUNDED"

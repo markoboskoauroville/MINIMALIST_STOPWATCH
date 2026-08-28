@@ -40,6 +40,9 @@ def check(name, ok, detail):
 src = LOGIC.read_text()
 ui = UI.read_text()
 store = STORE.read_text()
+meter = (ROOT / "app/src/main/java/com/mantra/stopwatch/MaMeter.kt").read_text()
+listener = (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt").read_text()
+probe = (ROOT / "app/src/main/java/com/mantra/stopwatch/MicProbe.kt").read_text()
 
 imports = re.findall(r"^import\s+(\S+)", src, re.M)
 android = [i for i in imports if i.startswith("android")]
@@ -159,7 +162,16 @@ for f in sorted(MAIN.glob("*.kt")):
     for n, line in enumerate(f.read_text().splitlines(), 1):
         if re.search(r"\b(while|for|repeat)\s*[\(\{]", line) and not line.strip().startswith("*"):
             loops.append((f.name, n, line.strip()))
-unbounded = [l for l in loops if "while (true)" in l[2] or "while(true)" in l[2]]
+# COMMENTS ARE NOT CODE, and this check had it backwards. It counted the literal anywhere in the
+# file, so a comment EXPLAINING that the code deliberately avoids `while (true)` failed the gate.
+# That is the mirror of the fault found two versions ago, where a comment containing "tap "
+# satisfied a check the code no longer met. Both come from grepping a source file as text; the
+# answer in both directions is to strip comment lines first.
+unbounded = [
+    l for l in loops
+    if ("while (true)" in l[2] or "while(true)" in l[2])
+    and not l[2].lstrip().startswith(("//", "*", "/*"))
+]
 check("every loop has a bound a reader can see",
       len(loops) >= 2 and not unbounded,
       f"{len(loops)} loops examined, {len(unbounded)} written as while(true)")
@@ -243,14 +255,14 @@ check("the settings panel carries its own way out",
 # call site again, the tip and the button can drift apart and only the spoken command breaks.
 spoken = dict(re.findall(r'(PLAY|PAUSE|STOP)\("(\w+)"\)', src))
 literal_labels = re.findall(r'Transport\(Icons\.Default\.\w+, "', ui)
-tip_is_generated = "Control.entries.joinToString" in ui
+tip_is_generated = "Heard.primary(control)" in ui and "Control.entries.forEach" in ui
 check("the spoken vocabulary has exactly one home",
       set(spoken.values()) == {"Start", "Pause", "Reset"}
       and not literal_labels
       and "control.spoken" in ui
       and tip_is_generated,
       f"{len(spoken)} words on the enum ({', '.join(spoken.values())}), "
-      f"{len(literal_labels)} typed at the call site, tip generated from the same list")
+      f"{len(literal_labels)} typed at the call site, the lit words come from Heard.primary")
 
 # ── 8h ───────────────────────────────────────────────────────────────────────────────────────
 # The reminder must say what actually works. Voice Access needs the verb; the app does not
@@ -262,11 +274,11 @@ voice = VOICE.read_text()
 # word. The previous version of this check asserted the OPPOSITE — that the tip carried "tap" —
 # which was correct for v7 and would have blocked v8. Left as a note rather than deleted: a
 # check is a statement about what must be true now, not a monument to what was true once.
-tip_expr = re.search(r"Control\.entries\.joinToString\([^)]*\)\s*\{([^}]*)\}", ui)
-tip_body = tip_expr.group(1) if tip_expr else ""
+# The three words in the tester are the matcher's own first entries, so a word can never be shown
+# that the matcher would refuse. Typing them here would be a second vocabulary.
 check("the reminder prints one bare word per control, from the matcher's own list",
-      "Heard.primary" in tip_body and "tap" not in tip_body,
-      f"the tip is built as: {tip_body.strip()[:60]}")
+      "Heard.primary(control)" in ui and "Control.entries.forEach" in ui,
+      "one Text per control, its text taken from the matcher rather than written beside it")
 
 # ── 8i ───────────────────────────────────────────────────────────────────────────────────────
 # No word may belong to two controls, or match() refuses it and the command silently stops
@@ -294,8 +306,9 @@ check("nothing listens while the stopwatch is off screen",
 # is only clamped inside Vu — if the drawing ever trusts the number it is handed, one loud room
 # breaks the layout.
 check("the meter cannot draw past the end of its track",
-      "fillMaxWidth(level.coerceIn(0f, 1f))" in ui,
-      "the bar clamps the level at the point it becomes a width")
+      "maNorm(smoothed)" in meter and "coerceIn(0f, 1f)" in meter
+      and "coerceIn(0f, full - 2f)" in meter,
+      "maNorm clamps the fill and the peak marker is clamped to stay inside the track")
 
 # ── 8k ───────────────────────────────────────────────────────────────────────────────────────
 # Restarting the recogniser from inside its own callback with no delay is a tight loop that
@@ -363,8 +376,6 @@ check("the gate has no sentinel that can overflow",
       "a boolean marks never-fired, not a magic instant that arithmetic can wrap")
 
 # ── voice, the four faults of v8 ─────────────────────────────────────────────────────────────
-listener = (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt").read_text()
-
 # v8 set EXTRA_PREFER_OFFLINE unconditionally, and on a phone with no downloaded model that
 # fails every session immediately and never falls back. Offline must be a preference that gives
 # up, not a permanent condition.
@@ -390,6 +401,38 @@ check("a failed session does not stamp the meter to zero",
       "the level falls on its own release curve; reset happens when the microphone is let go")
 
 # The counters are the whole debugging loop for somebody who has never held the phone.
+# The meter is TTT mini's, ported rather than reinterpreted. If any of these constants drift, it
+# has been rewritten by somebody who thought they knew better, which is how the first three
+# versions of it went wrong.
+ported = {
+    "FLOOR_DB = -54f": "the silence floor",
+    "tween(70)": "the smoothing speed",
+    "delay(60L)": "the peak hold clock",
+    "0.6f": "the peak fall per tick",
+    "0xFF9B3B33": "hot",
+    "0xFFF0883E": "warm",
+    "0xFF56D364": "good",
+    "VISUAL_FULL_SCALE = 16000f": "TTT mini's calibration",
+    "AUDIO_LEVEL_SAMPLE_MS = 50L": "the sampling clock",
+}
+missing = [why for token, why in ported.items() if token not in meter]
+check("the meter is TTT mini's, constant for constant",
+      not missing,
+      f"{len(ported) - len(missing)} of {len(ported)} ported values present, {len(missing)} drifted")
+
+# The lag was the meter moving when a buffer arrived rather than on a clock. The probe must
+# collect peaks and the UI must pull them, which is TTT mini's maxAmplitude arrangement.
+check("the meter runs on a clock, not on the audio buffer",
+      "fun maxAmplitude()" in probe and "val size = minimum" in probe
+      and "delay(AUDIO_LEVEL_SAMPLE_MS)" in ui,
+      "the audio thread collects peaks, the UI pulls them every 50ms")
+
+# The tester must be able to hear a command without the stopwatch moving, or there is no way to
+# tell 'it did not hear me' from 'it heard me and did the wrong thing'.
+check("the tester detects without acting",
+      "if (!settingsOpen) commit(state.press(control" in ui,
+      "with the panel open the word lights and the press is suppressed")
+
 check("the tester reports counters, not just a state word",
       "rmsCallbacks" in listener and "sessions++" in listener and "looksLikeRestartStorm" in ui,
       "sessions, rms callbacks, offline or online, and the last error by name")

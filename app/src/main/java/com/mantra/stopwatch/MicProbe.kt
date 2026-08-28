@@ -33,10 +33,23 @@ import kotlin.math.abs
  * The level maths is AudioLevelSmoother, unchanged, fed the way TTT mini feeds it: a PCM16 peak
  * rather than the recogniser's undocumented rmsdB.
  */
-class MicProbe(private val onLevel: (Float) -> Unit, private val onFail: (String) -> Unit) {
+class MicProbe(private val onFail: (String) -> Unit) {
 
     @Volatile private var running = false
-    private val vu = Vu()
+
+    /**
+     * The peak seen since the last read, exactly as TTT mini's RecordingController.maxAmplitude
+     * works. THE UI PULLS ON ITS OWN CLOCK; the audio thread only records the highest sample it
+     * has seen. That is the difference between a meter whose speed is a decision and one whose
+     * speed is whatever the buffer size happened to be, which is the lag Baba is seeing.
+     */
+    @Volatile private var peak = 0
+
+    fun maxAmplitude(): Int {
+        val p = peak
+        peak = 0
+        return p
+    }
 
     fun start() {
         if (running) return
@@ -46,7 +59,7 @@ class MicProbe(private val onLevel: (Float) -> Unit, private val onFail: (String
 
     fun stop() {
         running = false
-        onLevel(vu.reset())
+        peak = 0
     }
 
     private fun loop() {
@@ -56,9 +69,11 @@ class MicProbe(private val onLevel: (Float) -> Unit, private val onFail: (String
             running = false
             return
         }
-        // Four times the minimum: enough that a slow frame does not drop samples, small enough
-        // that the meter is not showing a level from a quarter of a second ago.
-        val size = minimum * 4
+        // The MINIMUM, not four times it. A larger buffer means each read covers more time, and
+        // the meter then cannot answer faster than one buffer however often the UI asks. At 16kHz
+        // the minimum is a few tens of milliseconds, which is under the 50ms sampling clock, so
+        // the clock is what decides the speed rather than the audio path.
+        val size = minimum
         val record = try {
             AudioRecord(MediaRecorder.AudioSource.MIC, RATE, CHANNEL, ENCODING, size)
         } catch (e: SecurityException) {
@@ -87,12 +102,13 @@ class MicProbe(private val onLevel: (Float) -> Unit, private val onFail: (String
                     if (read < 0) onFail("read failed $read")
                     continue
                 }
-                var peak = 0
+                var high = 0
                 for (i in 0 until read) {
                     val v = abs(buffer[i].toInt())
-                    if (v > peak) peak = v
+                    if (v > high) high = v
                 }
-                onLevel(vu.fromPeak(peak))
+                // Highest since the UI last looked, not since this buffer started.
+                if (high > peak) peak = high
             }
         } catch (e: IllegalStateException) {
             onFail("could not start")

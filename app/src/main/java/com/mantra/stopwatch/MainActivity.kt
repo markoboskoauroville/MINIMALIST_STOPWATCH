@@ -202,13 +202,26 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // audio reaches this app and the fault is further down. If it does not, nothing after it can
     // work and there is no point looking at the recogniser at all.
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    DisposableEffect(settingsOpen, listening, granted) {
-        if (settingsOpen && !listening && granted) {
-            val probe = MicProbe(onLevel = { level = it }, onFail = { probeFault = it })
+    val probe = remember { MicProbe(onFail = { probeFault = it }) }
+    val probing = settingsOpen && !listening && granted
+    DisposableEffect(probing) {
+        if (probing) {
             probe.start()
             onDispose { probe.stop() }
         } else {
             onDispose { }
+        }
+    }
+
+    // TTT mini's sampling loop, unchanged in shape: one clock, 50ms, pulling the peak the audio
+    // thread has been collecting. The meter's speed is therefore a number written here rather
+    // than a property of whatever buffer size the device chose.
+    LaunchedEffect(probing) {
+        if (!probing) return@LaunchedEffect
+        val smoother = AudioLevelSmoother()
+        while (isActive) {
+            level = smoother.update(probe.maxAmplitude())
+            delay(AUDIO_LEVEL_SAMPLE_MS)
         }
     }
     val askForMicrophone = rememberLauncherForActivityResult(
@@ -233,7 +246,12 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     lastMatch = control
                 },
                 onCommand = { control ->
-                    commit(state.press(control, SystemClock.elapsedRealtime()))
+                    // DETECTION ONLY WHILE THE PANEL IS OPEN. Baba asked to be able to say the
+                    // words and watch them light up without the stopwatch moving, which is the
+                    // only way to tell "it did not hear me" from "it heard me and the action was
+                    // wrong". The word still lights up via onHeard; what is suppressed is the
+                    // press. Closing the panel makes the commands live again.
+                    if (!settingsOpen) commit(state.press(control, SystemClock.elapsedRealtime()))
                 },
                 onState = { voiceState = it },
                 onDiagnostics = { diagnostics = it },
@@ -652,23 +670,10 @@ private fun SettingsGrid(
                     size = 28.dp,
                 ) { onListening(!listening) }
 
-                // THE METER. Level is 0..1 from the curve ported out of TTT mini, fed by the
-                // recogniser's own rmsdB because a second reader cannot have the microphone.
-                Box(
-                    Modifier
-                        .padding(horizontal = gap)
-                        .weight(1f)
-                        .height(6.dp)
-                        .clip(RoundedCornerShape(3.dp))
-                        .background(PANEL_IDLE),
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(level.coerceIn(0f, 1f))
-                            .clip(RoundedCornerShape(3.dp))
-                            .background(Color(colour)),
-                    )
+                // TTT MINI'S METER, ported in MaMeter.kt. dB domain, 70ms tween, peak hold on
+                // its own 60ms clock, coloured green under -12, orange to -3, red above.
+                Box(Modifier.padding(horizontal = gap).weight(1f)) {
+                    MaScopeMeter(level = level, tint = Color(colour))
                 }
 
                 Text(
@@ -691,6 +696,32 @@ private fun SettingsGrid(
             // while sessions climb means it never got as far as opening the microphone, so a
             // still meter is not a broken meter. Those two numbers tell the difference without
             // anybody having to guess, and the error name can be read out loud.
+            // THE THREE WORDS, LIT WHEN HEARD.
+            //
+            // This is the tester: say a word, watch it light. The word that just matched takes
+            // the digit colour and the other two stay dim, so a person can tell at a glance
+            // whether the recogniser heard "start" or heard nothing at all. It is deliberately
+            // NOT a log of everything said — a scrolling transcript is a thing to read, and the
+            // question being asked is answered by a light going on.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                Control.entries.forEach { control ->
+                    val lit = lastMatch == control
+                    Text(
+                        text = Heard.primary(control),
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            color = if (lit) Color(colour) else GLYPH_OFF,
+                            fontSize = 12.sp,
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                }
+            }
+
             Text(
                 text = when {
                     probeFault.isNotEmpty() -> "mic: " + probeFault
@@ -703,21 +734,6 @@ private fun SettingsGrid(
                     color = if (probeFault.isNotEmpty() || diagnostics.looksLikeRestartStorm())
                         Color(0xFF9B3B33) else GLYPH_OFF,
                     fontSize = 10.sp,
-                ),
-                maxLines = 1,
-                softWrap = false,
-            )
-
-            Text(
-                text = if (lastHeard.isBlank()) {
-                    Control.entries.joinToString("  ") { Heard.primary(it) }
-                } else {
-                    "\u201c" + lastHeard.take(40) + "\u201d"
-                },
-                style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    color = if (lastHeard.isBlank()) GLYPH_OFF else GLYPH_SECOND,
-                    fontSize = 11.sp,
                 ),
                 maxLines = 1,
                 softWrap = false,
