@@ -32,8 +32,12 @@ LOGIC = ROOT / "app/src/main/java/com/mantra/stopwatch/Stopwatch.kt"
 UI = ROOT / "app/src/main/java/com/mantra/stopwatch/MainActivity.kt"
 STORE = ROOT / "app/src/main/java/com/mantra/stopwatch/Store.kt"
 PALETTE = ROOT / "app/src/main/java/com/mantra/stopwatch/Palette.kt"
+VOICE = ROOT / "app/src/main/java/com/mantra/stopwatch/Voice.kt"
+LISTENER = ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt"
+VOICE = ROOT / "app/src/main/java/com/mantra/stopwatch/Voice.kt"
+LISTENER = ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt"
 PROPS = ROOT / "gradle.properties"
-MUTABLE = [LOGIC, UI, STORE, PALETTE, PROPS]
+MUTABLE = [LOGIC, UI, STORE, PALETTE, VOICE, LISTENER, PROPS]
 
 TEST_CMD = os.environ.get("SABOTAGE_RUN", "./gradlew :app:testReleaseUnitTest -q --no-daemon")
 CHECK_CMD = "python3 scripts/verify.py"
@@ -111,12 +115,42 @@ LOGIC_MUTATIONS = [
     (LOGIC, "the face rounds the seconds instead of truncating",
      "        val seconds = t / 1000L",
      "        val seconds = (t + 500L) / 1000L"),
+    (VOICE, "the gate opens on every partial, so one word toggles the clock several times",
+     "        if (firedThisUtterance) return false",
+     "        if (false) return false"),
+    (VOICE, "the minimum gap is removed, so the tail of a word acts twice",
+     "        if (hasFired && now - firedAt < minGapMs) return false",
+     "        if (false) return false"),
+    (VOICE, "the never-fired sentinel goes back to an instant arithmetic can wrap",
+     "        if (hasFired && now - firedAt < minGapMs) return false",
+     "        if (now - Long.MIN_VALUE < minGapMs) return false"),
     (PALETTE, "a swatch dark enough to vanish on black is offered",
      "        0xFFFFFFFF, 0xFFE2E8F0,",
      "        0xFF101010, 0xFFE2E8F0,"),
     (PALETTE, "the same swatch appears twice, so one cell does nothing",
      "        0xFF4ADE80, 0xFF86EFAC,",
      "        0xFFEF4444, 0xFF86EFAC,"),
+    (VOICE, "a word is shared by two controls, so it matches neither",
+     '            "stop", "stops", "stopped", "hold", "wait",',
+     '            "stop", "stops", "stopped", "hold", "reset",'),
+    (VOICE, "a sentence naming two controls picks one instead of refusing",
+     "        return if (hits.size == 1) hits.single() else null",
+     "        return hits.firstOrNull()"),
+    (VOICE, "the heard text is judged raw, so punctuation defeats every command",
+     "        val words = normalise(raw).toSet()",
+     "        val words = raw.split(\" \").toSet()"),
+    (VOICE, "the meter is not clamped, so a loud room drives the bar past the end",
+     "        val gated = ((normalised.coerceIn(0f, 1f) - NOISE_GATE) / (1f - NOISE_GATE)).coerceIn(0f, 1f)",
+     "        val gated = (normalised - NOISE_GATE) / (1f - NOISE_GATE)"),
+    (VOICE, "the noise gate is removed and the meter twitches in silence",
+     "        val gated = ((normalised.coerceIn(0f, 1f) - NOISE_GATE) / (1f - NOISE_GATE)).coerceIn(0f, 1f)",
+     "        val gated = normalised.coerceIn(0f, 1f)"),
+    (VOICE, "attack and release are swapped, so the meter lags going up",
+     "        val rate = if (curved > level) ATTACK else RELEASE",
+     "        val rate = if (curved > level) RELEASE else ATTACK"),
+    (VOICE, "the reminder names a word the matcher does not accept",
+     '            "reset", "resets", "recept", "reserve",          // "recept" is the common mishearing',
+     '            "wipe", "resets", "recept", "reserve",          // "recept" is the common mishearing'),
     (PALETTE, "a swatch is dropped, so the grid is ragged in one orientation",
      "        0xFF22D3EE, 0xFF67E8F9, 0xFF2DD4BF,",
      "        0xFF22D3EE, 0xFF2DD4BF,"),
@@ -133,6 +167,10 @@ _APP_VERSION_LINE = next(
 )
 
 SHAPE_MUTATIONS = [
+    (LISTENER, "the recogniser restarts from inside its own callback with no gap",
+     "        main.postDelayed({ listen() }, delayMs)",
+     "        listen()"),
+
     # The anchor is the whole BoxWithConstraints modifier chain, not just the background call.
     # The settings panel added a second .background(BACKGROUND) and this mutation started
     # matching twice and reporting SKIP, which reads almost like a caught mutation in a long
@@ -164,12 +202,15 @@ SHAPE_MUTATIONS = [
     (UI, "a control label is typed at the call site again, so it can drift from the tip",
      "                Transport(Icons.Default.Stop, Control.STOP, state, button, ::commit)",
      '                Transport(Icons.Default.Stop, "Stop", Control.STOP, state, button, ::commit)'),
-    (UI, "the tip is typed by hand instead of generated, so it can become a believed lie",
-     '                text = Control.entries.joinToString("  ") { "\\"tap " + it.spoken.lowercase() + "\\"" },',
-     '                text = "\\"tap start\\"  \\"tap pause\\"  \\"tap reset\\"",'),
-    (UI, "the tip drops the verb and prints a form the app cannot hear",
-     '"\\"tap " + it.spoken.lowercase() + "\\""',
-     '"\\"" + it.spoken.lowercase() + "\\""'),
+    (UI, "the reminder is typed by hand instead of generated, so it can become a believed lie",
+     '                    Control.entries.joinToString("  ") { Heard.primary(it) }',
+     '                    "start  pause  reset"'),
+    (UI, "the meter is fed a raw level, so a loud room runs the bar off the panel",
+     "                            .fillMaxWidth(level.coerceIn(0f, 1f))",
+     "                            .fillMaxWidth(level)"),
+    (UI, "the microphone is left running when the screen goes away",
+     "            onDispose { v.stop() }",
+     "            onDispose { }"),
     (UI, "the settings panel is moved over the digits, so colour is judged blind",
      "                    .align(Alignment.BottomCenter)",
      "                    .align(Alignment.Center)"),

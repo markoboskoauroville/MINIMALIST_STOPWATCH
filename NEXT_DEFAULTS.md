@@ -501,3 +501,81 @@ tones", which was a fact about v4 rather than an invariant. What matters is that
 cover every control and every phase; how many rungs the prominence ladder has is a design choice
 allowed to change. **A check that encodes today's design as a law fails the next time the design
 is right to change**, and it fails in the most expensive way, by looking like a regression.
+
+---
+
+# v8 — 28.8.2026, the app listens for itself
+
+## One word, and the app hears it
+
+v6 and v7 leaned on Google's Voice Access, which needs "tap start". Baba's answer was that being
+asked to say two things is being asked to do two things, and he is right: a stopwatch command
+with a preamble is slower than reaching for the button it replaces.
+
+So the app holds its own recogniser. `RECORD_AUDIO`, asked for from the switch in the settings
+panel and never at launch, held only while the stopwatch is on screen AND the switch is on. No
+service, no foreground notification, nothing listening when the app is not visible.
+
+**The mapping, said out loud, because it is not obvious.** Baba's words are start, stop and
+reset. The controls are start, PAUSE and reset:
+
+    "start"  ->  PLAY     begin, or resume
+    "stop"   ->  PAUSE    freeze and KEEP the figure
+    "reset"  ->  STOP     back to zeros
+
+So the word "stop" does not drive the control the code calls STOP. That is the reading that makes
+three words cover three controls, and if it is the wrong way round the alias table is the only
+place it changes.
+
+## The bug the gate exists to stop, and it would have shipped
+
+The listener acts on PARTIAL results, because a command that lands half a second late has missed
+the thing being timed. **Partial results repeat.** One spoken "start" arrives as "st", then
+"start", then "start" again as the recogniser firms up, and each of those contains the command.
+
+Play is a TOGGLE. Without a gate, one spoken word would press it three or four times: start,
+pause, start — and where it landed would depend on how many partials the recogniser happened to
+emit, which is to say on nothing the person did. **It would have looked like a possessed
+microphone**, and it would have been blamed on Android rather than on this.
+
+Two rules, because one is not enough: once per utterance, and never twice inside 700ms. The
+first is reopened only when the recogniser starts a fresh listen; the second covers the tail of
+one word landing in the next utterance after a restart.
+
+**The gate is pure and takes the clock as an argument**, for the same reason the stopwatch does.
+Every case is walked in Test 1 without a microphone.
+
+## What Test 1 caught in the gate, immediately
+
+`Long.MIN_VALUE` as the "never fired" sentinel. `now - Long.MIN_VALUE` **overflows to a negative
+number**, the minimum-gap check reads that as "too soon", and the gate never opens at all. A
+voice command that never fires is the exact opposite of the bug the class was written to prevent,
+and it would have shipped looking like a microphone that does not work. A boolean marks
+never-fired now, and a mutation puts the sentinel back.
+
+## The VU meter is TTT mini's, with a different way in
+
+`Vu` is a port of `AudioLevelSmoother.kt` — the curve, the noise gate and the attack and release
+rates are that file's, unchanged, because they are a calibration somebody arrived at by watching
+a meter rather than by reasoning. The Apache notice travels with it.
+
+**What differs is the input.** TTT mini owns the microphone through `AudioRecord` and reads
+sample peaks. This app hands the microphone to `SpeechRecognizer`, and two readers cannot both
+have it — opening `AudioRecord` beside a live recogniser fails or starves one of them. So the
+level comes from `onRmsChanged`, in decibels, and `fromRms` converts before the original curve
+runs untouched. If a device reports a different range the meter will look wrong and the
+recognition will still work, which is the right way round for the two to fail.
+
+## Two more checks answered by prose rather than by code
+
+Both found in this session, in checks written this session:
+
+- the gate's overflow check asked whether `Long.MIN_VALUE` appeared anywhere in `Voice.kt`. It
+  appears in the COMMENT explaining why it is not used, so the check failed on a correct file;
+- the previous version's tip check asked whether `"tap ` appeared anywhere, and it appeared in a
+  comment, so deleting the verb from the code left the check green.
+
+One failed open, one failed closed, from the same mistake. **Checks now strip comments before
+looking at Voice.kt**, and the tip check reads the expression rather than the file. That is
+eight `verify.py` faults recorded across five sessions, every one of which read as a pass or a
+puzzling fail rather than as a broken check.

@@ -1,11 +1,15 @@
 package com.mantra.stopwatch
 
+import android.Manifest
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +17,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,6 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -38,6 +45,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -57,6 +66,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -140,6 +150,13 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var weight by remember { mutableStateOf(store.weight) }
     var settingsOpen by remember { mutableStateOf(false) }
 
+    // VOICE. The switch is a preference; the microphone follows it and the app's own lifecycle.
+    var listening by remember { mutableStateOf(store.listening) }
+    var level by remember { mutableFloatStateOf(0f) }
+    var lastHeard by remember { mutableStateOf("") }
+    var lastMatch by remember { mutableStateOf<Control?>(null) }
+    var voiceState by remember { mutableStateOf("off") }
+
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
 
     fun commit(next: Stopwatch) {
@@ -149,6 +166,52 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     }
 
     val elapsed = state.elapsed(now)
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE MICROPHONE.
+    //
+    // Created when the switch is on and destroyed when it is off, when the app leaves the
+    // screen, or when this composition goes away. There is no service: nothing listens while the
+    // stopwatch is not visible, and the microphone indicator in the status bar is the truth.
+    //
+    // A recognised command goes through exactly the same press() the button does, so a spoken
+    // "start" and a tapped play cannot behave differently.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    val context = LocalContext.current
+    val granted = remember(listening) {
+        ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+    val askForMicrophone = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { allowed ->
+        listening = allowed
+        store.listening = allowed
+        if (!allowed) voiceState = "microphone refused"
+    }
+
+    DisposableEffect(listening, granted) {
+        if (!listening || !granted) {
+            voiceState = if (listening) "microphone refused" else "off"
+            level = 0f
+            onDispose { }
+        } else {
+            val v = VoiceListener(
+                context = context,
+                onLevel = { level = it },
+                onHeard = { text, control ->
+                    lastHeard = text
+                    lastMatch = control
+                },
+                onCommand = { control ->
+                    commit(state.press(control, SystemClock.elapsedRealtime()))
+                },
+                onState = { voiceState = it },
+            )
+            v.start()
+            onDispose { v.stop() }
+        }
+    }
 
     // THE TICK, now once a second rather than ten times. untilNextSecond is bounded to 1..1000ms
     // and can never return zero, so this loop cannot spin. `isActive` rather than `true`: the
@@ -301,8 +364,21 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 landscape = landscape,
                 colour = colour,
                 weight = weight,
+                listening = listening,
+                level = level,
+                lastHeard = lastHeard,
+                lastMatch = lastMatch,
+                voiceState = voiceState,
                 onColour = { colour = it; store.colour = it },
                 onWeight = { weight = it; store.weight = it },
+                onListening = { want ->
+                    if (want && !granted) {
+                        askForMicrophone.launch(Manifest.permission.RECORD_AUDIO)
+                    } else {
+                        listening = want
+                        store.listening = want
+                    }
+                },
                 onClose = { settingsOpen = false },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -392,8 +468,14 @@ private fun SettingsGrid(
     landscape: Boolean,
     colour: Long,
     weight: Weight,
+    listening: Boolean,
+    level: Float,
+    lastHeard: String,
+    lastMatch: Control?,
+    voiceState: String,
     onColour: (Long) -> Unit,
     onWeight: (Weight) -> Unit,
+    onListening: (Boolean) -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -409,7 +491,7 @@ private fun SettingsGrid(
     // trap, and the fix is not a smaller number, it is measuring against both edges.
     val header = 36.dp
     val weightRow = 52.dp
-    val tipRow = 40.dp
+    val tipRow = 76.dp
     val forGrid = maxHeight - header - weightRow - tipRow - gap * (rows + 3)
     val cell = minOf((width - gap * (columns - 1)) / columns, forGrid / rows, 64.dp)
     val gridWidth = cell * columns + gap * (columns - 1)
@@ -472,29 +554,79 @@ private fun SettingsGrid(
             WeightCell("88:88:88", Weight.BOLD, weight, colour, half, onWeight)
         }
 
-        // THE REMINDER, AND IT IS GENERATED FROM THE VOCABULARY RATHER THAN TYPED BESIDE IT.
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // THE VOICE TESTER.
         //
-        // Every word below comes from Control.spoken, the same string the button carries and the
-        // same string Voice Access matches against. A tip typed by hand would be correct until
-        // the first rename and then it would be a lie that is believed, which is worse than
-        // having no tip at all.
+        // Baba asked to SEE whether it is triggering, and that is the right thing to ask for:
+        // voice control that silently does nothing is indistinguishable from a broken
+        // microphone, a missing recogniser, a refused permission and a word the matcher does not
+        // know. All four fail the same way and only one of them is a bug.
         //
-        // It says "tap start" rather than "start" because that is what actually works. Voice
-        // Access needs the verb; the app is not listening on its own. Printing the shorter form
-        // would read better and would not work, and a reminder that does not work is the same
-        // failure as a wrong one.
+        // So this row shows four separate things rather than one green light: whether the
+        // microphone is on, whether it can hear anything (the meter), what it heard (the words),
+        // and whether that became a command (the name, or a dash). Any one of them being wrong
+        // points at a different cause.
+        //
+        // The words come from Heard.primary, which is the first entry of the matcher's own list,
+        // so the reminder can never name a word the matcher would refuse.
+        // ─────────────────────────────────────────────────────────────────────────────────────
         Column(
             modifier = Modifier.width(gridWidth).height(tipRow).padding(top = gap),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().height(28.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Glyph(
+                    icon = if (listening) Icons.Default.Mic else Icons.Default.MicOff,
+                    label = if (listening) "Stop listening" else "Listen for commands",
+                    tone = if (listening) Tone.PRIMARY else Tone.SECONDARY,
+                    size = 28.dp,
+                ) { onListening(!listening) }
+
+                // THE METER. Level is 0..1 from the curve ported out of TTT mini, fed by the
+                // recogniser's own rmsdB because a second reader cannot have the microphone.
+                Box(
+                    Modifier
+                        .padding(horizontal = gap)
+                        .weight(1f)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(PANEL_IDLE),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(level.coerceIn(0f, 1f))
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(Color(colour)),
+                    )
+                }
+
+                Text(
+                    text = lastMatch?.spoken ?: voiceState,
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        color = if (lastMatch != null) Color(colour) else GLYPH_SECOND,
+                        fontSize = 11.sp,
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                )
+            }
+
             Text(
-                text = "Voice Access",
-                style = TextStyle(fontFamily = FontFamily.Monospace, color = GLYPH_OFF, fontSize = 10.sp),
-                maxLines = 1,
-            )
-            Text(
-                text = Control.entries.joinToString("  ") { "\"tap " + it.spoken.lowercase() + "\"" },
-                style = TextStyle(fontFamily = FontFamily.Monospace, color = GLYPH_SECOND, fontSize = 11.sp),
+                text = if (lastHeard.isBlank()) {
+                    Control.entries.joinToString("  ") { Heard.primary(it) }
+                } else {
+                    "\u201c" + lastHeard.take(40) + "\u201d"
+                },
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = if (lastHeard.isBlank()) GLYPH_OFF else GLYPH_SECOND,
+                    fontSize = 11.sp,
+                ),
                 maxLines = 1,
                 softWrap = false,
             )

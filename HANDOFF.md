@@ -1,7 +1,7 @@
 # HANDOFF — Minimalist Stopwatch
 
-**Current version: 7.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
-Latest artefact: `7-stopwatch-v7.apk`, tag `v7`.
+**Current version: 8.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
+Latest artefact: `8-stopwatch-v8.apk`, tag `v8`.
 
 This is the briefing. The reasoning behind each decision, including what was tried and rejected,
 is in [`NEXT_DEFAULTS.md`](NEXT_DEFAULTS.md). What was and was not proven about the shipped
@@ -186,9 +186,9 @@ use the icon.
 
 ## How to check it
 
-    python3 scripts/verify.py                       22 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest              Test 1, 40 cases
-    python3 scripts/sabotage.py                     47 mutations, each one broken on purpose
+    python3 scripts/verify.py                       28 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest              Test 1, 59 cases
+    python3 scripts/sabotage.py                     58 mutations, each one broken on purpose
 
 The sweep edits source in place, so it stashes every file it can touch before it starts and
 restores any stash left by a run that did not finish. It has been killed mid-mutation three

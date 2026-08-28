@@ -19,6 +19,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 MAIN = ROOT / "app/src/main/java/com/mantra/stopwatch"
 LOGIC = MAIN / "Stopwatch.kt"
 UI = MAIN / "MainActivity.kt"
+VOICE = MAIN / "Voice.kt"
+LISTENER = MAIN / "VoiceListener.kt"
 STORE = MAIN / "Store.kt"
 
 failures = []
@@ -254,11 +256,54 @@ check("the spoken vocabulary has exactly one home",
 # The reminder must say what actually works. Voice Access needs the verb; the app does not
 # listen on its own. Printing the shorter "start" would read better and would not work, and a
 # reminder that does not work is the same failure as a wrong one.
+voice = VOICE.read_text()
+
+# v8 stopped relying on Voice Access and listens for itself, so the reminder must print the bare
+# word. The previous version of this check asserted the OPPOSITE — that the tip carried "tap" —
+# which was correct for v7 and would have blocked v8. Left as a note rather than deleted: a
+# check is a statement about what must be true now, not a monument to what was true once.
 tip_expr = re.search(r"Control\.entries\.joinToString\([^)]*\)\s*\{([^}]*)\}", ui)
 tip_body = tip_expr.group(1) if tip_expr else ""
-check("the reminder prints the form that actually works",
-      "tap " in tip_body and "it.spoken" in tip_body,
-      f"the tip is built as: {tip_body.strip()[:60]} — the verb is in the code, not only the comment")
+check("the reminder prints one bare word per control, from the matcher's own list",
+      "Heard.primary" in tip_body and "tap" not in tip_body,
+      f"the tip is built as: {tip_body.strip()[:60]}")
+
+# ── 8i ───────────────────────────────────────────────────────────────────────────────────────
+# No word may belong to two controls, or match() refuses it and the command silently stops
+# working. Test 1 asserts this on the real map; this counts the words so a shrunken vocabulary
+# cannot pass by being empty.
+vocab = re.findall(r'Control\.(PLAY|PAUSE|STOP) to setOf\((.*?)\),\n', voice, re.S)
+words = {c: set(re.findall(r'"([^"]+)"', body)) for c, body in vocab}
+overlap = [w for c in words for d in words if c < d for w in (words[c] & words[d])]
+check("the spoken vocabulary is three disjoint lists",
+      len(words) == 3 and not overlap and all(len(v) >= 5 for v in words.values()),
+      f"{sum(len(v) for v in words.values())} words across 3 controls, {len(overlap)} shared")
+
+# ── 8j ───────────────────────────────────────────────────────────────────────────────────────
+# The microphone must be held by the app's own lifecycle and nothing else. If a Service ever
+# appears here, the promise that nothing listens while the stopwatch is off screen is broken and
+# the manifest comment saying so becomes a lie.
+listener = LISTENER.read_text()
+check("nothing listens while the stopwatch is off screen",
+      "Service" not in listener.replace("RecognitionService", "").replace("SpeechRecognizer", "")
+      and "onDispose { v.stop() }" in ui,
+      "the recogniser is created and destroyed by a DisposableEffect, with no service anywhere")
+
+# ── 8l ───────────────────────────────────────────────────────────────────────────────────────
+# The bar is drawn as a fraction of a width. A level above 1 runs it off the panel, and the curve
+# is only clamped inside Vu — if the drawing ever trusts the number it is handed, one loud room
+# breaks the layout.
+check("the meter cannot draw past the end of its track",
+      "fillMaxWidth(level.coerceIn(0f, 1f))" in ui,
+      "the bar clamps the level at the point it becomes a width")
+
+# ── 8k ───────────────────────────────────────────────────────────────────────────────────────
+# Restarting the recogniser from inside its own callback with no delay is a tight loop that
+# heats the phone and hears nothing. Every restart must go through the handler with a gap.
+immediate = re.search(r"onError[\s\S]{0,400}?\blisten\(\)", listener)
+check("the recogniser never restarts itself without a gap",
+      immediate is None and "postDelayed" in listener,
+      "restarts go through postDelayed; no direct listen() from a callback")
 
 # ── 9 ────────────────────────────────────────────────────────────────────────────────────────
 # Both timing fields have to be written, or the one that is not is the one that comes back wrong.
@@ -286,6 +331,36 @@ m = re.search(r"^appVersion=(\d+)$", props, re.M)
 check("the version is one whole number in one place",
       m is not None and "versionCode = appVersion" in gradle and 'versionName = appVersion.toString()' in gradle,
       f"appVersion={m.group(1) if m else 'MISSING'}, versionCode and versionName both derived")
+
+# ── the gate ─────────────────────────────────────────────────────────────────────────────────
+# Partial results repeat the same word, play is a toggle, so acting on every delivery would
+# start and pause the clock several times for one spoken word. The gate is the only thing
+# standing between that and the person, and the listener must route the ACTION through it while
+# the tester still sees every delivery.
+voice = (MAIN / "Voice.kt").read_text()
+listener = (MAIN / "VoiceListener.kt").read_text()
+# [^)]* stops at the FIRST bracket, and the call inside is elapsedRealtime(), so the first
+# version of this never matched. Match the two names in order on one line instead.
+gated = re.search(r"gate\.allow\(.*\bonCommand\(", listener)
+reopened = "gate.newUtterance()" in listener
+display_ungated = re.search(r"onHeard\(hit\.first, hit\.second\)", listener)
+check("the action is gated and the tester is not",
+      gated is not None and reopened and display_ungated is not None,
+      "onCommand goes through CommandGate.allow; onHeard reports every delivery")
+
+# The overflow that Test 1 caught. Long.MIN_VALUE as "never fired" makes now - firedAt negative,
+# which the minimum-gap check reads as "too soon", and the gate never opens at all.
+# THE CODE, NOT THE FILE. The first version asked whether "Long.MIN_VALUE" appeared anywhere in
+# Voice.kt — and it appears in the comment explaining why it is not used, so the check failed on
+# a correct file. This is the second time in two versions that a check has been answered by
+# prose rather than by code; strip the comments before looking.
+voice_code = "\n".join(
+    line for line in voice.splitlines()
+    if not line.strip().startswith(("*", "//", "/*"))
+)
+check("the gate has no sentinel that can overflow",
+      "Long.MIN_VALUE" not in voice_code and "hasFired" in voice_code,
+      "a boolean marks never-fired, not a magic instant that arithmetic can wrap")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

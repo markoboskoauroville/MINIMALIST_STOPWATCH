@@ -56,6 +56,15 @@ class Store(context: Context) {
         get() = Palette.sanitise(p.getLong(K_COLOUR, Palette.DEFAULT))
         set(v) = p.edit().putLong(K_COLOUR, v).apply()
 
+    /**
+     * Whether the microphone is wanted. Default OFF, and it stays off until it is switched on
+     * from the settings panel. A stopwatch that starts listening because it was installed is not
+     * a stopwatch anybody asked for.
+     */
+    var listening: Boolean
+        get() = p.getBoolean(K_LISTENING, false)
+        set(v) = p.edit().putBoolean(K_LISTENING, v).apply()
+
     var weight: Weight
         get() = if (p.getBoolean(K_BOLD, false)) Weight.BOLD else Weight.NORMAL
         set(v) = p.edit().putBoolean(K_BOLD, v == Weight.BOLD).apply()
@@ -110,5 +119,6 @@ class Store(context: Context) {
         const val K_LANDSCAPE = "landscape"
         const val K_COLOUR = "colour"
         const val K_BOLD = "bold"
+        const val K_LISTENING = "listening"
     }
 }

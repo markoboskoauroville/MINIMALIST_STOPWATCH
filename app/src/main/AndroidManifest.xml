@@ -1,6 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!--
+      The microphone. It is asked for from the switch in the settings panel and never at launch,
+      because an app that demands a microphone before it has shown you a stopwatch has not
+      earned it. It is held only while the app is on screen AND the switch is on: there is no
+      service, no foreground notification, and nothing listens when the stopwatch is not visible.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
+      Package visibility. From Android 11 an app cannot see which other apps exist unless it says
+      what it is looking for, and SpeechRecognizer lives in another package. Without this,
+      isRecognitionAvailable returns false on a phone that has a perfectly good recogniser.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

@@ -2,6 +2,7 @@ package com.mantra.stopwatch
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -87,6 +88,67 @@ class StopwatchTest {
         assertEquals(1000L, Face.untilNextSecond(0))
         assertEquals(1L, Face.untilNextSecond(999))
         assertEquals(1000L, Face.untilNextSecond(-5))
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // THE GATE. One spoken word must press one button, however many times the recogniser
+    // says it heard it.
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * THE BUG THIS EXISTS TO STOP, written down so nobody removes the gate as clutter.
+     *
+     * Partial results repeat: one spoken "start" arrives as "st", then "start", then "start"
+     * again. Play is a TOGGLE. Acting on each delivery would start, pause and start the clock
+     * for one word, and where it landed would depend on how many partials the recogniser
+     * happened to emit — which is to say, on nothing the person did.
+     */
+    @Test
+    fun oneUtteranceFiresOnceHoweverManyPartialsCarryTheWord() {
+        val gate = CommandGate()
+        gate.newUtterance()
+        assertTrue("the first partial acts", gate.allow(1_000))
+        assertFalse("the second does not", gate.allow(1_050))
+        assertFalse("nor the third", gate.allow(1_120))
+        assertFalse("nor the final result carrying the same word", gate.allow(1_400))
+    }
+
+    /** A new utterance reopens the gate, but only once the minimum gap has passed. */
+    @Test
+    fun aNewUtteranceReopensTheGateOnlyAfterTheMinimumGap() {
+        val gate = CommandGate()
+        gate.newUtterance()
+        assertTrue(gate.allow(1_000))
+
+        // The recogniser restarts every couple of seconds. The tail of the SAME word landing in
+        // the next utterance must not act again.
+        gate.newUtterance()
+        assertFalse("too soon after the last command", gate.allow(1_300))
+
+        gate.newUtterance()
+        assertTrue("far enough after it to be a second command", gate.allow(1_800))
+    }
+
+    /** Without a fresh utterance the gate stays shut no matter how much time passes. */
+    @Test
+    fun timeAloneDoesNotReopenTheGate() {
+        val gate = CommandGate()
+        gate.newUtterance()
+        assertTrue(gate.allow(1_000))
+        assertFalse(gate.allow(60_000))
+        assertFalse(gate.allow(3_600_000))
+        gate.newUtterance()
+        assertTrue(gate.allow(3_600_000))
+    }
+
+    /** Two deliberate commands, spoken a second apart, both land. */
+    @Test
+    fun twoDeliberateCommandsBothLand() {
+        val gate = CommandGate()
+        gate.newUtterance()
+        assertTrue("stop", gate.allow(10_000))
+        gate.newUtterance()
+        assertTrue("reset, a second later", gate.allow(11_000))
     }
 
     // -----------------------------------------------------------------------------------------
@@ -287,6 +349,190 @@ class StopwatchTest {
     // -----------------------------------------------------------------------------------------
     // THE NINE CASES. Three states, three buttons, walked exhaustively rather than sampled.
     // -----------------------------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------------------------
+    // VOICE. The recogniser is not here; the decision about what a heard string MEANS is, and
+    // that is the part with edges.
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun eachControlAnswersToItsOwnWord() {
+        assertEquals(Control.PLAY, Heard.match("start"))
+        assertEquals(Control.PAUSE, Heard.match("pause"))
+        assertEquals(Control.STOP, Heard.match("reset"))
+    }
+
+    /** Baba's own list was start, stop and reset. Stop is the middle one, and it is accepted. */
+    @Test
+    fun stopMeansPauseAndNeverReset() {
+        assertEquals(Control.PAUSE, Heard.match("stop"))
+        assertEquals(Control.PAUSE, Heard.match("stopped"))
+    }
+
+    /** He does not think about which language he is in, and the app should not make him. */
+    @Test
+    fun theCroatianWordsWork() {
+        assertEquals(Control.PLAY, Heard.match("kreni"))
+        assertEquals(Control.PAUSE, Heard.match("pauza"))
+        assertEquals(Control.PAUSE, Heard.match("stani"))
+        assertEquals(Control.STOP, Heard.match("resetiraj"))
+        assertEquals(Control.STOP, Heard.match("poništi"))
+    }
+
+    /** A recogniser mishears, and refusing the mishearing makes the app look broken. */
+    @Test
+    fun theCommonMishearingsAreAccepted() {
+        assertEquals(Control.PLAY, Heard.match("star"))
+        assertEquals(Control.PAUSE, Heard.match("paws"))
+        assertEquals(Control.STOP, Heard.match("recept"))
+    }
+
+    /** Punctuation, case and surrounding words are what a recogniser actually returns. */
+    @Test
+    fun theHeardStringIsNormalisedBeforeItIsJudged() {
+        assertEquals(Control.PLAY, Heard.match("Start."))
+        assertEquals(Control.PLAY, Heard.match("  START  "))
+        assertEquals(Control.PLAY, Heard.match("start the clock"))
+        assertEquals(Control.STOP, Heard.match("ok, reset!"))
+    }
+
+    /**
+     * THE REFUSAL, which matters more than any of the matches.
+     *
+     * A string containing words for two different controls is a sentence, not a command, and
+     * choosing one of the two would be inventing an intention. Between freezing a measurement
+     * and destroying it, a guess is much worse than doing nothing.
+     */
+    @Test
+    fun aStringMeaningTwoThingsMeansNothing() {
+        assertNull(Heard.match("start and stop"))
+        assertNull(Heard.match("stop reset"))
+        assertNull(Heard.match("start reset"))
+    }
+
+    @Test
+    fun anythingElseIsNotACommand() {
+        assertNull(Heard.match(""))
+        assertNull(Heard.match("   "))
+        assertNull(Heard.match("hello"))
+        assertNull(Heard.match("what time is it"))
+        assertNull(Heard.match("!!!"))
+    }
+
+    /**
+     * No word may belong to two controls. If one ever did, [Heard.match] would refuse it and the
+     * command would silently stop working with nothing to show why.
+     */
+    @Test
+    fun noWordBelongsToTwoControls() {
+        val seen = mutableMapOf<String, Control>()
+        for ((control, words) in Heard.VOCABULARY) {
+            for (w in words) {
+                val other = seen.put(w, control)
+                assertNull("'" + w + "' belongs to both " + other + " and " + control, other)
+            }
+        }
+        assertEquals(3, Heard.VOCABULARY.size)
+    }
+
+    /** Every accepted word must survive normalisation, or it can never be matched. */
+    @Test
+    fun everyWordInTheVocabularyIsReachable() {
+        for ((control, words) in Heard.VOCABULARY) {
+            for (w in words) {
+                assertEquals("'" + w + "' cannot be matched as written", control, Heard.match(w))
+            }
+        }
+    }
+
+    /** The reminder prints the first word of each list, so it cannot name an unaccepted word. */
+    @Test
+    fun theReminderNamesWordsTheMatcherAccepts() {
+        for (control in Control.entries) {
+            assertEquals(control, Heard.match(Heard.primary(control)))
+        }
+        assertEquals("start", Heard.primary(Control.PLAY))
+        assertEquals("pause", Heard.primary(Control.PAUSE))
+        assertEquals("reset", Heard.primary(Control.STOP))
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // THE VU CURVE, ported from TTT mini. Bounded, monotone and quiet at rest.
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun theMeterStaysBetweenZeroAndOneWhateverItIsFed() {
+        val vu = Vu()
+        for (db in -50..50) {
+            val v = vu.fromRms(db.toFloat())
+            assertTrue("level " + v + " out of range at " + db + "dB", v in 0f..1f)
+        }
+        // Straight into the curve as well, past both ends. The bar is drawn as a fraction of a
+        // width, so a level above 1 runs off the panel and a level below 0 inverts it.
+        val raw = Vu()
+        for (n in -30..30) {
+            val v = raw.update(n / 10f)
+            assertTrue("level " + v + " out of range at " + (n / 10f), v in 0f..1f)
+        }
+    }
+
+    /**
+     * A NOISE GATE, PROVED AT THE LEVEL IT EXISTS FOR.
+     *
+     * The first version of this only fed silence, which the clamp handles on its own, so
+     * deleting the gate entirely changed nothing and the test stayed green. The gate is not
+     * about silence — it is about a room that is never quite silent. This feeds the level a
+     * quiet room actually reads at and asserts the meter still rests.
+     */
+    @Test
+    fun aQuietRoomDoesNotMoveTheMeter() {
+        val vu = Vu()
+        var v = 0f
+        repeat(200) { v = vu.fromRms(-1.8f) }   // just above the floor: room tone, not speech
+        assertEquals("room tone must not register", 0f, v, 0.0001f)
+
+        val speaking = Vu()
+        var s = 0f
+        repeat(200) { s = speaking.fromRms(3f) }
+        assertTrue("ordinary speech must register", s > 0.4f)
+    }
+
+    /** Silence must read as still. A meter that twitches at rest is a meter nobody believes. */
+    @Test
+    fun silenceSettlesToZero() {
+        val vu = Vu()
+        repeat(20) { vu.fromRms(10f) }
+        repeat(200) { vu.fromRms(-10f) }
+        assertEquals(0f, vu.fromRms(-10f), 0.0001f)
+    }
+
+    /** Louder must never read lower once settled, or the meter is lying about direction. */
+    @Test
+    fun louderReadsHigher() {
+        fun settled(db: Float): Float {
+            val vu = Vu()
+            var v = 0f
+            repeat(200) { v = vu.fromRms(db) }
+            return v
+        }
+        val quiet = settled(0f)
+        val normal = settled(5f)
+        val loud = settled(10f)
+        assertTrue(quiet <= normal)
+        assertTrue(normal <= loud)
+        assertEquals(1f, loud, 0.01f)
+    }
+
+    /** Attack quicker than release: it must rise faster than it falls, as the original does. */
+    @Test
+    fun itRisesFasterThanItFalls() {
+        val up = Vu()
+        val rise = up.fromRms(10f)
+        val down = Vu()
+        repeat(200) { down.fromRms(10f) }
+        val fall = 1f - down.fromRms(-10f)
+        assertTrue("rise " + rise + " should exceed fall " + fall, rise > fall)
+    }
 
     /**
      * THE SPOKEN VOCABULARY, which is the one thing on this screen a person says out loud.
