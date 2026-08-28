@@ -185,22 +185,17 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var diagnostics by remember { mutableStateOf(Diagnostics()) }
     var lit by remember { mutableStateOf(Lit()) }
 
-    // ─────────────────────────────────────────────────────────────────────────────────────────
-    // THE MICROPHONE PROBE, and the reason it exists.
-    //
-    // "Audio is not entering the application" covers four faults that are indistinguishable from
-    // outside the phone: the permission was never really granted, something else holds the
-    // microphone, audio arrives and the recogniser is broken, or everything works and the words
-    // do not match. SpeechRecognizer cannot separate them, because its level callback only fires
-    // once it has ALREADY opened the microphone — so a dead meter looks exactly like a dead
-    // microphone.
-    //
-    // This opens the microphone directly, the way TTT mini does, and reads sample peaks. One
-    // microphone, one owner, so it runs only while the settings panel is open and voice commands
-    // are OFF. That is the test: switch listening off, open settings, speak. If the bar moves,
-    // audio reaches this app and the fault is further down. If it does not, nothing after it can
-    // work and there is no point looking at the recogniser at all.
-    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // The permission ask. Deleted by accident in the v12 rewrite of this block and caught by the
+    // compiler, which is the cheapest place for it to be caught and the reason the build runs
+    // before anything is published.
+    val askForMicrophone = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { allowed ->
+        listening = allowed
+        store.listening = allowed
+        if (!allowed) voiceState = "microphone refused"
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // ONE OWNER OF THE MICROPHONE, AND THE METER NEVER STOPS.
     //
