@@ -53,6 +53,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -119,6 +120,12 @@ private val PANEL_IDLE = Color(0xFF0D0D0D)
 /** Red means recording, everywhere. It is the one colour in this app that is not a grey ramp. */
 private val RECORD_RED = Color(0xFF9B3B33)
 
+/**
+ * A seventh of a second. Long enough to see out of the corner of an eye, short enough that it
+ * reads as an acknowledgement rather than as the digits having changed colour.
+ */
+private const val FLASH_MS = 140L
+
 private val EDGE = 12.dp
 private val LOCK_ZONE = 56.dp
 
@@ -169,7 +176,30 @@ private fun Screen(store: Store, activity: ComponentActivity) {
 
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
 
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE FLASH. A second is a long time to wait to find out whether anything heard you.
+    //
+    // The digits take the flash colour for about a seventh of a second the instant a command
+    // registers, whether it came from a thumb or from a voice. It is not a state and it carries
+    // no information beyond "that arrived" — which is the whole point, because the number itself
+    // will not change for up to a second and the silence in between is what feels broken.
+    //
+    // ONLY WHEN THE STATE ACTUALLY CHANGED. A press on a dead control registered nothing, so it
+    // must not claim to have. Flashing on every touch would make the flash mean "I was touched"
+    // rather than "that worked", and the second is the only one worth having.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    var flashes by remember { mutableIntStateOf(0) }
+    var flashing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(flashes) {
+        if (flashes == 0) return@LaunchedEffect
+        flashing = true
+        delay(FLASH_MS)
+        flashing = false
+    }
+
     fun commit(next: Stopwatch) {
+        if (next != state) flashes++
         state = next
         now = SystemClock.elapsedRealtime()
         store.save(next)
@@ -362,7 +392,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         Column(Modifier.fillMaxSize()) {
             Digits(
                 text = text,
-                colour = Color(colour),
+                colour = Color(if (flashing) Palette.flashOf(colour) else colour),
                 weight = weight,
                 width = screenW - EDGE * 2,
                 height = screenH - strip - LOCK_ZONE,

@@ -54,6 +54,30 @@ object Palette {
     fun sanitise(stored: Long): Long = if (stored in SWATCHES) stored else DEFAULT
 
     /**
+     * THE COLOUR THE DIGITS FLASH WHEN A COMMAND REGISTERS.
+     *
+     * A second is a long time to wait to find out whether anything heard you. The digits take
+     * this colour for about a seventh of a second, which is long enough to see and too short to
+     * read as a change of state.
+     *
+     * IT CANNOT SIMPLY BE WHITE. White is the default digit colour and the flash has to be a
+     * DIFFERENCE — flashing white digits white is no flash at all, and that is exactly the case
+     * a fixed colour would get wrong for most people, since most people never change it.
+     *
+     * So the rule is: flash white unless the digits are already near white, in which case flash
+     * the Mantra amber. Both are far from every swatch in the grid, both clear the contrast
+     * floor by a wide margin, and between them they cover the whole palette.
+     */
+    fun flashOf(current: Long): Long =
+        if (luminance(current) > NEAR_WHITE) ACCENT else DEFAULT
+
+    /** Above this a colour is close enough to white that flashing white would be invisible. */
+    private const val NEAR_WHITE = 0.75
+
+    /** The accent that runs through every other app in the account. */
+    const val ACCENT: Long = 0xFFE8A64B
+
+    /**
      * Relative luminance, the WCAG definition. Used to decide two things: whether a swatch is
      * legible enough to be offered at all, and whether the tick that marks the chosen one should
      * be drawn in black or in white on top of it.

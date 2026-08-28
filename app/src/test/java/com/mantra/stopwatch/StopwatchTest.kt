@@ -520,6 +520,35 @@ class StopwatchTest {
      * orientation and reads as a mistake. Forty-eight is the number because it divides by six
      * and by twelve; any future change to the swatch list has to keep that true.
      */
+    /**
+     * The flash exists to say "that registered" before the digits have had time to change. It is
+     * therefore worthless unless it is always a visible difference, and the case a fixed white
+     * flash would get wrong is the commonest one of all: white digits, which nobody has changed.
+     */
+    @Test
+    fun theFlashIsAlwaysADifferenceFromTheDigitsItFlashes() {
+        assertEquals("white digits cannot flash white", Palette.ACCENT, Palette.flashOf(0xFFFFFFFF))
+        assertEquals(Palette.ACCENT, Palette.flashOf(0xFFE2E8F0))
+        assertEquals("a coloured digit flashes white", Palette.DEFAULT, Palette.flashOf(0xFFE8A64B))
+        assertEquals(Palette.DEFAULT, Palette.flashOf(0xFFEF4444))
+
+        // No swatch in the grid may sit so close to its own flash colour that the flash vanishes.
+        for (c in Palette.SWATCHES) {
+            val flash = Palette.flashOf(c)
+            val a = Palette.luminance(c)
+            val b = Palette.luminance(flash)
+            val ratio = (maxOf(a, b) + 0.05) / (minOf(a, b) + 0.05)
+            assertTrue("%08X flashes to %08X at only %.2f".format(c, flash, ratio), ratio >= 1.25)
+        }
+    }
+
+    /** The flash colour must itself be readable, since for a moment it IS the digits. */
+    @Test
+    fun theFlashColoursAreLegibleOnBlack() {
+        assertTrue(Palette.contrastOnBlack(Palette.ACCENT) >= 4.5)
+        assertTrue(Palette.contrastOnBlack(Palette.DEFAULT) >= 4.5)
+    }
+
     @Test
     fun theGridIsRectangularInBothOrientations() {
         assertEquals(48, Palette.SWATCHES.size)

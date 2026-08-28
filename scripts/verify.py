@@ -54,6 +54,7 @@ def check(name, ok, detail):
 # The timing logic must not import anything from Android. The moment it does, Test 1 stops being
 # a test of the mechanism and becomes a test of an emulator that is not present.
 src = LOGIC.read_text()
+palette_src = (MAIN / "Palette.kt").read_text()
 ui = UI.read_text()
 store = STORE.read_text()
 meter = (ROOT / "app/src/main/java/com/mantra/stopwatch/MaMeter.kt").read_text()
@@ -506,6 +507,17 @@ check("a bad recording is refused, and the refusal says what to do",
 check("every pad shows the waveform of its own sample",
       "waveform(samples, 96)" in ui and "fun waveform(" in dsp,
       "the pad draws real peaks from the stored audio, not a filled state")
+
+# A second is a long time to wait to learn whether anything registered, so the digits flash the
+# instant a command lands. Two things have to hold or the flash is worse than nothing.
+check("the flash fires only when the state actually changed",
+      "if (next != state) flashes++" in code_only(ui),
+      "a press on a dead control registered nothing and must not claim to have")
+
+check("the flash is always a difference from the digits it flashes",
+      "Palette.flashOf(colour)" in code_only(ui) and "fun flashOf(" in palette_src,
+      "white digits flash amber, everything else flashes white; a fixed colour would be "
+      "invisible for the default")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
