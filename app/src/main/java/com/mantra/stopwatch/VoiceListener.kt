@@ -41,6 +41,8 @@ class VoiceListener(
     /** At most once per utterance. This is the one that moves the stopwatch. */
     private val onCommand: (Control) -> Unit,
     private val onState: (String) -> Unit,
+    /** The counters, so a person with the phone can say what this code cannot see. */
+    private val onDiagnostics: (Diagnostics) -> Unit = {},
 ) {
 
     private val main = Handler(Looper.getMainLooper())
@@ -49,14 +51,53 @@ class VoiceListener(
     private var recognizer: SpeechRecognizer? = null
     private var wanted = false
 
-    private val intent: Intent
-        get() = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+    // THE NUMBERS THE TESTER PRINTS. Every one of them exists because a person holding the phone
+    // can see something this code cannot, and without them the only report possible is "it does
+    // not work". A session count that climbs by four a second says restart storm. Rms callbacks
+    // stuck at zero while sessions climb says the recogniser is dying before it ever opens the
+    // microphone. Those two numbers separate the two faults without anybody guessing.
+    private var sessions = 0
+    private var rmsCallbacks = 0
+    private var lastError = ""
+    private var offlineFailures = 0
+    private var offline = true
+
+    private fun report() = onDiagnostics(
+        Diagnostics(
+            sessions = sessions,
+            rmsCallbacks = rmsCallbacks,
+            lastError = lastError,
+            offline = offline,
+        )
+    )
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // BUG 1, AND IT IS ALMOST CERTAINLY WHY NOTHING WORKED.
+    //
+    // v8 set EXTRA_PREFER_OFFLINE unconditionally. On a phone with no downloaded offline model
+    // for the locale, that does not fall back — the recogniser fails the session immediately,
+    // every time. Paired with a 250ms restart that is roughly four dead sessions a second,
+    // forever: nothing is ever recognised, and on the OEM builds that play a tone at the start
+    // and end of a session, THAT is the on-off sound Baba is hearing. It is not the app doing
+    // something clever, it is the recogniser being started and killed four times a second.
+    //
+    // Offline is still tried first, because a one-word command should not need the network. But
+    // it is now a PREFERENCE THAT GIVES UP: after OFFLINE_ATTEMPTS failures the flag comes off
+    // and the recogniser is allowed to use whatever it has. Falling back late is a slower app;
+    // never falling back is a broken one.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    private fun intent(offline: Boolean): Intent =
+        Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            // On-device where it exists: no network round trip, no audio leaving the phone, and
-            // it answers fast enough that a one-word command feels like a button.
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+            if (offline) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            // Ask the session to stay open through ordinary pauses in speech. Not every
+            // implementation honours these; the ones that do restart far less often, which means
+            // fewer tones and a meter that is actually being fed.
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4_000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 4_000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 6_000L)
         }
 
     fun start() {
@@ -92,7 +133,9 @@ class VoiceListener(
         if (!wanted) return
         // A fresh listen is a fresh utterance, so the gate reopens here and nowhere else.
         gate.newUtterance()
-        runCatching { recognizer?.startListening(intent) }
+        sessions++
+        report()
+        runCatching { recognizer?.startListening(intent(offline)) }
             .onFailure { onState("could not start") }
     }
 
@@ -106,6 +149,11 @@ class VoiceListener(
     private val listener = object : RecognitionListener {
 
         override fun onRmsChanged(rmsdB: Float) {
+            // BUG 2. This callback only arrives between onReadyForSpeech and onEndOfSpeech. If
+            // every session dies on arrival — see BUG 1 — it is never called at all and the bar
+            // never moves, which is exactly what Baba saw. The counter below is how anybody can
+            // tell "the meter is broken" from "the meter is never being given anything".
+            rmsCallbacks++
             onLevel(vu.fromRms(rmsdB))
         }
 
@@ -122,18 +170,53 @@ class VoiceListener(
         }
 
         override fun onError(error: Int) {
-            onLevel(vu.reset())
-            // A quiet room produces NO_MATCH and SPEECH_TIMEOUT forever, and neither is a fault.
-            // The two that are worth saying out loud are a refused microphone and a busy one.
+            // BUG 3. v8 reset the meter here, and with a session failing every 250ms that stamped
+            // the level back to zero four times a second. Even a working rms feed could not have
+            // shown through it. The meter now falls on its own release curve and is only reset
+            // when the microphone is actually let go.
+            lastError = name(error)
+            report()
             when (error) {
                 SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
                     onState("microphone refused")
                     wanted = false
+                    onLevel(vu.reset())
                     return
                 }
+                // The two that mean "this configuration cannot work". Enough of them and the
+                // offline preference is dropped rather than retried for ever.
+                SpeechRecognizer.ERROR_SERVER,
+                SpeechRecognizer.ERROR_NETWORK,
+                SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> {
+                    if (offline && ++offlineFailures >= OFFLINE_ATTEMPTS) {
+                        offline = false
+                        onState("offline model missing, using the online recogniser")
+                    }
+                    restart(BACKOFF_MS)
+                }
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> restart(BUSY_MS)
+                // A quiet room produces these for ever and neither is a fault.
                 else -> restart(RESTART_MS)
             }
+        }
+
+        /**
+         * The code as a word. An integer in a diagnostics panel is a thing to be looked up; a
+         * name is a thing that can be read out over a message, which is the whole point of the
+         * panel existing.
+         */
+        private fun name(error: Int): String = when (error) {
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "network timeout"
+            SpeechRecognizer.ERROR_NETWORK -> "no network"
+            SpeechRecognizer.ERROR_AUDIO -> "audio"
+            SpeechRecognizer.ERROR_SERVER -> "server"
+            SpeechRecognizer.ERROR_CLIENT -> "client"
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "silence"
+            SpeechRecognizer.ERROR_NO_MATCH -> "no match"
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "busy"
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "no permission"
+            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "language unavailable"
+            else -> "error $error"
         }
 
         private fun deliver(bundle: Bundle?, final: Boolean) {
@@ -163,7 +246,13 @@ class VoiceListener(
     }
 
     private companion object {
-        const val RESTART_MS = 250L
-        const val BUSY_MS = 1000L
+        // BUG 4. 250ms was a restart storm. Every session start and end is a tone on the OEM
+        // builds that play one, and many implementations rate-limit and answer BUSY, so a short
+        // gap made the app both noisier and less likely to hear anything. Slower is better here:
+        // a spoken word still lands within one gap, and the microphone stays open across it.
+        const val RESTART_MS = 900L
+        const val BUSY_MS = 2_000L
+        const val BACKOFF_MS = 3_000L
+        const val OFFLINE_ATTEMPTS = 3
     }
 }

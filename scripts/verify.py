@@ -362,6 +362,43 @@ check("the gate has no sentinel that can overflow",
       "Long.MIN_VALUE" not in voice_code and "hasFired" in voice_code,
       "a boolean marks never-fired, not a magic instant that arithmetic can wrap")
 
+# ── voice, the four faults of v8 ─────────────────────────────────────────────────────────────
+listener = (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt").read_text()
+
+# v8 set EXTRA_PREFER_OFFLINE unconditionally, and on a phone with no downloaded model that
+# fails every session immediately and never falls back. Offline must be a preference that gives
+# up, not a permanent condition.
+check("the offline preference can be given up on",
+      "if (offline) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE" in listener
+      and "offline = false" in listener,
+      "offline is tried first and dropped after repeated failures, rather than retried for ever")
+
+# v8 restarted at 250ms, which is a session start and end four times a second: a restart storm,
+# and on the OEM builds that play a tone per session, an audible one.
+restart = re.search(r"const val RESTART_MS = (\d+)L", listener)
+ms = int(restart.group(1)) if restart else 0
+check("the restart gap is long enough not to be a storm",
+      ms >= 500,
+      f"RESTART_MS = {ms} — below about 500 the recogniser is being killed faster than it opens")
+
+# v8 reset the meter inside onError, so a failing session stamped the level to zero several
+# times a second and no rms feed could have shown through it.
+error_body = re.search(r"override fun onError\(error: Int\) \{(.*?)\n        \}", listener, re.S)
+error_text = error_body.group(1) if error_body else ""
+check("a failed session does not stamp the meter to zero",
+      "vu.reset()" not in error_text.split("ERROR_INSUFFICIENT_PERMISSIONS")[0],
+      "the level falls on its own release curve; reset happens when the microphone is let go")
+
+# The counters are the whole debugging loop for somebody who has never held the phone.
+check("the tester reports counters, not just a state word",
+      "rmsCallbacks" in listener and "sessions++" in listener and "looksLikeRestartStorm" in ui,
+      "sessions, rms callbacks, offline or online, and the last error by name")
+
+# The microphone switch is a hands-free control and must be reachable without opening a panel.
+check("the microphone switch is on the main screen",
+      "Alignment.BottomEnd" in ui and "Icons.Default.MicOff" in ui,
+      "a corner of the stopwatch itself, not a row inside settings")
+
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
 if failures:

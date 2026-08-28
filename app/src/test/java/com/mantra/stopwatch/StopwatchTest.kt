@@ -152,6 +152,31 @@ class StopwatchTest {
     }
 
     // -----------------------------------------------------------------------------------------
+    // THE DIAGNOSTICS LINE. It is read out loud by somebody holding a phone, so it has to be
+    // right: a diagnostics readout that is wrong is worse than none, because it is believed.
+    // -----------------------------------------------------------------------------------------
+
+    @Test
+    fun theDiagnosticsLineSaysWhatItMeans() {
+        assertEquals("s0  rms0  offline", Diagnostics().line())
+        assertEquals("s12  rms40  offline", Diagnostics(12, 40).line())
+        assertEquals("s3  rms0  online  no match", Diagnostics(3, 0, "no match", offline = false).line())
+    }
+
+    /**
+     * The reading that separates the two faults that look identical from outside. Many sessions
+     * with no level callbacks at all is a recogniser being started and killed in a loop; a few
+     * sessions with no callbacks is just a quiet room.
+     */
+    @Test
+    fun aRestartStormIsManySessionsAndNoLevelAtAll() {
+        assertTrue(Diagnostics(sessions = 40, rmsCallbacks = 0).looksLikeRestartStorm())
+        assertFalse("a quiet room is not a storm", Diagnostics(2, 0).looksLikeRestartStorm())
+        assertFalse("levels arriving means the microphone opened",
+            Diagnostics(40, 12).looksLikeRestartStorm())
+    }
+
+    // -----------------------------------------------------------------------------------------
     // THE PALETTE. A swatch that cannot be read is a setting that turns the app off.
     // -----------------------------------------------------------------------------------------
 

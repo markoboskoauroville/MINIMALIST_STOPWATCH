@@ -211,3 +211,44 @@ class CommandGate(private val minGapMs: Long = MIN_GAP_MS) {
         const val MIN_GAP_MS = 700L
     }
 }
+
+
+/**
+ * WHAT THE TESTER PRINTS, and it exists because this code cannot see the room.
+ *
+ * Every field separates two faults that look identical from outside:
+ *
+ *   sessions climbing fast        the recogniser is being started and killed in a loop
+ *   rmsCallbacks stuck at zero    it never got as far as opening the microphone, so a still
+ *                                 meter is not a broken meter
+ *   lastError                     the name, not the number, so it can be read out loud
+ *   offline                       whether the offline preference is still being asked for or
+ *                                 has been given up on
+ *
+ * A person holding the phone can read these four out in a sentence. That is the fastest debugging
+ * loop available to somebody who has never held the device.
+ */
+data class Diagnostics(
+    val sessions: Int = 0,
+    val rmsCallbacks: Int = 0,
+    val lastError: String = "",
+    val offline: Boolean = true,
+) {
+    /**
+     * The one line the panel shows. Written here rather than in the screen so Test 1 can walk it,
+     * because a diagnostics line that is wrong is worse than none: it is believed.
+     */
+    fun line(): String = buildString {
+        append("s").append(sessions)
+        append("  rms").append(rmsCallbacks)
+        append(if (offline) "  offline" else "  online")
+        if (lastError.isNotEmpty()) append("  ").append(lastError)
+    }
+
+    /**
+     * The reading that says the fault is a restart storm rather than a quiet room: many sessions
+     * and no level callbacks at all. Named so the panel can say it in words instead of leaving
+     * two numbers to be interpreted.
+     */
+    fun looksLikeRestartStorm(): Boolean = sessions >= 5 && rmsCallbacks == 0
+}

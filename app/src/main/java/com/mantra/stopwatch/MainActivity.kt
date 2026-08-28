@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -182,6 +184,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
     }
+    var diagnostics by remember { mutableStateOf(Diagnostics()) }
     val askForMicrophone = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { allowed ->
@@ -207,6 +210,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     commit(state.press(control, SystemClock.elapsedRealtime()))
                 },
                 onState = { voiceState = it },
+                onDiagnostics = { diagnostics = it },
             )
             v.start()
             onDispose { v.stop() }
@@ -348,6 +352,34 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         ) { settingsOpen = !settingsOpen }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
+        // THE MICROPHONE, ON THE MAIN SCREEN.
+        //
+        // It was in the settings panel at v8, which was wrong for the reason Baba gave: this is
+        // a hands-free control. Anything you have to open a panel to reach is not hands-free,
+        // and the one moment you want to switch listening off is the moment your hands are busy.
+        //
+        // It is the only control on this screen that is a STATE rather than an action, so it is
+        // the only one that breaks the rule about saying what the next press does: a struck-out
+        // microphone means "off", not "pressing this turns it off". A switch has to show its
+        // position or there is no way to know it without pressing it, and pressing this one to
+        // find out is exactly what must not be necessary.
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        Glyph(
+            icon = if (listening) Icons.Default.Mic else Icons.Default.MicOff,
+            label = if (listening) "Voice on" else "Voice off",
+            tone = if (listening) Tone.HIGHLIGHT else Tone.SECONDARY,
+            size = 40.dp,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(EDGE),
+        ) {
+            if (!listening && !granted) {
+                askForMicrophone.launch(Manifest.permission.RECORD_AUDIO)
+            } else {
+                listening = !listening
+                store.listening = listening
+            }
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────────────
         // THE SETTINGS GRID, over the bottom of the screen and never over the digits.
         //
         // design-language.md 11: a thing being adjusted while it runs must stay visible, because
@@ -366,6 +398,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 weight = weight,
                 listening = listening,
                 level = level,
+                diagnostics = diagnostics,
                 lastHeard = lastHeard,
                 lastMatch = lastMatch,
                 voiceState = voiceState,
@@ -470,6 +503,7 @@ private fun SettingsGrid(
     weight: Weight,
     listening: Boolean,
     level: Float,
+    diagnostics: Diagnostics,
     lastHeard: String,
     lastMatch: Control?,
     voiceState: String,
@@ -615,6 +649,27 @@ private fun SettingsGrid(
                     softWrap = false,
                 )
             }
+
+            // THE COUNTERS. This line is here so that a report can be a fact rather than "it
+            // does not work", which is all anybody can say about a microphone from the outside.
+            //
+            // Sessions climbing several a second is a restart storm, and it is also the sound
+            // of the recogniser being started and killed — the on-off noise. Rms stuck at zero
+            // while sessions climb means it never got as far as opening the microphone, so a
+            // still meter is not a broken meter. Those two numbers tell the difference without
+            // anybody having to guess, and the error name can be read out loud.
+            Text(
+                text = if (diagnostics.looksLikeRestartStorm())
+                    diagnostics.line() + "  RESTARTING"
+                else diagnostics.line(),
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = if (diagnostics.looksLikeRestartStorm()) Color(0xFF9B3B33) else GLYPH_OFF,
+                    fontSize = 10.sp,
+                ),
+                maxLines = 1,
+                softWrap = false,
+            )
 
             Text(
                 text = if (lastHeard.isBlank()) {
