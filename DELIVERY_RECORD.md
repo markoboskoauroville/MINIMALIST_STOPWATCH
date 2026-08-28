@@ -1,12 +1,24 @@
-# DELIVERY RECORD — Minimalist Stopwatch v5 — 27.8.2026
+# DELIVERY RECORD — Minimalist Stopwatch v7 — 28.8.2026
 
 The shape is fixed so that two releases can be compared. The **NOT TESTED** block is the most
 valuable part of this document.
 
 ---
 
-    ARTEFACT   5-stopwatch-v5.apk, built by GitHub Actions from the commit tagged v5
-    VERSION    new: 5   previous: 4, still downloadable at the releases page
+    ARTEFACT   7-stopwatch-v7.apk, built by GitHub Actions from the commit tagged v7
+    VERSION    new: 7   previous: 6, still downloadable at the releases page
+
+## What changed since v6
+
+    A REMINDER OF THE VOICE COMMANDS in the settings panel, generated from Control.spoken rather
+      than typed beside it, so it cannot become a lie that is believed. It prints the "tap X"
+      form because that is what Voice Access actually answers to
+
+    verify.py: 22 checks. Test 1: 40 cases. Sweep: 47 mutations, all caught
+
+    NOT TESTED, and new: the tip has never been read on a screen. It is two lines of 10 and 11
+      point monospace inside a panel whose height is already budgeted, and whether it fits on a
+      landscape phone at 12 columns is unverified. It is also the only prose in the whole app
     SIGNED BY  the permanent repository key, SHA-256 D9:3E:6B:00:...:D9:62
 
 ## What changed since v4, and why

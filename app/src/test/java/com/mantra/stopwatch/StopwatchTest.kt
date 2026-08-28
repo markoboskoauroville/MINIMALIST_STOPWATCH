@@ -289,6 +289,36 @@ class StopwatchTest {
     // -----------------------------------------------------------------------------------------
 
     /**
+     * THE SPOKEN VOCABULARY, which is the one thing on this screen a person says out loud.
+     *
+     * Voice Access matches speech against contentDescription, so these three strings are the
+     * commands. They are asserted here rather than trusted because the failure mode is silent:
+     * rename one and the button still works, the app still builds, every other test still
+     * passes, and the only thing that breaks is a spoken word that stops being heard.
+     */
+    @Test
+    fun theVocabularyIsThreeDistinctWordsAndTheTipCanOnlyComeFromIt() {
+        assertEquals("Start", Control.PLAY.spoken)
+        assertEquals("Pause", Control.PAUSE.spoken)
+        assertEquals("Reset", Control.STOP.spoken)
+
+        val words = Control.entries.map { it.spoken }
+        assertEquals("no two controls may answer to the same word", words.size, words.toSet().size)
+        assertEquals("one word per control, no more and no fewer", 3, words.size)
+        for (w in words) {
+            assertTrue("a spoken command cannot be blank", w.isNotBlank())
+            assertTrue("a spoken command must be one word", !w.contains(" "))
+        }
+
+        // The reminder in the settings panel is built by joining exactly this list. Composing it
+        // here as well proves the tip has no vocabulary of its own to drift with.
+        assertEquals(
+            "\"tap start\"  \"tap pause\"  \"tap reset\"",
+            Control.entries.joinToString("  ") { "\"tap " + it.spoken.lowercase() + "\"" },
+        )
+    }
+
+    /**
      * THE NINE CASES OF HOW EACH CONTROL LOOKS. Three controls, three phases, walked exhaustively
      * rather than sampled, and written as a table so a change to one cell is visible as a change
      * to one cell.

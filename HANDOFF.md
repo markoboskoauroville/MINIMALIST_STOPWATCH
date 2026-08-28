@@ -1,7 +1,7 @@
 # HANDOFF — Minimalist Stopwatch
 
-**Current version: 6.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
-Latest artefact: `6-stopwatch-v6.apk`, tag `v6`.
+**Current version: 7.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
+Latest artefact: `7-stopwatch-v7.apk`, tag `v7`.
 
 This is the briefing. The reasoning behind each decision, including what was tried and rejected,
 is in [`NEXT_DEFAULTS.md`](NEXT_DEFAULTS.md). What was and was not proven about the shipped
@@ -141,15 +141,26 @@ Each of these is argued in NEXT_DEFAULTS.md. Read that before changing one.
 
 ## Voice, and the words on the buttons
 
-**The `contentDescription` of each transport control IS the voice vocabulary.** Google's Voice
-Access, an accessibility service already on the phone, matches speech against the description of
-every control on screen. So the three strings are not decoration for a screen reader:
+**The vocabulary lives on `Control.spoken` and nowhere else.** Google's Voice Access, an
+accessibility service already on the phone, matches speech against the `contentDescription` of
+every control on screen. So these three strings are not decoration for a screen reader:
 
-    Start    Pause    Reset
+    Control.PLAY.spoken   = "Start"
+    Control.PAUSE.spoken  = "Pause"
+    Control.STOP.spoken   = "Reset"
 
-They deliberately do not match the model's internal names (play, pause, stop). `verify.py` fails
-if they drift back, because if they do the spoken commands stop working and **nothing else
-breaks**, which is the worst way for anything to fail.
+One string feeds both the button and the reminder in the settings panel, so **the tip cannot come
+to disagree with what the app answers to**. A tip listing a command the app no longer knows is
+worse than no tip, because it is believed.
+
+They deliberately do not match the model's internal names. `verify.py` fails if a literal string
+reappears at the call site, and if the tip is ever typed by hand rather than generated. The
+failure mode is silent: rename one and the button still works, the app still builds, every other
+test still passes, and the only thing that breaks is a word that stops being heard.
+
+**The tip says "tap start", not "start", because that is what works.** Voice Access needs the
+verb; the app is not listening on its own. Printing the shorter form would read better and would
+not work, and a reminder that does not work is the same failure as a wrong one.
 
 This gets you "tap start" through Voice Access with no permission and no code. It does NOT get
 you a bare "start" with the app listening on its own — see NEXT_DEFAULTS for what that would
@@ -175,9 +186,9 @@ use the icon.
 
 ## How to check it
 
-    python3 scripts/verify.py                       21 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest              Test 1, 39 cases
-    python3 scripts/sabotage.py                     44 mutations, each one broken on purpose
+    python3 scripts/verify.py                       22 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest              Test 1, 40 cases
+    python3 scripts/sabotage.py                     47 mutations, each one broken on purpose
 
 The sweep edits source in place, so it stashes every file it can touch before it starts and
 restores any stash left by a run that did not finish. It has been killed mid-mutation three

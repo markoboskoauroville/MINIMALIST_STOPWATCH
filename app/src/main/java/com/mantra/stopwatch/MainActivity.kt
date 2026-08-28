@@ -246,15 +246,12 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 // Three controls, one call each, and the tone comes from the model rather than
                 // from a condition written here. The Activity does not know what a phase is.
                 //
-                // THE LABELS ARE THE VOICE COMMANDS. Google's Voice Access, which is an
-                // accessibility service already on the phone, matches what is said against the
-                // contentDescription of every control on screen. So these three strings are not
-                // decoration for a screen reader — they are the vocabulary. "Start", "Pause",
-                // "Reset", chosen to match the words Baba said he wanted rather than the words
-                // the model happens to use internally (play, pause, stop).
-                Transport(Icons.Default.PlayArrow, "Start", Control.PLAY, state, button, ::commit)
-                Transport(Icons.Default.Pause, "Pause", Control.PAUSE, state, button, ::commit)
-                Transport(Icons.Default.Stop, "Reset", Control.STOP, state, button, ::commit)
+                // The spoken word comes from Control.spoken and is not written here. It is what
+                // Voice Access listens for, it is what the tip in the settings panel prints, and
+                // there is one copy of it so the two can never disagree.
+                Transport(Icons.Default.PlayArrow, Control.PLAY, state, button, ::commit)
+                Transport(Icons.Default.Pause, Control.PAUSE, state, button, ::commit)
+                Transport(Icons.Default.Stop, Control.STOP, state, button, ::commit)
             }
         }
 
@@ -325,17 +322,15 @@ private fun Screen(store: Store, activity: ComponentActivity) {
 @Composable
 private fun Transport(
     icon: ImageVector,
-    label: String,
     control: Control,
     state: Stopwatch,
     size: Dp,
     commit: (Stopwatch) -> Unit,
 ) {
-    val tone = state.tone(control)
     Glyph(
         icon = icon,
-        label = label,
-        tone = tone,
+        label = control.spoken,
+        tone = state.tone(control),
         size = size,
     ) { commit(state.press(control, SystemClock.elapsedRealtime())) }
 }
@@ -414,7 +409,8 @@ private fun SettingsGrid(
     // trap, and the fix is not a smaller number, it is measuring against both edges.
     val header = 36.dp
     val weightRow = 52.dp
-    val forGrid = maxHeight - header - weightRow - gap * (rows + 2)
+    val tipRow = 40.dp
+    val forGrid = maxHeight - header - weightRow - tipRow - gap * (rows + 3)
     val cell = minOf((width - gap * (columns - 1)) / columns, forGrid / rows, 64.dp)
     val gridWidth = cell * columns + gap * (columns - 1)
 
@@ -474,6 +470,34 @@ private fun SettingsGrid(
             val half = (gridWidth - gap) / 2
             WeightCell("88:88:88", Weight.NORMAL, weight, colour, half, onWeight)
             WeightCell("88:88:88", Weight.BOLD, weight, colour, half, onWeight)
+        }
+
+        // THE REMINDER, AND IT IS GENERATED FROM THE VOCABULARY RATHER THAN TYPED BESIDE IT.
+        //
+        // Every word below comes from Control.spoken, the same string the button carries and the
+        // same string Voice Access matches against. A tip typed by hand would be correct until
+        // the first rename and then it would be a lie that is believed, which is worse than
+        // having no tip at all.
+        //
+        // It says "tap start" rather than "start" because that is what actually works. Voice
+        // Access needs the verb; the app is not listening on its own. Printing the shorter form
+        // would read better and would not work, and a reminder that does not work is the same
+        // failure as a wrong one.
+        Column(
+            modifier = Modifier.width(gridWidth).height(tipRow).padding(top = gap),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = "Voice Access",
+                style = TextStyle(fontFamily = FontFamily.Monospace, color = GLYPH_OFF, fontSize = 10.sp),
+                maxLines = 1,
+            )
+            Text(
+                text = Control.entries.joinToString("  ") { "\"tap " + it.spoken.lowercase() + "\"" },
+                style = TextStyle(fontFamily = FontFamily.Monospace, color = GLYPH_SECOND, fontSize = 11.sp),
+                maxLines = 1,
+                softWrap = false,
+            )
         }
     }
 }

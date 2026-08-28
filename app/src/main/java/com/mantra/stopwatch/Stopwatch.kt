@@ -32,8 +32,26 @@ package com.mantra.stopwatch
 
 enum class Phase { STOPPED, RUNNING, PAUSED }
 
-/** The three transport controls, named so the button table can be walked case by case. */
-enum class Control { PLAY, PAUSE, STOP }
+/**
+ * The three transport controls, named so the button table can be walked case by case.
+ *
+ * `spoken` IS THE VOICE VOCABULARY, AND IT IS THE ONLY PLACE IT IS WRITTEN.
+ *
+ * Google's Voice Access is an accessibility service already on the phone, and it matches speech
+ * against the contentDescription of every control on screen. So this string is not decoration
+ * for a screen reader: it is the word that can be said out loud. It goes on the button AND into
+ * the reminder in the settings panel, from here, so the tip cannot come to disagree with what
+ * the app actually answers to. A tip that lists a command the app no longer knows is worse than
+ * no tip, because it is believed.
+ *
+ * They deliberately do not match the enum's own names. The model thinks in play, pause and stop;
+ * a person timing something says start, pause and reset.
+ */
+enum class Control(val spoken: String) {
+    PLAY("Start"),
+    PAUSE("Pause"),
+    STOP("Reset"),
+}
 
 /**
  * How a control is drawn — a ladder of prominence, four rungs, each with exactly one meaning.

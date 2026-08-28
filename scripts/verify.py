@@ -73,8 +73,21 @@ check("elapsed is subtraction, never an accumulating delta",
 # The nine cases. Three buttons times three phases, and every one of them has to have an answer
 # that the screen can ask for without knowing what a phase is.
 def enum_members(name):
-    m = re.search(rf"enum class {name}\s*\{{([^}}]*)\}}", src)
-    return [x.strip() for x in m.group(1).split(",") if x.strip()] if m else []
+    """
+    Kotlin writes enums two ways and this file contains both: `enum class Tone { A, B }` on one
+    line, and a multi-line body when a member carries a constructor value. The first version of
+    this only understood the one-line form, split the body on commas, and reported `0 tones` the
+    moment Control grew a value — while still printing a count, which is the shape of a check
+    that has quietly stopped looking at anything.
+    """
+    one_line = re.search(rf"enum class {name}\s*\{{([^}}\n]*)\}}", src)
+    if one_line:
+        return [x.strip() for x in one_line.group(1).split(",") if x.strip()]
+    multi = re.search(rf"enum class {name}[^{{]*\{{(.*?)\n\}}", src, re.S)
+    if not multi:
+        return []
+    return re.findall(r"^\s{4}([A-Z][A-Z_]*)\s*[,(]", multi.group(1), re.M)
+
 
 phases = enum_members("Phase")
 controls = enum_members("Control")
@@ -224,10 +237,28 @@ check("the settings panel carries its own way out",
 # The words on the controls ARE the voice vocabulary: Google's Voice Access matches speech
 # against contentDescription. If these drift back to the model's internal names, the spoken
 # commands stop working and nothing else breaks, which is the worst way for it to fail.
-labels = set(re.findall(r'Transport\(Icons\.Default\.\w+, "(\w+)"', ui))
-check("the spoken vocabulary is on the controls",
-      labels == {"Start", "Pause", "Reset"},
-      f"contentDescriptions: {', '.join(sorted(labels))} — these are what Voice Access listens for")
+# The vocabulary lives on the enum and nowhere else. If a literal string ever appears at the
+# call site again, the tip and the button can drift apart and only the spoken command breaks.
+spoken = dict(re.findall(r'(PLAY|PAUSE|STOP)\("(\w+)"\)', src))
+literal_labels = re.findall(r'Transport\(Icons\.Default\.\w+, "', ui)
+tip_is_generated = "Control.entries.joinToString" in ui
+check("the spoken vocabulary has exactly one home",
+      set(spoken.values()) == {"Start", "Pause", "Reset"}
+      and not literal_labels
+      and "control.spoken" in ui
+      and tip_is_generated,
+      f"{len(spoken)} words on the enum ({', '.join(spoken.values())}), "
+      f"{len(literal_labels)} typed at the call site, tip generated from the same list")
+
+# ── 8h ───────────────────────────────────────────────────────────────────────────────────────
+# The reminder must say what actually works. Voice Access needs the verb; the app does not
+# listen on its own. Printing the shorter "start" would read better and would not work, and a
+# reminder that does not work is the same failure as a wrong one.
+tip_expr = re.search(r"Control\.entries\.joinToString\([^)]*\)\s*\{([^}]*)\}", ui)
+tip_body = tip_expr.group(1) if tip_expr else ""
+check("the reminder prints the form that actually works",
+      "tap " in tip_body and "it.spoken" in tip_body,
+      f"the tip is built as: {tip_body.strip()[:60]} — the verb is in the code, not only the comment")
 
 # ── 9 ────────────────────────────────────────────────────────────────────────────────────────
 # Both timing fields have to be written, or the one that is not is the one that comes back wrong.
