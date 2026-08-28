@@ -29,7 +29,7 @@ import android.os.SystemClock
  * stopwatch that lost its measurement is annoying, one that shows a number short by three hours
  * is a lie.
  */
-class Store(context: Context) {
+class Store(private val context: Context) {
 
     private val p = context.applicationContext
         .getSharedPreferences("stopwatch", Context.MODE_PRIVATE)
@@ -108,6 +108,36 @@ class Store(context: Context) {
             lastSeen = p.getLong(K_LAST_SEEN, 0L),
             now = SystemClock.elapsedRealtime(),
         )
+    }
+
+    // ── the recorded commands ────────────────────────────────────────────────────────────────
+    //
+    // One file per control, raw PCM16 little-endian at 16kHz, in the app's own files directory.
+    // Raw rather than WAV because nothing outside this app ever reads them and a header would be
+    // 44 bytes of ceremony describing a format that is fixed at compile time.
+
+    private fun sampleFile(control: Control) =
+        java.io.File(context.applicationContext.filesDir, "cmd_" + control.name + ".pcm")
+
+    fun saveSample(control: Control, samples: ShortArray) {
+        val bytes = java.nio.ByteBuffer.allocate(samples.size * 2)
+            .order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        for (s in samples) bytes.putShort(s)
+        sampleFile(control).writeBytes(bytes.array())
+    }
+
+    fun loadSample(control: Control): ShortArray? {
+        val f = sampleFile(control)
+        if (!f.exists() || f.length() < 2) return null
+        val bytes = f.readBytes()
+        val buf = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        return ShortArray(bytes.size / 2) { buf.getShort() }
+    }
+
+    fun hasSample(control: Control): Boolean = sampleFile(control).let { it.exists() && it.length() > 2 }
+
+    fun clearSample(control: Control) {
+        sampleFile(control).delete()
     }
 
     private companion object {

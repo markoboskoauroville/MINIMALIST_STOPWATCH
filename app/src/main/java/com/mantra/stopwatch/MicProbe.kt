@@ -38,6 +38,41 @@ class MicProbe(private val onFail: (String) -> Unit) {
     @Volatile private var running = false
 
     /**
+     * THE RING OF RECENT AUDIO, and it is what makes template matching possible at all.
+     *
+     * TTT mini's RecordingController streams every frame straight to a file, because it is
+     * recording something a person asked it to record. Here nothing is being recorded: the
+     * question is "what were the last two seconds", asked after a word has already been spoken.
+     * So the same capture loop writes into a ring instead of a file, and the last two seconds
+     * are always available without anything having been started first.
+     *
+     * Two seconds because a command is under one, and the gate only notices a word once it is
+     * already underway — so the ring has to reach back far enough to include the beginning of a
+     * word whose middle is what woke us up. That reaching back is the fix for the clipped
+     * first syllable that the previous design could not avoid.
+     */
+    private val ring = ShortArray(RING)
+    @Volatile private var written = 0L
+
+    /** The last [ms] milliseconds, oldest first. Safe to call from any thread. */
+    fun recent(ms: Int): ShortArray {
+        val want = minOf((SAMPLE_RATE * ms / 1000), RING, written.toInt())
+        if (want <= 0) return ShortArray(0)
+        val out = ShortArray(want)
+        val end = (written % RING).toInt()
+        for (i in 0 until want) {
+            var idx = end - want + i
+            if (idx < 0) idx += RING
+            out[i] = ring[idx]
+        }
+        return out
+    }
+
+    fun clearRing() {
+        written = 0
+    }
+
+    /**
      * The peak seen since the last read, exactly as TTT mini's RecordingController.maxAmplitude
      * works. THE UI PULLS ON ITS OWN CLOCK; the audio thread only records the highest sample it
      * has seen. That is the difference between a meter whose speed is a decision and one whose
@@ -109,6 +144,12 @@ class MicProbe(private val onFail: (String) -> Unit) {
                 }
                 // Highest since the UI last looked, not since this buffer started.
                 if (high > peak) peak = high
+
+                // And into the ring, so the last two seconds can always be asked for.
+                for (i in 0 until read) {
+                    ring[((written + i) % RING).toInt()] = buffer[i]
+                }
+                written += read
             }
         } catch (e: IllegalStateException) {
             onFail("could not start")
@@ -119,8 +160,13 @@ class MicProbe(private val onFail: (String) -> Unit) {
         }
     }
 
-    private companion object {
-        const val RATE = 16_000
+    companion object {
+        const val SAMPLE_RATE = 16_000
+
+        /** Two seconds. Long enough to contain a word whose middle woke the gate. */
+        const val RING = SAMPLE_RATE * 2
+
+        const val RATE = SAMPLE_RATE
         const val CHANNEL = AudioFormat.CHANNEL_IN_MONO
         const val ENCODING = AudioFormat.ENCODING_PCM_16BIT
     }

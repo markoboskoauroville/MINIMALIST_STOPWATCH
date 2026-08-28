@@ -12,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -50,6 +51,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -75,6 +77,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -107,6 +110,9 @@ private val GLYPH_OFF = Color(0xFF1F1F1F)      // 12%  DEAD: pressing it does no
 private val BACKGROUND = Color.Black
 private val PANEL_CHOSEN = Color(0xFF1F1F1F)
 private val PANEL_IDLE = Color(0xFF0D0D0D)
+
+/** How long a recorded command is. A word plus the air around it, and no more. */
+private const val RECORD_MS = 1_500L
 
 private val EDGE = 12.dp
 private val LOCK_ZONE = 56.dp
@@ -154,7 +160,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // VOICE. The switch is a preference; the microphone follows it and the app's own lifecycle.
     var listening by remember { mutableStateOf(store.listening) }
     var level by remember { mutableFloatStateOf(0f) }
-    var lastHeard by remember { mutableStateOf("") }
     var voiceState by remember { mutableStateOf("off") }
 
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
@@ -182,7 +187,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
     }
-    var diagnostics by remember { mutableStateOf(Diagnostics()) }
     var lit by remember { mutableStateOf(Lit()) }
 
     // The permission ask. Deleted by accident in the v12 rewrite of this block and caught by the
@@ -211,13 +215,15 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // The engine is created once and lives as long as the screen. Arming is a separate call, so
     // switching voice on and off does not tear the microphone down and build it again.
     // ─────────────────────────────────────────────────────────────────────────────────────────
+    var scores by remember { mutableStateOf<List<Pair<Control, Double>>>(emptyList()) }
+    var templatesReady by remember { mutableStateOf(0) }
+
     val engine = remember {
         VoiceEngine(
-            context = context,
             onLevel = { level = it },
-            onHeard = { text, control ->
-                lastHeard = text
-                if (control != null) lit = Lit.of(control, SystemClock.elapsedRealtime())
+            onHeard = { hit, s ->
+                scores = s
+                if (hit != null) lit = Lit.of(hit, SystemClock.elapsedRealtime())
             },
             onCommand = { control ->
                 // DETECTION ONLY WHILE THE PANEL IS OPEN. The word lights, the clock does not
@@ -226,7 +232,16 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 if (!settingsOpen) commit(state.press(control, SystemClock.elapsedRealtime()))
             },
             onState = { voiceState = it },
-            onDiagnostics = { diagnostics = it },
+        )
+    }
+
+    // The recordings, featured once and handed to the engine. Refeaturing on every match would
+    // be doing the same arithmetic several times a second for an answer that cannot change.
+    LaunchedEffect(templatesReady) {
+        engine.setTemplates(
+            Control.entries.mapNotNull { c ->
+                store.loadSample(c)?.let { Template(c, Dsp.features(it)) }
+            }
         )
     }
 
@@ -433,9 +448,11 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 weight = weight,
                 listening = listening,
                 level = level,
-                diagnostics = diagnostics,
+                scores = scores,
+                engine = engine,
+                store = store,
+                onRecorded = { templatesReady++ },
                 lit = lit,
-                lastHeard = lastHeard,
                 voiceState = voiceState,
                 onColour = { colour = it; store.colour = it },
                 onWeight = { weight = it; store.weight = it },
@@ -538,9 +555,11 @@ private fun SettingsGrid(
     weight: Weight,
     listening: Boolean,
     level: Float,
-    diagnostics: Diagnostics,
+    scores: List<Pair<Control, Double>>,
+    engine: VoiceEngine,
+    store: Store,
+    onRecorded: () -> Unit,
     lit: Lit,
-    lastHeard: String,
     voiceState: String,
     onColour: (Long) -> Unit,
     onWeight: (Weight) -> Unit,
@@ -556,6 +575,29 @@ private fun SettingsGrid(
         while (isActive) {
             tickNow = SystemClock.elapsedRealtime()
             delay(100L)
+        }
+    }
+
+    // THE RECORDING STATE, and it belongs to the panel rather than to the screen: nothing
+    // outside settings can start a recording, so nothing outside settings needs to know.
+    var recordingFor by remember { mutableStateOf<Control?>(null) }
+    val recording = recordingFor != null
+    val scope = rememberCoroutineScope()
+
+    // Copied from TTT mini's arrangement rather than invented: the capture is already running,
+    // so recording is not opening a microphone, it is waiting a fixed time and then taking what
+    // the ring has. RECORD_MS is the length of the sample kept.
+    fun onRecord(control: Control) {
+        if (recording) return
+        recordingFor = control
+        scope.launch {
+            delay(RECORD_MS)
+            val samples = engine.recent(RECORD_MS.toInt())
+            if (samples.isNotEmpty()) {
+                store.saveSample(control, samples)
+                onRecorded()
+            }
+            recordingFor = null
         }
     }
 
@@ -691,40 +733,59 @@ private fun SettingsGrid(
             // while sessions climb means it never got as far as opening the microphone, so a
             // still meter is not a broken meter. Those two numbers tell the difference without
             // anybody having to guess, and the error name can be read out loud.
-            // THE THREE WORDS, LIT WHEN HEARD.
+            // ─────────────────────────────────────────────────────────────────────────────────
+            // THE RECORDER AND THE TESTER, WHICH ARE THE SAME THREE WORDS.
             //
-            // This is the tester: say a word, watch it light. The word that just matched takes
-            // the digit colour and the other two stay dim, so a person can tell at a glance
-            // whether the recogniser heard "start" or heard nothing at all. It is deliberately
-            // NOT a log of everything said — a scrolling transcript is a thing to read, and the
-            // question being asked is answered by a light going on.
+            // Press a word: it records a second and a half of you saying that command. Say a
+            // word: it lights for a second. One row does both because they are the same
+            // question asked twice — what does this command sound like, and did it hear it.
+            //
+            // A word with no recording is dim and outlined by its absence: nothing works until
+            // all three exist, and the state line says so rather than leaving it to be guessed.
+            // ─────────────────────────────────────────────────────────────────────────────────
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
                 Control.entries.forEach { control ->
                     val on = lit.isLit(control, tickNow)
+                    val recorded = store.hasSample(control)
+                    val recordingThis = recordingFor == control
                     Text(
-                        text = Heard.primary(control),
+                        text = Heard.primary(control) + if (recorded) "" else " ·",
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
-                            color = if (on) Color(colour) else GLYPH_OFF,
-                            fontSize = 12.sp,
+                            color = when {
+                                recordingThis -> Color(0xFF9B3B33)
+                                on -> Color(colour)
+                                recorded -> GLYPH_SECOND
+                                else -> GLYPH_OFF
+                            },
+                            fontSize = 13.sp,
                         ),
                         maxLines = 1,
                         softWrap = false,
+                        modifier = Modifier
+                            .clickable(enabled = !recording) { onRecord(control) }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
             }
 
+            // THE SCORES. Every comparison, accepted or not, with its distance. A near miss that
+            // shows a number is a threshold that can be changed from evidence; a near miss that
+            // shows nothing is indistinguishable from not having heard anything at all.
             Text(
                 text = when {
-                    !listening -> "meter only: speak, the bar should move"
-                    else -> diagnostics.line()
+                    recording -> "recording " + (recordingFor?.let { Heard.primary(it) } ?: "")
+                    scores.isEmpty() -> voiceState
+                    else -> scores.joinToString("  ") {
+                        Heard.primary(it.first).take(3) + " " + "%.2f".format(it.second)
+                    }
                 },
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
-                    color = GLYPH_OFF,
+                    color = if (recording) Color(0xFF9B3B33) else GLYPH_OFF,
                     fontSize = 10.sp,
                 ),
                 maxLines = 1,

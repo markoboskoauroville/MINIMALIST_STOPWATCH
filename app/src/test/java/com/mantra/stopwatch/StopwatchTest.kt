@@ -217,6 +217,118 @@ class StopwatchTest {
         assertFalse("nothing is lit before anything is heard", Lit().isLit(Control.PLAY, 0))
     }
 
+    // -----------------------------------------------------------------------------------------
+    // THE MATCHER. This replaced SpeechRecognizer entirely, so it is the part that has to be
+    // right, and unlike everything the recogniser ever did it can be walked without a phone.
+    // -----------------------------------------------------------------------------------------
+
+    /** A transform is the kind of thing whose correctness should be visible rather than trusted. */
+    @Test
+    fun theTransformPutsAToneInTheRightBin() {
+        val n = 512
+        val re = DoubleArray(n)
+        val im = DoubleArray(n)
+        // Eight whole cycles across the window lands exactly in bin 8, with no leakage to argue
+        // about, which makes this a fact rather than an approximation.
+        for (i in 0 until n) re[i] = Math.sin(2.0 * Math.PI * 8.0 * i / n)
+        Dsp.fft(re, im)
+
+        val mag = DoubleArray(n / 2) { Math.sqrt(re[it] * re[it] + im[it] * im[it]) }
+        val peak = mag.indices.maxByOrNull { mag[it] }
+        assertEquals("a pure tone must land in its own bin", 8, peak)
+
+        val others = mag.indices.filter { it != 8 }.maxOf { mag[it] }
+        assertTrue("and nowhere else: peak $peak, next $others", mag[8] > others * 50)
+    }
+
+    private fun tone(hz: Double, ms: Int, amplitude: Double = 0.3): ShortArray {
+        val n = Dsp.SAMPLE_RATE * ms / 1000
+        return ShortArray(n) {
+            val t = it.toDouble() / Dsp.SAMPLE_RATE
+            // Two partials, so the mel bands have something to tell apart rather than one line.
+            val v = Math.sin(2 * Math.PI * hz * t) * 0.7 + Math.sin(2 * Math.PI * hz * 2.5 * t) * 0.3
+            (v * amplitude * 32767).toInt().toShort()
+        }
+    }
+
+    /**
+     * THE PROPERTY THE WHOLE THING RESTS ON: loudness must not change the answer. Without the
+     * per-utterance mean subtraction this matcher would mostly be measuring how close the phone
+     * was to the mouth.
+     */
+    @Test
+    fun theSameWordLouderIsStillTheSameWord() {
+        val quiet = Dsp.features(tone(300.0, 400, amplitude = 0.05))
+        val loud = Dsp.features(tone(300.0, 400, amplitude = 0.60))
+        assertTrue("neither may be empty", quiet.isNotEmpty() && loud.isNotEmpty())
+        val d = Dsp.dtw(quiet, loud)
+        assertTrue("a twelvefold change in gain must barely move it, was $d", d < 0.05)
+    }
+
+    /** Silence is a case, not an error, and it must not be mistaken for a word. */
+    @Test
+    fun silenceProducesNothingToMatch() {
+        assertTrue(Dsp.features(ShortArray(8000)).isEmpty())
+        assertTrue(Dsp.features(ShortArray(10)).isEmpty())
+    }
+
+    /** Aligning something with itself is the one distance that is knowable in advance. */
+    @Test
+    fun aThingMatchesItselfExactly() {
+        val f = Dsp.features(tone(400.0, 300))
+        assertEquals(0.0, Dsp.dtw(f, f), 1e-9)
+    }
+
+    /**
+     * Different words must be further apart than the same word said twice. This is the whole
+     * claim the matcher makes, expressed as an ordering rather than as a threshold, so it stays
+     * true even when the thresholds are retuned on a real voice.
+     */
+    @Test
+    fun differentSoundsAreFurtherApartThanTheSameOneTwice() {
+        val a1 = Dsp.features(tone(250.0, 350))
+        val a2 = Dsp.features(tone(250.0, 300, amplitude = 0.2))   // same word, again, different
+        val b = Dsp.features(tone(900.0, 350))
+
+        val same = Dsp.dtw(a1, a2)
+        val different = Dsp.dtw(a1, b)
+        assertTrue("same $same must be nearer than different $different", same < different)
+    }
+
+    @Test
+    fun theMatcherPicksTheRightTemplateAndRefusesTheRest() {
+        val templates = listOf(
+            Template(Control.PLAY, Dsp.features(tone(250.0, 350))),
+            Template(Control.PAUSE, Dsp.features(tone(600.0, 350))),
+            Template(Control.STOP, Dsp.features(tone(1400.0, 350))),
+        )
+        val matcher = TemplateMatcher()
+
+        assertEquals(Control.PLAY, matcher.match(Dsp.features(tone(250.0, 320, 0.5)), templates))
+        assertEquals(Control.PAUSE, matcher.match(Dsp.features(tone(600.0, 380, 0.1)), templates))
+        assertEquals(Control.STOP, matcher.match(Dsp.features(tone(1400.0, 350, 0.4)), templates))
+
+        assertNull("silence is not a command", matcher.match(emptyList(), templates))
+        assertNull("nothing recorded means nothing matches", matcher.match(Dsp.features(tone(250.0, 350)), emptyList()))
+    }
+
+    /**
+     * A margin, not just a threshold. In a room where somebody is talking everything is a poor
+     * match for all three templates and one of them is inevitably the least bad; without the
+     * margin the stopwatch would fire on conversation.
+     */
+    @Test
+    fun twoTemplatesThatAreTooAlikeAreRefusedRatherThanGuessedBetween() {
+        val templates = listOf(
+            Template(Control.PLAY, Dsp.features(tone(500.0, 350))),
+            Template(Control.PAUSE, Dsp.features(tone(500.0, 350))),
+        )
+        assertNull(
+            "identical templates must refuse rather than pick one",
+            TemplateMatcher().match(Dsp.features(tone(500.0, 350)), templates),
+        )
+    }
+
     @Test
     fun theDiagnosticsLineSaysWhatItMeans() {
         assertEquals("s0  rms0  offline", Diagnostics().line())

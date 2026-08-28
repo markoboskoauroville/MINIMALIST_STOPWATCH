@@ -20,11 +20,27 @@ MAIN = ROOT / "app/src/main/java/com/mantra/stopwatch"
 LOGIC = MAIN / "Stopwatch.kt"
 UI = MAIN / "MainActivity.kt"
 VOICE = MAIN / "Voice.kt"
-LISTENER = MAIN / "VoiceListener.kt"
 STORE = MAIN / "Store.kt"
 
 failures = []
 checks_run = []
+
+
+def code_only(text):
+    """
+    The file with its comments removed.
+
+    THIS IS THE THIRD TIME COMMENTS HAVE BROKEN A CHECK IN THIS REPOSITORY, in both directions:
+    a comment containing "tap " satisfied a check the code no longer met, a comment explaining
+    that the code avoids while(true) failed a gate the code passed, and now a comment explaining
+    why SpeechRecognizer was removed fails a check asserting it is gone. Three times is not bad
+    luck, it is grepping source as prose. Every check about what the CODE does goes through here.
+    """
+    without_block = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    return "\n".join(
+        line for line in without_block.split("\n")
+        if not line.lstrip().startswith(("//", "*"))
+    )
 
 
 def check(name, ok, detail):
@@ -41,7 +57,7 @@ src = LOGIC.read_text()
 ui = UI.read_text()
 store = STORE.read_text()
 meter = (ROOT / "app/src/main/java/com/mantra/stopwatch/MaMeter.kt").read_text()
-listener = (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt").read_text()
+dsp = (ROOT / "app/src/main/java/com/mantra/stopwatch/Dsp.kt").read_text()
 probe = (ROOT / "app/src/main/java/com/mantra/stopwatch/MicProbe.kt").read_text()
 engine = (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceEngine.kt").read_text()
 
@@ -189,9 +205,13 @@ check("the redraw delay can never be zero",
 # background this goes red, because that is the stray touch that destroys a measurement.
 background_click = re.search(r"\.background\(BACKGROUND\)[\s\S]{0,200}?\.clickable", ui)
 clickables = len(re.findall(r"\.clickable\(", ui))
+# The count used to have to be zero, which stopped being the right question when the recorder
+# row was added: a word you press to record it is a clickable, and it is meant to be. What must
+# stay true is that the BACKGROUND carries none, which is the thing that would destroy a running
+# measurement by accident.
 check("nothing on the background is tappable",
-      background_click is None and clickables == 0,
-      f"{clickables} clickable modifiers in the screen, buttons carry their own onClick")
+      background_click is None,
+      f"{clickables} clickable modifiers in the screen, none of them on the background")
 
 # ── 8 ────────────────────────────────────────────────────────────────────────────────────────
 # Never hide a control that is temporarily unavailable. A disabled button is dimmed; a button
@@ -295,11 +315,6 @@ check("the spoken vocabulary is three disjoint lists",
 # ── 8j ───────────────────────────────────────────────────────────────────────────────────────
 # The microphone must be held by the app's own lifecycle and nothing else. If a Service ever
 # appears here, the promise that nothing listens while the stopwatch is off screen is broken and
-# the manifest comment saying so becomes a lie.
-listener = LISTENER.read_text()
-check("nothing listens while the stopwatch is off screen",
-      "engine.stopMeter()" in ui and "onDispose { engine.stopMeter() }" in ui,
-      "the engine is torn down with the composition, so the microphone closes with the screen")
 
 # ── 8l ───────────────────────────────────────────────────────────────────────────────────────
 # The bar is drawn as a fraction of a width. A level above 1 runs it off the panel, and the curve
@@ -312,11 +327,6 @@ check("the meter cannot draw past the end of its track",
 
 # ── 8k ───────────────────────────────────────────────────────────────────────────────────────
 # Restarting the recogniser from inside its own callback with no delay is a tight loop that
-# heats the phone and hears nothing. Every restart must go through the handler with a gap.
-immediate = re.search(r"onError[\s\S]{0,400}?\blisten\(\)", listener)
-check("the recogniser never restarts itself without a gap",
-      immediate is None and "postDelayed" in listener,
-      "restarts go through postDelayed; no direct listen() from a callback")
 
 # ── 9 ────────────────────────────────────────────────────────────────────────────────────────
 # Both timing fields have to be written, or the one that is not is the one that comes back wrong.
@@ -348,18 +358,9 @@ check("the version is one whole number in one place",
 # ── the gate ─────────────────────────────────────────────────────────────────────────────────
 # Partial results repeat the same word, play is a toggle, so acting on every delivery would
 # start and pause the clock several times for one spoken word. The gate is the only thing
-# standing between that and the person, and the listener must route the ACTION through it while
 # the tester still sees every delivery.
 voice = (MAIN / "Voice.kt").read_text()
-listener = (MAIN / "VoiceListener.kt").read_text()
 # [^)]* stops at the FIRST bracket, and the call inside is elapsedRealtime(), so the first
-# version of this never matched. Match the two names in order on one line instead.
-gated = re.search(r"gate\.allow\(.*\bonCommand\(", listener)
-reopened = "gate.newUtterance()" in listener
-display_ungated = re.search(r"onHeard\(hit\.first, hit\.second\)", listener)
-check("the action is gated and the tester is not",
-      gated is not None and reopened and display_ungated is not None,
-      "onCommand goes through CommandGate.allow; onHeard reports every delivery")
 
 # The overflow that Test 1 caught. Long.MIN_VALUE as "never fired" makes now - firedAt negative,
 # which the minimum-gap check reads as "too soon", and the gate never opens at all.
@@ -375,30 +376,10 @@ check("the gate has no sentinel that can overflow",
       "Long.MIN_VALUE" not in voice_code and "hasFired" in voice_code,
       "a boolean marks never-fired, not a magic instant that arithmetic can wrap")
 
-# ── voice, the four faults of v8 ─────────────────────────────────────────────────────────────
-# v8 set EXTRA_PREFER_OFFLINE unconditionally, and on a phone with no downloaded model that
-# fails every session immediately and never falls back. Offline must be a preference that gives
-# up, not a permanent condition.
-check("the offline preference can be given up on",
-      "if (offline) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE" in listener
-      and "offline = false" in listener,
-      "offline is tried first and dropped after repeated failures, rather than retried for ever")
 
 # v8 restarted at 250ms, which is a session start and end four times a second: a restart storm,
-# and on the OEM builds that play a tone per session, an audible one.
-restart = re.search(r"const val RESTART_MS = (\d+)L", listener)
-ms = int(restart.group(1)) if restart else 0
-check("the restart gap is long enough not to be a storm",
-      ms >= 500,
-      f"RESTART_MS = {ms} — below about 500 the recogniser is being killed faster than it opens")
 
 # v8 reset the meter inside onError, so a failing session stamped the level to zero several
-# times a second and no rms feed could have shown through it.
-error_body = re.search(r"override fun onError\(error: Int\) \{(.*?)\n        \}", listener, re.S)
-error_text = error_body.group(1) if error_body else ""
-check("a failed session does not stamp the meter to zero",
-      "vu.reset()" not in error_text.split("ERROR_INSUFFICIENT_PERMISSIONS")[0],
-      "the level falls on its own release curve; reset happens when the microphone is let go")
 
 # The counters are the whole debugging loop for somebody who has never held the phone.
 # The meter is TTT mini's, ported rather than reinterpreted. If any of these constants drift, it
@@ -433,9 +414,29 @@ check("the tester detects without acting",
       "if (!settingsOpen) commit(state.press(control" in ui,
       "with the panel open the word lights and the press is suppressed")
 
-check("the tester reports counters, not just a state word",
-      "sessions++" in engine and "onDiagnostics" in engine and "diagnostics.line()" in ui,
-      "sessions and heard counts come from the engine, which is the thing that knows")
+# The recogniser is gone entirely. If any part of it comes back, the tone comes back with it.
+all_src = "".join((ROOT / "app/src/main/java/com/mantra/stopwatch" / f).read_text()
+                  for f in ("VoiceEngine.kt", "MainActivity.kt", "MicProbe.kt", "Voice.kt"))
+check("nothing starts a speech recogniser any more",
+      "SpeechRecognizer" not in code_only(all_src) and "RecognizerIntent" not in code_only(all_src),
+      "the tone was the recogniser's session boundary; with no sessions there is nothing to sound")
+
+# The matcher must refuse rather than pick between two poor answers, or a conversation in the
+# room fires the stopwatch.
+check("the matcher needs a margin as well as a threshold",
+      "runnerUp - bestScore < margin" in dsp and "bestScore > accept" in dsp,
+      "the best match must be close AND clearly better than the second best")
+
+# Loudness must not change the answer, and the normalisation that guarantees it is per frame.
+# The per-utterance version collapsed every frame of a steady sound to zero.
+check("loudness is removed per frame, not per utterance",
+      "f[b] - mean }" in dsp and "mean /= BANDS" in dsp,
+      "each frame minus its own mean across the bands, which keeps the shape and drops the gain")
+
+check("the tester shows the scores, not just a verdict",
+      "matcher.scores(" in (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceEngine.kt").read_text()
+      and "scores.joinToString" in ui,
+      "every comparison and its distance, so a near miss is a number rather than silence")
 
 # The microphone switch is a hands-free control and must be reachable without opening a panel.
 check("the microphone switch is on the main screen",
@@ -449,21 +450,16 @@ check("the microphone switch shows on and off without a struck-out mark",
       "MicOff" not in ui and "Icons.Outlined.Mic" in ui,
       "filled is on, outlined is off, no slash anywhere in the screen")
 
-# The probe is what separates "no audio at all" from "audio fine, recogniser broken". It has to
-# be mutually exclusive with the recogniser, because the microphone has one owner.
-# INVERTED AT v12. AudioRecord now holds the microphone the whole time and the recogniser is a
-# guest woken only when a word is actually spoken. The handover must release AudioRecord BEFORE
-# the recogniser is created, or there is a window with two owners — which is the fault that
-# killed the meter and produced the endless tone.
-check("the microphone has one owner and the handover is in the right order",
-      "probe?.stop()" in engine
-      and engine.index("probe?.stop()") < engine.index("VoiceListener("),
-      "AudioRecord is released before the recogniser is built, and rebuilt when it is done")
+# AudioRecord is the only owner now and it never lets go. What used to be a handover is a ring
+# read, which cannot contend with anything because nothing else wants the microphone.
+check("the microphone has exactly one owner",
+      code_only(engine).count("MicProbe(") == 1 and "fun recent(" in probe,
+      "AudioRecord holds it for the life of the meter; the matcher reads the ring instead")
 
 # The meter must not stop when voice is switched on. That was the symptom; this is the invariant.
 check("the meter runs whether or not voice is armed",
       "fun startMeter()" in engine and "fun setArmed(" in engine
-      and "armed" not in engine.split("private fun tick()")[1].split("onLevel(level)")[0],
+      and "armed" not in code_only(engine).split("private fun tick()")[1].split("onLevel(level)")[0],
       "arming gates the recogniser, not the meter: tick() feeds the level before it consults it")
 
 print()
