@@ -431,6 +431,22 @@ check("a command is scored by its best sample, not its average",
 
 # Three slots, each pressable on its own, or there is no way to redo the one that went wrong —
 # and the one that went wrong is the reason there are three.
+# One icon language across the whole app: hollow is off, solid is on. The microphone says it, the
+# sample slots say it, and the record arm says it. If any of them starts using a slash or a
+# colour alone to mean off, there are two languages on one screen.
+check("hollow means off and solid means on, everywhere",
+      "Icons.Filled.Mic else Icons.Outlined.Mic" in ui
+      and "Icons.Filled.FiberManualRecord else Icons.Outlined.Circle" in ui
+      and '"\\u25CF" else "\\u25CB"' in ui,
+      "the microphone, the record arm and the three sample slots all say it the same way")
+
+# Recording and matching must never run at once: a word lit by the sample being recorded is a
+# light that means nothing.
+check("recording and listening are exclusive",
+      "granted && !recordArmed && (listening || settingsOpen)" in ui
+      and "recordArmed && !recording" in ui,
+      "arming for recording disarms the matcher, and slots only accept a press while armed")
+
 check("each sample slot can be re-recorded on its own",
       "onRecord(control, slot)" in ui and "for (slot in 0 until Store.SAMPLES)" in ui,
       f"{3} slots per command, each with its own press")

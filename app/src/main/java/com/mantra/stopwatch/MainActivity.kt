@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Mic
@@ -38,6 +39,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StayCurrentLandscape
 import androidx.compose.material.icons.filled.StayCurrentPortrait
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -217,6 +219,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // ─────────────────────────────────────────────────────────────────────────────────────────
     var scores by remember { mutableStateOf<List<Pair<Control, Double>>>(emptyList()) }
     var templatesReady by remember { mutableStateOf(0) }
+    var recordArmed by remember { mutableStateOf(false) }
 
     val engine = remember {
         VoiceEngine(
@@ -259,8 +262,15 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         }
     }
 
-    DisposableEffect(listening, granted) {
-        engine.setArmed(listening && granted)
+    // ARMED FOR RECORDING MEANS NOT LISTENING FOR COMMANDS, and the two cannot overlap: a slot
+    // being recorded while the matcher is running would light a word from the sample being
+    // recorded, which is a light that means nothing.
+    //
+    // With the panel open and recording disarmed, matching runs whether or not the microphone
+    // switch on the main screen is on. That is the test Baba asked for: disengage recording, say
+    // a command, watch the word light. The press is suppressed elsewhere, so nothing moves.
+    DisposableEffect(listening, granted, settingsOpen, recordArmed) {
+        engine.setArmed(granted && !recordArmed && (listening || settingsOpen))
         onDispose { }
     }
 
@@ -454,6 +464,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 engine = engine,
                 store = store,
                 onRecorded = { templatesReady++ },
+                recordArmed = recordArmed,
+                onArm = { recordArmed = it },
                 lit = lit,
                 voiceState = voiceState,
                 onColour = { colour = it; store.colour = it },
@@ -513,6 +525,12 @@ private fun Glyph(
     tone: Tone,
     size: Dp,
     modifier: Modifier = Modifier,
+    /**
+     * An override for the one control whose colour means something rather than ranking it. The
+     * record arm is red while armed because red is what recording is everywhere, and that is a
+     * different axis from the prominence ladder the tones express.
+     */
+    tint: Color? = null,
     onPress: () -> Unit,
 ) {
     // enabled = false on a DEAD control does two things at once and both are wanted: it takes
@@ -523,7 +541,7 @@ private fun Glyph(
         enabled = tone != Tone.DEAD,
         modifier = modifier.size(size),
         colors = IconButtonDefaults.iconButtonColors(
-            contentColor = when (tone) {
+            contentColor = tint ?: when (tone) {
                 Tone.PRIMARY -> GLYPH_PRIMARY
                 Tone.HIGHLIGHT -> GLYPH
                 else -> GLYPH_SECOND
@@ -561,6 +579,8 @@ private fun SettingsGrid(
     engine: VoiceEngine,
     store: Store,
     onRecorded: () -> Unit,
+    recordArmed: Boolean,
+    onArm: (Boolean) -> Unit,
     lit: Lit,
     voiceState: String,
     onColour: (Long) -> Unit,
@@ -641,6 +661,139 @@ private fun SettingsGrid(
                 maxLines = 1,
             )
         }
+
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // THE RECORDER, AT THE TOP, WHERE THE WORK STARTS.
+        //
+        // Nothing else in this panel does anything until three samples per command exist, so it
+        // goes first. Colour and weight are adjustments to something that already works; this is
+        // the thing that makes it work at all.
+        //
+        // THE SAME LANGUAGE AS EVERYWHERE ELSE IN THIS APP: hollow is off, solid is on. The
+        // microphone on the main screen already says it that way, and so do these — a hollow
+        // circle is a slot with no recording, a solid one has a recording, and the arm button is
+        // hollow when it is not recording and a solid red dot when it is.
+        //
+        // ARMED, IT RECORDS. DISARMED, IT LISTENS. Those are the only two modes and pressing one
+        // button moves between them, so there is never a question about what a press on a slot
+        // will do. With the panel open the recognised command lights its word and DOES NOT move
+        // the stopwatch, which is what makes this a test rather than a use.
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 2.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Glyph(
+                icon = if (recordArmed) Icons.Filled.FiberManualRecord else Icons.Outlined.Circle,
+                label = if (recordArmed) "Stop recording" else "Record samples",
+                tone = Tone.SECONDARY,
+                size = 34.dp,
+                tint = if (recordArmed) Color(0xFF9B3B33) else null,
+            ) { onArm(!recordArmed) }
+            Text(
+                text = if (recordArmed) "tap a circle to record" else "say a command",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = if (recordArmed) Color(0xFF9B3B33) else GLYPH_SECOND,
+                    fontSize = 11.sp,
+                ),
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.padding(start = 6.dp),
+            )
+        }
+
+        // ─────────────────────────────────────────────────────────────────────────────────
+        // THE RECORDER AND THE TESTER, WHICH ARE THE SAME THREE WORDS.
+        //
+        // Press a word: it records a second and a half of you saying that command. Say a
+        // word: it lights for a second. One row does both because they are the same
+        // question asked twice — what does this command sound like, and did it hear it.
+        //
+        // A word with no recording is dim and outlined by its absence: nothing works until
+        // all three exist, and the state line says so rather than leaving it to be guessed.
+        // ─────────────────────────────────────────────────────────────────────────────────
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Control.entries.forEach { control ->
+                val on = lit.isLit(control, tickNow)
+                val taken = store.sampleCount(control)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = Heard.primary(control),
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            color = when {
+                                on -> Color(colour)
+                                taken > 0 -> GLYPH_SECOND
+                                else -> GLYPH_OFF
+                            },
+                            fontSize = 13.sp,
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                    )
+                    // THREE SLOTS, EACH ONE PRESSABLE ON ITS OWN. A single button that filled
+                    // the next empty slot would give no way to redo the one that went wrong,
+                    // and the one that went wrong is the whole reason there are three.
+                    Row(
+                        modifier = Modifier.padding(top = 2.dp),
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    ) {
+                        for (slot in 0 until Store.SAMPLES) {
+                            val filled = store.hasSample(control, slot)
+                            val busy = recordingFor == Pair(control, slot)
+                            Text(
+                                text = if (filled) "\u25CF" else "\u25CB",
+                                style = TextStyle(
+                                    fontFamily = FontFamily.Monospace,
+                                    color = when {
+                                        busy -> Color(0xFF9B3B33)
+                                        filled -> GLYPH_SECOND
+                                        else -> GLYPH_OFF
+                                    },
+                                    fontSize = 12.sp,
+                                ),
+                                modifier = Modifier
+                                    // ONLY WHILE ARMED. A slot press with recording off is the
+                                    // commonest way to destroy a good sample by accident, and a
+                                    // sample destroyed by accident is silent: everything still
+                                    // looks recorded, it just stops matching.
+                                    .clickable(enabled = recordArmed && !recording) {
+                                        onRecord(control, slot)
+                                    }
+                                    .padding(horizontal = 3.dp, vertical = 1.dp),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // THE SCORES. Every comparison, accepted or not, with its distance. A near miss that
+        // shows a number is a threshold that can be changed from evidence; a near miss that
+        // shows nothing is indistinguishable from not having heard anything at all.
+        Text(
+            text = when {
+                recording -> "recording " +
+                    (recordingFor?.let { Heard.primary(it.first) + " " + (it.second + 1) } ?: "")
+                scores.isEmpty() -> voiceState
+                else -> scores.joinToString("  ") {
+                    Heard.primary(it.first).take(3) + " " + "%.2f".format(it.second)
+                }
+            },
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                color = if (recording) Color(0xFF9B3B33) else GLYPH_OFF,
+                fontSize = 10.sp,
+            ),
+            maxLines = 1,
+            softWrap = false,
+        )
 
         Palette.SWATCHES.chunked(columns).forEach { row ->
             Row(
@@ -735,90 +888,6 @@ private fun SettingsGrid(
             // while sessions climb means it never got as far as opening the microphone, so a
             // still meter is not a broken meter. Those two numbers tell the difference without
             // anybody having to guess, and the error name can be read out loud.
-            // ─────────────────────────────────────────────────────────────────────────────────
-            // THE RECORDER AND THE TESTER, WHICH ARE THE SAME THREE WORDS.
-            //
-            // Press a word: it records a second and a half of you saying that command. Say a
-            // word: it lights for a second. One row does both because they are the same
-            // question asked twice — what does this command sound like, and did it hear it.
-            //
-            // A word with no recording is dim and outlined by its absence: nothing works until
-            // all three exist, and the state line says so rather than leaving it to be guessed.
-            // ─────────────────────────────────────────────────────────────────────────────────
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.Top,
-            ) {
-                Control.entries.forEach { control ->
-                    val on = lit.isLit(control, tickNow)
-                    val taken = store.sampleCount(control)
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = Heard.primary(control),
-                            style = TextStyle(
-                                fontFamily = FontFamily.Monospace,
-                                color = when {
-                                    on -> Color(colour)
-                                    taken > 0 -> GLYPH_SECOND
-                                    else -> GLYPH_OFF
-                                },
-                                fontSize = 13.sp,
-                            ),
-                            maxLines = 1,
-                            softWrap = false,
-                        )
-                        // THREE SLOTS, EACH ONE PRESSABLE ON ITS OWN. A single button that filled
-                        // the next empty slot would give no way to redo the one that went wrong,
-                        // and the one that went wrong is the whole reason there are three.
-                        Row(
-                            modifier = Modifier.padding(top = 2.dp),
-                            horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        ) {
-                            for (slot in 0 until Store.SAMPLES) {
-                                val filled = store.hasSample(control, slot)
-                                val busy = recordingFor == Pair(control, slot)
-                                Text(
-                                    text = if (filled) "\u25CF" else "\u25CB",
-                                    style = TextStyle(
-                                        fontFamily = FontFamily.Monospace,
-                                        color = when {
-                                            busy -> Color(0xFF9B3B33)
-                                            filled -> GLYPH_SECOND
-                                            else -> GLYPH_OFF
-                                        },
-                                        fontSize = 12.sp,
-                                    ),
-                                    modifier = Modifier
-                                        .clickable(enabled = !recording) { onRecord(control, slot) }
-                                        .padding(horizontal = 3.dp, vertical = 1.dp),
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-
-            // THE SCORES. Every comparison, accepted or not, with its distance. A near miss that
-            // shows a number is a threshold that can be changed from evidence; a near miss that
-            // shows nothing is indistinguishable from not having heard anything at all.
-            Text(
-                text = when {
-                    recording -> "recording " +
-                        (recordingFor?.let { Heard.primary(it.first) + " " + (it.second + 1) } ?: "")
-                    scores.isEmpty() -> voiceState
-                    else -> scores.joinToString("  ") {
-                        Heard.primary(it.first).take(3) + " " + "%.2f".format(it.second)
-                    }
-                },
-                style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    color = if (recording) Color(0xFF9B3B33) else GLYPH_OFF,
-                    fontSize = 10.sp,
-                ),
-                maxLines = 1,
-                softWrap = false,
-            )
         }
     }
 }
