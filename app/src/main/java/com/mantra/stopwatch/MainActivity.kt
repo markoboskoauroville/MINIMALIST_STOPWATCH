@@ -30,15 +30,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StayCurrentLandscape
 import androidx.compose.material.icons.filled.StayCurrentPortrait
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -185,6 +184,33 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             PackageManager.PERMISSION_GRANTED
     }
     var diagnostics by remember { mutableStateOf(Diagnostics()) }
+    var probeFault by remember { mutableStateOf("") }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE MICROPHONE PROBE, and the reason it exists.
+    //
+    // "Audio is not entering the application" covers four faults that are indistinguishable from
+    // outside the phone: the permission was never really granted, something else holds the
+    // microphone, audio arrives and the recogniser is broken, or everything works and the words
+    // do not match. SpeechRecognizer cannot separate them, because its level callback only fires
+    // once it has ALREADY opened the microphone — so a dead meter looks exactly like a dead
+    // microphone.
+    //
+    // This opens the microphone directly, the way TTT mini does, and reads sample peaks. One
+    // microphone, one owner, so it runs only while the settings panel is open and voice commands
+    // are OFF. That is the test: switch listening off, open settings, speak. If the bar moves,
+    // audio reaches this app and the fault is further down. If it does not, nothing after it can
+    // work and there is no point looking at the recogniser at all.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    DisposableEffect(settingsOpen, listening, granted) {
+        if (settingsOpen && !listening && granted) {
+            val probe = MicProbe(onLevel = { level = it }, onFail = { probeFault = it })
+            probe.start()
+            onDispose { probe.stop() }
+        } else {
+            onDispose { }
+        }
+    }
     val askForMicrophone = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { allowed ->
@@ -352,24 +378,29 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         ) { settingsOpen = !settingsOpen }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
-        // THE MICROPHONE, ON THE MAIN SCREEN.
+        // THE MICROPHONE, TOP MIDDLE.
         //
-        // It was in the settings panel at v8, which was wrong for the reason Baba gave: this is
-        // a hands-free control. Anything you have to open a panel to reach is not hands-free,
-        // and the one moment you want to switch listening off is the moment your hands are busy.
+        // v9 put it bottom right, where it sat beside the transport strip and Baba could not
+        // find it. Top middle is the third position on a screen whose two corners are already
+        // taken, and design-language.md 10 is explicit that a row has two ends AND A MIDDLE.
         //
-        // It is the only control on this screen that is a STATE rather than an action, so it is
-        // the only one that breaks the rule about saying what the next press does: a struck-out
-        // microphone means "off", not "pressing this turns it off". A switch has to show its
-        // position or there is no way to know it without pressing it, and pressing this one to
-        // find out is exactly what must not be necessary.
+        // FILLED IS ON, OUTLINED IS OFF. No slash. A struck-out microphone is a third mark to
+        // read — you have to notice the line, and a small line at arm's length is exactly what
+        // low vision loses first. Solid against hollow is a difference in weight, which is what
+        // an interface is read as before it is read as anything else, and it survives being
+        // glanced at from across a room.
+        //
+        // It is the only control here that shows a STATE rather than what the next press does. A
+        // switch that does not show its position can only be read by pressing it, and pressing
+        // this one to find out whether the microphone is open is precisely what must not be
+        // necessary.
         // ─────────────────────────────────────────────────────────────────────────────────────
         Glyph(
-            icon = if (listening) Icons.Default.Mic else Icons.Default.MicOff,
+            icon = if (listening) Icons.Filled.Mic else Icons.Outlined.Mic,
             label = if (listening) "Voice on" else "Voice off",
-            tone = if (listening) Tone.HIGHLIGHT else Tone.SECONDARY,
+            tone = if (listening) Tone.PRIMARY else Tone.SECONDARY,
             size = 40.dp,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(EDGE),
+            modifier = Modifier.align(Alignment.TopCenter).padding(EDGE),
         ) {
             if (!listening && !granted) {
                 askForMicrophone.launch(Manifest.permission.RECORD_AUDIO)
@@ -399,6 +430,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 listening = listening,
                 level = level,
                 diagnostics = diagnostics,
+                probeFault = probeFault,
                 lastHeard = lastHeard,
                 lastMatch = lastMatch,
                 voiceState = voiceState,
@@ -504,6 +536,7 @@ private fun SettingsGrid(
     listening: Boolean,
     level: Float,
     diagnostics: Diagnostics,
+    probeFault: String,
     lastHeard: String,
     lastMatch: Control?,
     voiceState: String,
@@ -613,7 +646,7 @@ private fun SettingsGrid(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Glyph(
-                    icon = if (listening) Icons.Default.Mic else Icons.Default.MicOff,
+                    icon = if (listening) Icons.Filled.Mic else Icons.Outlined.Mic,
                     label = if (listening) "Stop listening" else "Listen for commands",
                     tone = if (listening) Tone.PRIMARY else Tone.SECONDARY,
                     size = 28.dp,
@@ -659,12 +692,16 @@ private fun SettingsGrid(
             // still meter is not a broken meter. Those two numbers tell the difference without
             // anybody having to guess, and the error name can be read out loud.
             Text(
-                text = if (diagnostics.looksLikeRestartStorm())
-                    diagnostics.line() + "  RESTARTING"
-                else diagnostics.line(),
+                text = when {
+                    probeFault.isNotEmpty() -> "mic: " + probeFault
+                    !listening -> "mic test: speak, the bar should move"
+                    diagnostics.looksLikeRestartStorm() -> diagnostics.line() + "  RESTARTING"
+                    else -> diagnostics.line()
+                },
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
-                    color = if (diagnostics.looksLikeRestartStorm()) Color(0xFF9B3B33) else GLYPH_OFF,
+                    color = if (probeFault.isNotEmpty() || diagnostics.looksLikeRestartStorm())
+                        Color(0xFF9B3B33) else GLYPH_OFF,
                     fontSize = 10.sp,
                 ),
                 maxLines = 1,

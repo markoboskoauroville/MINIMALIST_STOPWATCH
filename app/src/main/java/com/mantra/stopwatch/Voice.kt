@@ -123,6 +123,17 @@ class Vu {
         return update((rmsDb - RMS_MIN) / span)
     }
 
+    /**
+     * A PCM16 peak, which is how TTT mini feeds this curve and the only honest source of level
+     * there is. Used by MicProbe, which owns the microphone directly while voice commands are
+     * off, so the tester can answer "does audio reach this app" without asking the recogniser.
+     *
+     * VISUAL_FULL_SCALE is TTT mini's number and not full scale. Speech rarely reaches PCM16
+     * maximum, so dividing by 32767 gives a bar that barely moves for a normal voice. 16000 is
+     * the calibration that has been looked at on a real screen for years in the other app.
+     */
+    fun fromPeak(peak: Int): Float = update(peak.coerceAtLeast(0) / VISUAL_FULL_SCALE)
+
     /** The curve from TTT mini, taking an already normalised 0..1 rather than a PCM16 peak. */
     fun update(normalised: Float): Float {
         val gated = ((normalised.coerceIn(0f, 1f) - NOISE_GATE) / (1f - NOISE_GATE)).coerceIn(0f, 1f)
@@ -143,6 +154,9 @@ class Vu {
         // silence and a normal speaking voice actually read as; anything outside is clamped.
         const val RMS_MIN = -2f
         const val RMS_MAX = 10f
+
+        /** TTT mini's calibration: speech rarely reaches PCM16 full scale, so this is not it. */
+        const val VISUAL_FULL_SCALE = 16_000f
 
         // Unchanged from TTT mini.
         const val NOISE_GATE = 0.025f

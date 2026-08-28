@@ -396,8 +396,21 @@ check("the tester reports counters, not just a state word",
 
 # The microphone switch is a hands-free control and must be reachable without opening a panel.
 check("the microphone switch is on the main screen",
-      "Alignment.BottomEnd" in ui and "Icons.Default.MicOff" in ui,
-      "a corner of the stopwatch itself, not a row inside settings")
+      "Alignment.TopCenter" in ui and "Icons.Filled.Mic else Icons.Outlined.Mic" in ui,
+      "top middle of the stopwatch itself, not a row inside settings")
+
+# The switch shows its position by WEIGHT — solid against hollow — not by a struck-out mark. A
+# small slash is the first thing low vision loses, and it is a third mark to read rather than a
+# difference you see before you read anything.
+check("the microphone switch shows on and off without a struck-out mark",
+      "MicOff" not in ui and "Icons.Outlined.Mic" in ui,
+      "filled is on, outlined is off, no slash anywhere in the screen")
+
+# The probe is what separates "no audio at all" from "audio fine, recogniser broken". It has to
+# be mutually exclusive with the recogniser, because the microphone has one owner.
+check("the microphone probe never runs beside the recogniser",
+      "settingsOpen && !listening && granted" in ui and "MicProbe(" in ui,
+      "the probe runs only with the panel open and voice off, so the two never contend")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

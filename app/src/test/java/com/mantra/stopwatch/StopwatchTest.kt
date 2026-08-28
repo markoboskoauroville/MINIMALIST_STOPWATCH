@@ -156,6 +156,35 @@ class StopwatchTest {
     // right: a diagnostics readout that is wrong is worse than none, because it is believed.
     // -----------------------------------------------------------------------------------------
 
+    /**
+     * The peak path is what proves audio reaches the app at all, so its ends are asserted. A
+     * meter that cannot reach the top on a loud sound, or cannot sit at zero in a quiet room,
+     * cannot answer the question it was added to answer.
+     */
+    @Test
+    fun theMeterMovesForRealSamplesAndRestsOnSilence() {
+        val vu = Vu()
+        assertEquals(0f, vu.fromPeak(0), 0.001f)
+        assertEquals("a silent room stays still", 0f, vu.fromPeak(0), 0.001f)
+
+        val loud = Vu()
+        var level = 0f
+        repeat(20) { level = loud.fromPeak(16_000) }
+        assertTrue("a full-scale peak must reach the top of the bar, was $level", level > 0.95f)
+
+        val speech = Vu()
+        var mid = 0f
+        repeat(20) { mid = speech.fromPeak(4_000) }
+        assertTrue("ordinary speech must be clearly visible, was $mid", mid > 0.35f)
+
+        // Attack faster than release, which is the part of TTT mini's curve worth keeping: the
+        // bar answers at once and falls back smoothly instead of flickering.
+        val decay = Vu()
+        repeat(20) { decay.fromPeak(16_000) }
+        val afterOne = decay.fromPeak(0)
+        assertTrue("it must not drop to nothing in one frame, was $afterOne", afterOne > 0.5f)
+    }
+
     @Test
     fun theDiagnosticsLineSaysWhatItMeans() {
         assertEquals("s0  rms0  offline", Diagnostics().line())
