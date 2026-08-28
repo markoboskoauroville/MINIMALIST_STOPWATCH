@@ -24,20 +24,30 @@ package com.mantra.stopwatch
  */
 object Palette {
 
-    const val COLUMNS = 6
+    // TWO GRID SHAPES FOR ONE LIST. Forty-eight divides by both, so the same swatches lay out as
+    // eight rows of six standing up and four rows of twelve on their side. A grid that keeps one
+    // column count in both orientations is either a stack of tiny cells in landscape or a slab
+    // taller than the screen, and the second of those is what v5 shipped: on a landscape phone
+    // the panel was taller than the display, covered everything, and left no way back out.
+    const val COLUMNS_PORTRAIT = 6
+    const val COLUMNS_LANDSCAPE = 12
 
     /** The default, and the one the app has always been: white on black. */
     const val DEFAULT: Long = 0xFFFFFFFF
 
     val SWATCHES: List<Long> = listOf(
-        // neutrals, then the two ambers that are the account's accent everywhere
-        0xFFFFFFFF, 0xFFCBD5E1, 0xFF94A3B8, 0xFFF2DDB4, 0xFFE8A64B, 0xFFFBBF24,
+        // neutrals, then the ambers that are the account's accent everywhere
+        0xFFFFFFFF, 0xFFE2E8F0, 0xFFCBD5E1, 0xFF94A3B8, 0xFFD6D3D1, 0xFFA8A29E,
+        0xFFF2DDB4, 0xFFE8A64B, 0xFFFBBF24, 0xFFFDE68A, 0xFFFCD34D, 0xFFFEF3C7,
         // warm
-        0xFFEF4444, 0xFFF97316, 0xFFFACC15, 0xFFFB7185, 0xFFF472B6, 0xFFE879F9,
-        // green through cyan
-        0xFFA3E635, 0xFF4ADE80, 0xFF34D399, 0xFF2DD4BF, 0xFF22D3EE, 0xFF38BDF8,
-        // blue through violet
-        0xFF60A5FA, 0xFF818CF8, 0xFFA78BFA, 0xFFC084FC, 0xFFD8B4FE, 0xFFE2E8F0,
+        0xFFEF4444, 0xFFF87171, 0xFFFCA5A5, 0xFFF97316, 0xFFFB923C, 0xFFFDBA74,
+        0xFFFACC15, 0xFFFDE047, 0xFFEAB308, 0xFFFB7185, 0xFFFDA4AF, 0xFFF43F5E,
+        // pink through violet
+        0xFFF472B6, 0xFFF9A8D4, 0xFFE879F9, 0xFFD8B4FE, 0xFFC084FC, 0xFFA78BFA,
+        0xFF818CF8, 0xFFA5B4FC, 0xFF60A5FA, 0xFF93C5FD, 0xFF38BDF8, 0xFF7DD3FC,
+        // cyan through green
+        0xFF22D3EE, 0xFF67E8F9, 0xFF2DD4BF, 0xFF5EEAD4, 0xFF34D399, 0xFF6EE7B7,
+        0xFF4ADE80, 0xFF86EFAC, 0xFFA3E635, 0xFFBEF264, 0xFFD9F99D, 0xFFCCFBF1,
     )
 
     /** A colour that is not in the grid cannot be chosen, so a corrupt stored value falls back. */

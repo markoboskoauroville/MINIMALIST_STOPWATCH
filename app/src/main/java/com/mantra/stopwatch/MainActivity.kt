@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -56,6 +57,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -104,6 +108,25 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         store = Store(this)
         enableEdgeToEdge()
+
+        // FULL SCREEN. The status bar and the navigation bar are both hidden, so the app has the
+        // whole panel and nothing above the digits but black.
+        //
+        // v1 decided the opposite and said so in NEXT_DEFAULTS: leaving the bars visible kept
+        // the phone's own clock and battery on screen during a measurement, and the digits are
+        // limited by WIDTH rather than height so hiding them buys nothing the digits can use.
+        // That reasoning was about the digits. It was wrong about the screen: what the bars
+        // actually cost is that a black screen with six enormous numbers on it stops being a
+        // black screen with six enormous numbers on it, which is the entire design.
+        //
+        // SHOW_TRANSIENT_BARS_BY_SWIPE rather than sticky-hidden: a swipe from the edge brings
+        // the bars back for a few seconds and then they go again. The phone is never taken away
+        // from the person, it is just not on top of the stopwatch.
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
+        }
+
         setContent { Screen(store, this) }
     }
 }
@@ -222,22 +245,23 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             ) {
                 // Three controls, one call each, and the tone comes from the model rather than
                 // from a condition written here. The Activity does not know what a phase is.
-                Transport(Icons.Default.PlayArrow, "Play", Control.PLAY, state, button, ::commit)
+                //
+                // THE LABELS ARE THE VOICE COMMANDS. Google's Voice Access, which is an
+                // accessibility service already on the phone, matches what is said against the
+                // contentDescription of every control on screen. So these three strings are not
+                // decoration for a screen reader — they are the vocabulary. "Start", "Pause",
+                // "Reset", chosen to match the words Baba said he wanted rather than the words
+                // the model happens to use internally (play, pause, stop).
+                Transport(Icons.Default.PlayArrow, "Start", Control.PLAY, state, button, ::commit)
                 Transport(Icons.Default.Pause, "Pause", Control.PAUSE, state, button, ::commit)
-                Transport(Icons.Default.Stop, "Stop", Control.STOP, state, button, ::commit)
+                Transport(Icons.Default.Stop, "Reset", Control.STOP, state, button, ::commit)
             }
         }
 
-        // The two corner controls. design-language.md 10: a row has two ends and a middle, and a
-        // screen is read as weight before it is read as anything else. The gear balances the
-        // orientation lock rather than piling up beside it. Both say what the next press does.
-        Glyph(
-            icon = if (settingsOpen) Icons.Default.Close else Icons.Default.Settings,
-            label = if (settingsOpen) "Close settings" else "Settings",
-            tone = Tone.HIGHLIGHT,
-            size = 40.dp,
-            modifier = Modifier.align(Alignment.TopStart).padding(EDGE),
-        ) { settingsOpen = !settingsOpen }
+        // The two corner controls, swapped at v6 on Baba's instruction: orientation left,
+        // settings right. design-language.md 10 — a row has two ends and a middle, and a screen
+        // is read as weight before it is read as anything else. Both say what the next press
+        // does rather than what is currently true.
 
         // design-language.md 5: a control says what the next press DOES. In portrait it shows
         // the landscape glyph, because pressing it gives you landscape. It is not a readout of
@@ -248,12 +272,20 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             label = if (orientation == Orientation.PORTRAIT) "Turn landscape" else "Turn portrait",
             tone = Tone.HIGHLIGHT,
             size = 40.dp,
-            modifier = Modifier.align(Alignment.TopEnd).padding(EDGE),
+            modifier = Modifier.align(Alignment.TopStart).padding(EDGE),
         ) {
             orientation = if (orientation == Orientation.PORTRAIT) Orientation.LANDSCAPE
                           else Orientation.PORTRAIT
             store.orientation = orientation
         }
+
+        Glyph(
+            icon = if (settingsOpen) Icons.Default.Close else Icons.Default.Settings,
+            label = if (settingsOpen) "Close settings" else "Settings",
+            tone = Tone.HIGHLIGHT,
+            size = 40.dp,
+            modifier = Modifier.align(Alignment.TopEnd).padding(EDGE),
+        ) { settingsOpen = !settingsOpen }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
         // THE SETTINGS GRID, over the bottom of the screen and never over the digits.
@@ -268,10 +300,13 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         if (settingsOpen) {
             SettingsGrid(
                 width = screenW - EDGE * 2,
+                maxHeight = screenH * 0.62f,
+                landscape = landscape,
                 colour = colour,
                 weight = weight,
                 onColour = { colour = it; store.colour = it },
                 onWeight = { weight = it; store.weight = it },
+                onClose = { settingsOpen = false },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .background(BACKGROUND)
@@ -343,9 +378,12 @@ private fun Glyph(
 }
 
 /**
- * SIX BY FOUR, in the manner of a swatch grid in an Adobe application. You look at it, you press
- * one, it is applied. No wheel, no hex field, no sliders: a wheel offers a million colours in
- * order to find the six anybody wants.
+ * FORTY-EIGHT SWATCHES, in the manner of a swatch grid in an Adobe application. You look at it,
+ * you press one, it is applied. No wheel, no hex field, no sliders: a wheel offers a million
+ * colours in order to find the six anybody wants.
+ *
+ * Six columns standing up, twelve on its side. Forty-eight divides by both, so the same list is
+ * rectangular in either orientation and no row is ever ragged.
  *
  * The chosen swatch carries a tick, following the Avid model in design-language.md 15 where a
  * category holds several instances and one carries the checkmark. The tick is drawn in black or
@@ -355,17 +393,54 @@ private fun Glyph(
 @Composable
 private fun SettingsGrid(
     width: Dp,
+    maxHeight: Dp,
+    landscape: Boolean,
     colour: Long,
     weight: Weight,
     onColour: (Long) -> Unit,
     onWeight: (Weight) -> Unit,
+    onClose: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val gap = 8.dp
-    val cell = (width - gap * (Palette.COLUMNS - 1)) / Palette.COLUMNS
+    val gap = 6.dp
+    val columns = if (landscape) Palette.COLUMNS_LANDSCAPE else Palette.COLUMNS_PORTRAIT
+    val rows = Palette.SWATCHES.size / columns
 
-    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Palette.SWATCHES.chunked(Palette.COLUMNS).forEach { row ->
+    // THE CELL IS SIZED BY WHICHEVER RUNS OUT FIRST, WIDTH OR HEIGHT.
+    //
+    // v5 sized it by width alone. On a landscape phone that made a cell about 130dp across, four
+    // rows of which are taller than the screen — so the panel covered everything including its
+    // own way out, which is exactly what Baba hit. A panel that can grow past the display is a
+    // trap, and the fix is not a smaller number, it is measuring against both edges.
+    val header = 36.dp
+    val weightRow = 52.dp
+    val forGrid = maxHeight - header - weightRow - gap * (rows + 2)
+    val cell = minOf((width - gap * (columns - 1)) / columns, forGrid / rows, 64.dp)
+    val gridWidth = cell * columns + gap * (columns - 1)
+
+    Column(modifier.width(width), horizontalAlignment = Alignment.CenterHorizontally) {
+
+        // The panel's own way out, and the version, which is the first time the number this app
+        // was built from has been visible anywhere on the phone. versioning.md 3 asks for it in
+        // three places and it has only ever been in two.
+        Row(
+            modifier = Modifier.width(gridWidth).height(header),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Glyph(Icons.Default.Close, "Close settings", Tone.HIGHLIGHT, 32.dp, onPress = onClose)
+            Box(Modifier.weight(1f))
+            Text(
+                text = "v" + BuildConfig.VERSION_NAME,
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = GLYPH_SECOND,
+                    fontSize = 12.sp,
+                ),
+                maxLines = 1,
+            )
+        }
+
+        Palette.SWATCHES.chunked(columns).forEach { row ->
             Row(
                 modifier = Modifier.padding(bottom = gap),
                 horizontalArrangement = Arrangement.spacedBy(gap),
@@ -374,7 +449,7 @@ private fun SettingsGrid(
                     Box(
                         Modifier
                             .size(cell)
-                            .clip(RoundedCornerShape(4.dp))
+                            .clip(RoundedCornerShape(3.dp))
                             .background(Color(swatch)),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -384,7 +459,7 @@ private fun SettingsGrid(
                                     Icons.Default.Check,
                                     contentDescription = "Chosen",
                                     tint = Color(Palette.markOn(swatch)),
-                                    modifier = Modifier.size(cell * 0.55f),
+                                    modifier = Modifier.size(cell * 0.6f),
                                 )
                             }
                         }
@@ -396,9 +471,9 @@ private fun SettingsGrid(
         // Normal or bold, shown in the thing they describe. A row reading "Bold" set in bold
         // tells you less than the digits themselves set in bold, which is what is being chosen.
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-            val half = cell * 3 + gap * 2
-            WeightCell("88:88", Weight.NORMAL, weight, colour, half, onWeight)
-            WeightCell("88:88", Weight.BOLD, weight, colour, half, onWeight)
+            val half = (gridWidth - gap) / 2
+            WeightCell("88:88:88", Weight.NORMAL, weight, colour, half, onWeight)
+            WeightCell("88:88:88", Weight.BOLD, weight, colour, half, onWeight)
         }
     }
 }

@@ -109,12 +109,18 @@ class StopwatchTest {
         assertTrue("worst swatch is $worst", worst >= 4.5)
     }
 
-    /** The grid has to fill its rows exactly, or the last row is ragged and reads as a mistake. */
+    /**
+     * The grid has to fill its rows exactly IN BOTH SHAPES, or the last row is ragged in one
+     * orientation and reads as a mistake. Forty-eight is the number because it divides by six
+     * and by twelve; any future change to the swatch list has to keep that true.
+     */
     @Test
-    fun theGridIsRectangular() {
-        assertEquals(24, Palette.SWATCHES.size)
-        assertEquals(0, Palette.SWATCHES.size % Palette.COLUMNS)
-        assertEquals(4, Palette.SWATCHES.size / Palette.COLUMNS)
+    fun theGridIsRectangularInBothOrientations() {
+        assertEquals(48, Palette.SWATCHES.size)
+        assertEquals(0, Palette.SWATCHES.size % Palette.COLUMNS_PORTRAIT)
+        assertEquals(0, Palette.SWATCHES.size % Palette.COLUMNS_LANDSCAPE)
+        assertEquals(8, Palette.SWATCHES.size / Palette.COLUMNS_PORTRAIT)
+        assertEquals(4, Palette.SWATCHES.size / Palette.COLUMNS_LANDSCAPE)
     }
 
     /** Two identical swatches in a grid is a cell that does nothing and looks like it should. */

@@ -75,7 +75,10 @@ android {
     }
     buildFeatures {
         compose = true
-        buildConfig = false
+        // BuildConfig.VERSION_NAME is how the number reaches the settings panel. versioning.md 3
+        // wants the version in three places and it has only ever been in two: the file name and
+        // the tag. Now the phone can be asked which build it is running without a cable.
+        buildConfig = true
     }
     packaging {
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}")

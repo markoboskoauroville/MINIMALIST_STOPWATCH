@@ -202,6 +202,33 @@ check("the settings panel sits at the bottom and not over the digits",
       "Alignment.BottomCenter" in ui and "SettingsGrid" in ui,
       "the grid is aligned BottomCenter, and every press applies live")
 
+# ── 8e ───────────────────────────────────────────────────────────────────────────────────────
+# v5's panel was sized by WIDTH ALONE. On a landscape phone that made each cell about 130dp and
+# four rows of it taller than the display, so the panel covered the whole screen including its
+# own way out. A panel that can grow past the display is a trap, and the fix is measuring
+# against both edges, not picking a smaller number.
+sized_by_both = re.search(r"minOf\(\(width - gap \* \(columns - 1\)\) / columns,\s*forGrid / rows", ui)
+has_budget = "maxHeight" in ui and re.search(r"maxHeight\s*=\s*screenH\s*\*", ui)
+check("the settings panel cannot grow taller than the screen",
+      sized_by_both is not None and has_budget is not None,
+      "the cell is the smaller of what the width allows and what the height allows, capped at 64dp")
+
+# ── 8f ───────────────────────────────────────────────────────────────────────────────────────
+# The panel must carry its own way out. In landscape v5 the corner gear was the only exit and
+# the panel covered it, which is the specific trap Baba hit.
+check("the settings panel carries its own way out",
+      'Icons.Default.Close, "Close settings"' in ui and "onClose" in ui,
+      "an X inside the panel, independent of the corner control")
+
+# ── 8g ───────────────────────────────────────────────────────────────────────────────────────
+# The words on the controls ARE the voice vocabulary: Google's Voice Access matches speech
+# against contentDescription. If these drift back to the model's internal names, the spoken
+# commands stop working and nothing else breaks, which is the worst way for it to fail.
+labels = set(re.findall(r'Transport\(Icons\.Default\.\w+, "(\w+)"', ui))
+check("the spoken vocabulary is on the controls",
+      labels == {"Start", "Pause", "Reset"},
+      f"contentDescriptions: {', '.join(sorted(labels))} — these are what Voice Access listens for")
+
 # ── 9 ────────────────────────────────────────────────────────────────────────────────────────
 # Both timing fields have to be written, or the one that is not is the one that comes back wrong.
 store = STORE.read_text()
