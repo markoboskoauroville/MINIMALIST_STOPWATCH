@@ -113,12 +113,23 @@ jobs:
           SRC=app/src/main/java/com/mantra/stopwatch
           echo "source files examined:"
           find "$SRC" -name '*.kt' | sed 's/^/  /'
-          LOOPS=$( { grep -rnE '(while|for|repeat)[[:space:]]*[({]' --include='*.kt' "$SRC" || true; } | wc -l)
-          # grep -v the comment lines first. A comment explaining that the code avoids
-          # while(true) is not an unbounded loop, and this gate failed on exactly that.
-          UNBOUNDED=$( { grep -rnF 'while (true)' --include='*.kt' "$SRC" || true; } \
-            | grep -v ':[[:space:]]*\(//\|\*\)' | wc -l)
-          WAITS=$( { grep -rnE 'delay\(' --include='*.kt' "$SRC" || true; } | wc -l)
+          # EVERY STAGE OF EVERY PIPELINE IS GUARDED, NOT JUST THE FIRST.
+          #
+          # This gate has now failed three times for the same reason and the third was mine for
+          # not learning it properly. A grep that matches nothing exits 1; under pipefail that
+          # fails the assignment and bash -e kills the step before anything is printed. Runs 1
+          # and 2 hit it on the leading grep and I guarded that one. Then a `grep -v` was added
+          # to strip comments — an UNGUARDED second stage — and it filtered out its only input,
+          # exited 1, and killed the step exactly as before.
+          #
+          # `nocount` exists so that this cannot happen a fourth time by somebody adding another
+          # stage. Every filter goes through it and every filter is therefore allowed to match
+          # nothing, which is the normal case for a clean codebase.
+          nocount() { "$@" || true; }
+          notcomment() { grep -v ':[[:space:]]*\(//\|\*\)' || true; }
+          LOOPS=$( nocount grep -rnE '(while|for|repeat)[[:space:]]*[({]' --include='*.kt' "$SRC" | wc -l)
+          UNBOUNDED=$( nocount grep -rnF 'while (true)' --include='*.kt' "$SRC" | notcomment | wc -l)
+          WAITS=$( nocount grep -rnE 'delay\(' --include='*.kt' "$SRC" | wc -l)
           echo "loops examined:         $LOOPS"
           echo "written as while(true): $UNBOUNDED"
           echo "waits (delay):          $WAITS"
