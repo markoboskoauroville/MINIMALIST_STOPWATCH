@@ -317,6 +317,40 @@ class StopwatchTest {
      * match for all three templates and one of them is inevitably the least bad; without the
      * margin the stopwatch would fire on conversation.
      */
+    /**
+     * THREE SAMPLES PER COMMAND, AND THE BEST ONE COUNTS.
+     *
+     * The point of recording a command three times is that one of the three will be the bad one
+     * — further from the phone, a door closing, a cough. Taking the minimum makes that recording
+     * harmless. Taking an average would let it drag the good ones down, which would make three
+     * samples WORSE than one and the whole feature pointless.
+     */
+    @Test
+    fun aBadSampleAmongGoodOnesDoesNotSpoilTheCommand() {
+        val good = Dsp.features(tone(250.0, 350))
+        val alsoGood = Dsp.features(tone(250.0, 320, 0.5))
+        val ruined = Dsp.features(tone(1900.0, 350))   // the one where something went wrong
+
+        val templates = listOf(
+            Template(Control.PLAY, good),
+            Template(Control.PLAY, alsoGood),
+            Template(Control.PLAY, ruined),
+            Template(Control.PAUSE, Dsp.features(tone(600.0, 350))),
+            Template(Control.STOP, Dsp.features(tone(1400.0, 350))),
+        )
+        val matcher = TemplateMatcher()
+        assertEquals(
+            "the two good samples must carry it",
+            Control.PLAY,
+            matcher.match(Dsp.features(tone(250.0, 340, 0.4)), templates),
+        )
+
+        // One score per command, not one per sample, so the margin still compares like with like.
+        val scores = matcher.scores(Dsp.features(tone(250.0, 340)), templates)
+        assertEquals("one score per control", 3, scores.size)
+        assertEquals(Control.PLAY, scores.first().first)
+    }
+
     @Test
     fun twoTemplatesThatAreTooAlikeAreRefusedRatherThanGuessedBetween() {
         val templates = listOf(

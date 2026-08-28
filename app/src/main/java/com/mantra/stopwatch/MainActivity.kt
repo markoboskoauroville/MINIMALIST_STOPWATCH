@@ -239,8 +239,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // be doing the same arithmetic several times a second for an answer that cannot change.
     LaunchedEffect(templatesReady) {
         engine.setTemplates(
-            Control.entries.mapNotNull { c ->
-                store.loadSample(c)?.let { Template(c, Dsp.features(it)) }
+            Control.entries.flatMap { c ->
+                (0 until Store.SAMPLES).mapNotNull { slot ->
+                    store.loadSample(c, slot)?.let { Template(c, Dsp.features(it)) }
+                }
             }
         )
     }
@@ -580,21 +582,21 @@ private fun SettingsGrid(
 
     // THE RECORDING STATE, and it belongs to the panel rather than to the screen: nothing
     // outside settings can start a recording, so nothing outside settings needs to know.
-    var recordingFor by remember { mutableStateOf<Control?>(null) }
+    var recordingFor by remember { mutableStateOf<Pair<Control, Int>?>(null) }
     val recording = recordingFor != null
     val scope = rememberCoroutineScope()
 
     // Copied from TTT mini's arrangement rather than invented: the capture is already running,
     // so recording is not opening a microphone, it is waiting a fixed time and then taking what
     // the ring has. RECORD_MS is the length of the sample kept.
-    fun onRecord(control: Control) {
+    fun onRecord(control: Control, slot: Int) {
         if (recording) return
-        recordingFor = control
+        recordingFor = control to slot
         scope.launch {
             delay(RECORD_MS)
             val samples = engine.recent(RECORD_MS.toInt())
             if (samples.isNotEmpty()) {
-                store.saveSample(control, samples)
+                store.saveSample(control, slot, samples)
                 onRecorded()
             }
             recordingFor = null
@@ -746,29 +748,54 @@ private fun SettingsGrid(
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.Top,
             ) {
                 Control.entries.forEach { control ->
                     val on = lit.isLit(control, tickNow)
-                    val recorded = store.hasSample(control)
-                    val recordingThis = recordingFor == control
-                    Text(
-                        text = Heard.primary(control) + if (recorded) "" else " ·",
-                        style = TextStyle(
-                            fontFamily = FontFamily.Monospace,
-                            color = when {
-                                recordingThis -> Color(0xFF9B3B33)
-                                on -> Color(colour)
-                                recorded -> GLYPH_SECOND
-                                else -> GLYPH_OFF
-                            },
-                            fontSize = 13.sp,
-                        ),
-                        maxLines = 1,
-                        softWrap = false,
-                        modifier = Modifier
-                            .clickable(enabled = !recording) { onRecord(control) }
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                    )
+                    val taken = store.sampleCount(control)
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = Heard.primary(control),
+                            style = TextStyle(
+                                fontFamily = FontFamily.Monospace,
+                                color = when {
+                                    on -> Color(colour)
+                                    taken > 0 -> GLYPH_SECOND
+                                    else -> GLYPH_OFF
+                                },
+                                fontSize = 13.sp,
+                            ),
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                        // THREE SLOTS, EACH ONE PRESSABLE ON ITS OWN. A single button that filled
+                        // the next empty slot would give no way to redo the one that went wrong,
+                        // and the one that went wrong is the whole reason there are three.
+                        Row(
+                            modifier = Modifier.padding(top = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            for (slot in 0 until Store.SAMPLES) {
+                                val filled = store.hasSample(control, slot)
+                                val busy = recordingFor == Pair(control, slot)
+                                Text(
+                                    text = if (filled) "\u25CF" else "\u25CB",
+                                    style = TextStyle(
+                                        fontFamily = FontFamily.Monospace,
+                                        color = when {
+                                            busy -> Color(0xFF9B3B33)
+                                            filled -> GLYPH_SECOND
+                                            else -> GLYPH_OFF
+                                        },
+                                        fontSize = 12.sp,
+                                    ),
+                                    modifier = Modifier
+                                        .clickable(enabled = !recording) { onRecord(control, slot) }
+                                        .padding(horizontal = 3.dp, vertical = 1.dp),
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
@@ -777,7 +804,8 @@ private fun SettingsGrid(
             // shows nothing is indistinguishable from not having heard anything at all.
             Text(
                 text = when {
-                    recording -> "recording " + (recordingFor?.let { Heard.primary(it) } ?: "")
+                    recording -> "recording " +
+                        (recordingFor?.let { Heard.primary(it.first) + " " + (it.second + 1) } ?: "")
                     scores.isEmpty() -> voiceState
                     else -> scores.joinToString("  ") {
                         Heard.primary(it.first).take(3) + " " + "%.2f".format(it.second)

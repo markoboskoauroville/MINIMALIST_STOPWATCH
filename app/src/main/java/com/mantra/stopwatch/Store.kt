@@ -44,8 +44,8 @@ class Store(private val context: Context) {
      * starts in portrait once, and one press fixes it for good.
      */
     var orientation: Orientation
-        get() = if (p.getBoolean(K_LANDSCAPE, false)) Orientation.LANDSCAPE else Orientation.PORTRAIT
-        set(v) = p.edit().putBoolean(K_LANDSCAPE, v == Orientation.LANDSCAPE).apply()
+        get() = if (p.getBoolean(Keys.K_LANDSCAPE, false)) Orientation.LANDSCAPE else Orientation.PORTRAIT
+        set(v) = p.edit().putBoolean(Keys.K_LANDSCAPE, v == Orientation.LANDSCAPE).apply()
 
     /**
      * The digit colour, always run through Palette.sanitise on the way out. A value that is no
@@ -53,8 +53,8 @@ class Store(private val context: Context) {
      * removed — comes back as white rather than as something invisible on black.
      */
     var colour: Long
-        get() = Palette.sanitise(p.getLong(K_COLOUR, Palette.DEFAULT))
-        set(v) = p.edit().putLong(K_COLOUR, v).apply()
+        get() = Palette.sanitise(p.getLong(Keys.K_COLOUR, Palette.DEFAULT))
+        set(v) = p.edit().putLong(Keys.K_COLOUR, v).apply()
 
     /**
      * Whether the microphone is wanted. Default OFF, and it stays off until it is switched on
@@ -62,12 +62,12 @@ class Store(private val context: Context) {
      * a stopwatch anybody asked for.
      */
     var listening: Boolean
-        get() = p.getBoolean(K_LISTENING, false)
-        set(v) = p.edit().putBoolean(K_LISTENING, v).apply()
+        get() = p.getBoolean(Keys.K_LISTENING, false)
+        set(v) = p.edit().putBoolean(Keys.K_LISTENING, v).apply()
 
     var weight: Weight
-        get() = if (p.getBoolean(K_BOLD, false)) Weight.BOLD else Weight.NORMAL
-        set(v) = p.edit().putBoolean(K_BOLD, v == Weight.BOLD).apply()
+        get() = if (p.getBoolean(Keys.K_BOLD, false)) Weight.BOLD else Weight.NORMAL
+        set(v) = p.edit().putBoolean(Keys.K_BOLD, v == Weight.BOLD).apply()
 
     /**
      * commit() rather than apply() is deliberate and it is the whole point of this class.
@@ -79,11 +79,11 @@ class Store(private val context: Context) {
      */
     fun save(s: Stopwatch) {
         p.edit()
-            .putString(K_PHASE, s.phase.name)
-            .putLong(K_STARTED_AT, s.startedAt)
-            .putLong(K_ACCUMULATED, s.accumulated)
-            .putLong(K_LAST_SEEN, SystemClock.elapsedRealtime())
-            .putLong(K_BOOT_MARKER, bootMarker())
+            .putString(Keys.K_PHASE, s.phase.name)
+            .putLong(Keys.K_STARTED_AT, s.startedAt)
+            .putLong(Keys.K_ACCUMULATED, s.accumulated)
+            .putLong(Keys.K_LAST_SEEN, SystemClock.elapsedRealtime())
+            .putLong(Keys.K_BOOT_MARKER, bootMarker())
             .commit()
     }
 
@@ -94,18 +94,18 @@ class Store(private val context: Context) {
      */
     fun load(): Stopwatch {
         val phase = try {
-            Phase.valueOf(p.getString(K_PHASE, Phase.STOPPED.name) ?: Phase.STOPPED.name)
+            Phase.valueOf(p.getString(Keys.K_PHASE, Phase.STOPPED.name) ?: Phase.STOPPED.name)
         } catch (e: IllegalArgumentException) {
             // A phase name this version does not know is not a crash. It is a fresh stopwatch.
             Phase.STOPPED
         }
         return Stopwatch.restore(
             phase = phase,
-            startedAt = p.getLong(K_STARTED_AT, 0L),
-            accumulated = p.getLong(K_ACCUMULATED, 0L),
-            savedBootMarker = p.getLong(K_BOOT_MARKER, bootMarker()),
+            startedAt = p.getLong(Keys.K_STARTED_AT, 0L),
+            accumulated = p.getLong(Keys.K_ACCUMULATED, 0L),
+            savedBootMarker = p.getLong(Keys.K_BOOT_MARKER, bootMarker()),
             bootMarkerNow = bootMarker(),
-            lastSeen = p.getLong(K_LAST_SEEN, 0L),
+            lastSeen = p.getLong(Keys.K_LAST_SEEN, 0L),
             now = SystemClock.elapsedRealtime(),
         )
     }
@@ -116,31 +116,59 @@ class Store(private val context: Context) {
     // Raw rather than WAV because nothing outside this app ever reads them and a header would be
     // 44 bytes of ceremony describing a format that is fixed at compile time.
 
-    private fun sampleFile(control: Control) =
+    private fun sampleFile(control: Control, slot: Int) =
+        java.io.File(context.applicationContext.filesDir, "cmd_" + control.name + "_" + slot + ".pcm")
+
+    /** The single-sample file v13 wrote. Read once, as slot 0, so nobody has to record again. */
+    private fun legacyFile(control: Control) =
         java.io.File(context.applicationContext.filesDir, "cmd_" + control.name + ".pcm")
 
-    fun saveSample(control: Control, samples: ShortArray) {
+    fun saveSample(control: Control, slot: Int, samples: ShortArray) {
         val bytes = java.nio.ByteBuffer.allocate(samples.size * 2)
             .order(java.nio.ByteOrder.LITTLE_ENDIAN)
         for (s in samples) bytes.putShort(s)
-        sampleFile(control).writeBytes(bytes.array())
+        sampleFile(control, slot).writeBytes(bytes.array())
     }
 
-    fun loadSample(control: Control): ShortArray? {
-        val f = sampleFile(control)
+    fun loadSample(control: Control, slot: Int): ShortArray? {
+        var f = sampleFile(control, slot)
+        if (!f.exists() && slot == 0) {
+            // Promote the v13 recording rather than discarding it. A migration that silently
+            // throws away work the person did is worse than one that never ran.
+            val old = legacyFile(control)
+            if (old.exists()) {
+                old.renameTo(f)
+                f = sampleFile(control, slot)
+            }
+        }
         if (!f.exists() || f.length() < 2) return null
         val bytes = f.readBytes()
         val buf = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
         return ShortArray(bytes.size / 2) { buf.getShort() }
     }
 
-    fun hasSample(control: Control): Boolean = sampleFile(control).let { it.exists() && it.length() > 2 }
+    fun hasSample(control: Control, slot: Int): Boolean =
+        sampleFile(control, slot).let { it.exists() && it.length() > 2 } ||
+            (slot == 0 && legacyFile(control).exists())
 
-    fun clearSample(control: Control) {
-        sampleFile(control).delete()
+    fun sampleCount(control: Control): Int = (0 until SAMPLES).count { hasSample(control, it) }
+
+    fun clearSample(control: Control, slot: Int) {
+        sampleFile(control, slot).delete()
+        if (slot == 0) legacyFile(control).delete()
     }
 
-    private companion object {
+    companion object {
+        /**
+         * THREE RECORDINGS PER COMMAND. One is a single attempt at a word, and a single attempt
+         * carries whatever happened in the room that second. Three lets the matcher take the best
+         * of them, so the one where a door closed is harmless rather than being the only thing
+         * it knows about that word.
+         */
+        const val SAMPLES = 3
+    }
+
+    private object Keys {
         const val K_PHASE = "phase"
         const val K_STARTED_AT = "startedAt"
         const val K_ACCUMULATED = "accumulated"

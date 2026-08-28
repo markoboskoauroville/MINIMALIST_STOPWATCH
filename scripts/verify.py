@@ -334,7 +334,7 @@ store = STORE.read_text()
 # Only the body of save(), not the whole file: the orientation lock is a preference written by
 # its own setter and counting it here would let a genuinely missing timing field hide behind it.
 save_body = re.search(r"fun save\(s: Stopwatch\)\s*\{(.*?)\n    \}", store, re.S).group(1)
-written = re.findall(r"\.put\w+\(K_(\w+)", save_body)
+written = re.findall(r"\.put\w+\((?:Keys\.)?K_(\w+)", save_body)
 check("every field needed to restore is written",
       len(set(written)) == 5,
       f"{len(set(written))} of 5 fields written on save: {', '.join(sorted(set(written)))}")
@@ -423,6 +423,18 @@ check("nothing starts a speech recogniser any more",
 
 # The matcher must refuse rather than pick between two poor answers, or a conversation in the
 # room fires the stopwatch.
+# Three samples per command are pointless if the bad one drags the good ones down, so the score
+# for a command is the BEST of its samples. An average would make three worse than one.
+check("a command is scored by its best sample, not its average",
+      "groupBy { it.control }" in dsp and "minOf { Dsp.dtw(" in dsp,
+      "one score per command, taken from whichever recording of it is closest")
+
+# Three slots, each pressable on its own, or there is no way to redo the one that went wrong —
+# and the one that went wrong is the reason there are three.
+check("each sample slot can be re-recorded on its own",
+      "onRecord(control, slot)" in ui and "for (slot in 0 until Store.SAMPLES)" in ui,
+      f"{3} slots per command, each with its own press")
+
 check("the matcher needs a margin as well as a threshold",
       "runnerUp - bestScore < margin" in dsp and "bestScore > accept" in dsp,
       "the best match must be close AND clearly better than the second best")

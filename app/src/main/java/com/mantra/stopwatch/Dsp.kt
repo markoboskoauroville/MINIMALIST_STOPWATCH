@@ -309,9 +309,7 @@ class TemplateMatcher(
 ) {
     fun match(heard: List<DoubleArray>, templates: List<Template>): Control? {
         if (heard.isEmpty() || templates.isEmpty()) return null
-        val scored = templates
-            .map { it.control to Dsp.dtw(heard, it.frames) }
-            .sortedBy { it.second }
+        val scored = scores(heard, templates)
         val (best, bestScore) = scored.first()
         if (bestScore > accept) return null
         val runnerUp = scored.getOrNull(1)?.second ?: Double.MAX_VALUE
@@ -319,9 +317,23 @@ class TemplateMatcher(
         return best
     }
 
-    /** The scores themselves, for the tester, so a near miss is visible rather than silent. */
+    /**
+     * The best distance PER CONTROL, for the tester and for match().
+     *
+     * THE MINIMUM ACROSS A CONTROL'S SAMPLES, NOT THE AVERAGE. Three recordings of "start" are
+     * three attempts at the same thing, and the honest question is whether what was just said
+     * resembles ANY of them — not whether it resembles all of them equally. An average is
+     * dragged down by the one recording where the phone was further away or a door closed, which
+     * is exactly the recording the other two exist to make harmless.
+     *
+     * This is also what makes the margin still mean something with three samples each: the two
+     * numbers being compared are one per command, as they were when there was one sample each.
+     */
     fun scores(heard: List<DoubleArray>, templates: List<Template>): List<Pair<Control, Double>> =
-        templates.map { it.control to Dsp.dtw(heard, it.frames) }.sortedBy { it.second }
+        templates
+            .groupBy { it.control }
+            .map { (control, group) -> control to group.minOf { Dsp.dtw(heard, it.frames) } }
+            .sortedBy { it.second }
 
     private companion object {
         /**
