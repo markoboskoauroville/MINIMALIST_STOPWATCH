@@ -346,3 +346,83 @@ class TemplateMatcher(
         const val MARGIN = 0.06
     }
 }
+
+
+/**
+ * WHETHER A RECORDING IS ANY GOOD, decided before it is ever stored.
+ *
+ * A sampler that will happily store two seconds of room tone as the sound of the word "start" is
+ * not a sampler, it is a trap. Everything downstream keeps working — the pad looks filled, the
+ * count says three of three — and the only symptom is that matching quietly stops being reliable.
+ * That is the worst failure shape there is, so a sample is judged at the moment it is taken and
+ * refused out loud if it is no good.
+ */
+enum class SampleQuality {
+    /** Usable. */
+    GOOD,
+
+    /** Nothing crossed the endpointer: the microphone heard a room, not a word. */
+    SILENT,
+
+    /** Something was said, but too little of it to align against anything. */
+    TOO_SHORT,
+
+    /** Loud enough to be clipping, which destroys the spectrum the matcher compares. */
+    CLIPPED,
+}
+
+object SampleCheck {
+
+    /** Below a quarter of a second of speech there is not enough to warp against. */
+    const val MIN_FRAMES = 25
+
+    /** A tenth of the samples at the rail is not a loud voice, it is a broken recording. */
+    const val CLIP_FRACTION = 0.10
+
+    fun assess(samples: ShortArray): SampleQuality {
+        if (samples.isEmpty()) return SampleQuality.SILENT
+
+        var clipped = 0
+        for (v in samples) if (v >= 32000 || v <= -32000) clipped++
+        if (clipped > samples.size * CLIP_FRACTION) return SampleQuality.CLIPPED
+
+        val frames = Dsp.features(samples)
+        if (frames.isEmpty()) return SampleQuality.SILENT
+        if (frames.size < MIN_FRAMES) return SampleQuality.TOO_SHORT
+        return SampleQuality.GOOD
+    }
+
+    fun describe(q: SampleQuality): String = when (q) {
+        SampleQuality.GOOD -> "saved"
+        SampleQuality.SILENT -> "nothing heard, try again"
+        SampleQuality.TOO_SHORT -> "too short, say the whole word"
+        SampleQuality.CLIPPED -> "too loud, move back a little"
+    }
+}
+
+/**
+ * THE WAVEFORM ON THE PAD.
+ *
+ * A pad that says only "filled" tells you a recording exists. A pad with the shape of the
+ * recording on it tells you WHICH recording, whether the word is centred in it, and whether what
+ * you captured was a word at all or a cough at one end and silence at the other. On an Akai the
+ * waveform is not decoration, it is how you know what is under your finger.
+ *
+ * Returns [buckets] peak amplitudes, 0..1, oldest first.
+ */
+fun waveform(samples: ShortArray, buckets: Int): FloatArray {
+    if (samples.isEmpty() || buckets <= 0) return FloatArray(0)
+    val out = FloatArray(buckets)
+    val per = samples.size.toDouble() / buckets
+    for (b in 0 until buckets) {
+        val from = (b * per).toInt()
+        val to = minOf(samples.size, ((b + 1) * per).toInt().coerceAtLeast(from + 1))
+        var peak = 0
+        for (i in from until to) {
+            val v = abs(samples[i].toInt())
+            if (v > peak) peak = v
+        }
+        out[b] = (peak / 32767f).coerceIn(0f, 1f)
+    }
+    return out
+}

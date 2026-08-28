@@ -229,7 +229,8 @@ check("no button is hidden when it cannot act",
 # The circles were removed on 27.8.2026 because on glass they read as three more shapes on a
 # screen whose whole design is what is absent. The HOT ZONE stayed. If a border ever returns to
 # the transport, this goes red.
-borders = re.findall(r"\.border\(", ui)
+glyph_body = re.search(r"private fun Glyph\((.*?)\n\}", code_only(ui), re.S)
+borders = re.findall(r"\.border\(", glyph_body.group(1) if glyph_body else "")
 check("nothing is drawn around the transport glyphs",
       not borders,
       f"{len(borders)} border modifiers in the screen, and the touch target is IconButton's own size")
@@ -437,18 +438,19 @@ check("a command is scored by its best sample, not its average",
 check("hollow means off and solid means on, everywhere",
       "Icons.Filled.Mic else Icons.Outlined.Mic" in ui
       and "Icons.Filled.FiberManualRecord else Icons.Outlined.Circle" in ui
-      and '"\\u25CF" else "\\u25CB"' in ui,
-      "the microphone, the record arm and the three sample slots all say it the same way")
+      and "Icons.Filled.FiberManualRecord else Icons.Outlined.Circle" in ui,
+      "the microphone and the record arm say it the same way, and an empty pad is a hollow ring")
 
 # Recording and matching must never run at once: a word lit by the sample being recorded is a
 # light that means nothing.
 check("recording and listening are exclusive",
       "granted && !recordArmed && (listening || settingsOpen)" in ui
-      and "recordArmed && !recording" in ui,
+      and "combinedClickable(enabled = armed" in ui,
       "arming for recording disarms the matcher, and slots only accept a press while armed")
 
 check("each sample slot can be re-recorded on its own",
-      "onRecord(control, slot)" in ui and "for (slot in 0 until Store.SAMPLES)" in ui,
+      "onRecord(control, slot)" in ui and "for (slot in 0 until Store.SAMPLES)" in ui
+      and "SampleCheck.assess(samples)" in ui,
       f"{3} slots per command, each with its own press")
 
 check("the matcher needs a margin as well as a threshold",
@@ -463,7 +465,7 @@ check("loudness is removed per frame, not per utterance",
 
 check("the tester shows the scores, not just a verdict",
       "matcher.scores(" in (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceEngine.kt").read_text()
-      and "scores.joinToString" in ui,
+      and 'score?.let { "%.2f".format(it) }' in ui,
       "every comparison and its distance, so a near miss is a number rather than silence")
 
 # The microphone switch is a hands-free control and must be reachable without opening a panel.
@@ -489,6 +491,18 @@ check("the meter runs whether or not voice is armed",
       "fun startMeter()" in engine and "fun setArmed(" in engine
       and "armed" not in code_only(engine).split("private fun tick()")[1].split("onLevel(level)")[0],
       "arming gates the recogniser, not the meter: tick() feeds the level before it consults it")
+
+# A recording is judged before it is stored, and the refusal has to say what to do about it. A
+# red light that does not tell you why is a red light you learn to ignore.
+check("a bad recording is refused, and the refusal says what to do",
+      "SampleQuality.GOOD ->" in dsp and "try again" in dsp and "move back" in dsp,
+      "silent, too short and clipped are each refused with an instruction rather than a code")
+
+# The pads carry the shape of what is on them. A pad that only says "filled" cannot tell you
+# whether you caught the word or the cough before it.
+check("every pad shows the waveform of its own sample",
+      "waveform(samples, 28)" in ui and "fun waveform(" in dsp,
+      "the pad draws real peaks from the stored audio, not a filled state")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

@@ -363,6 +363,59 @@ class StopwatchTest {
         )
     }
 
+    /**
+     * A sampler that stores room tone as the sound of a word is a trap: the pad looks filled, the
+     * count says three of three, and the only symptom is that matching quietly stops working.
+     * Every one of these refusals exists because that failure is silent.
+     */
+    @Test
+    fun aBadRecordingIsRefusedBeforeItIsEverStored() {
+        assertEquals(SampleQuality.SILENT, SampleCheck.assess(ShortArray(0)))
+        assertEquals(SampleQuality.SILENT, SampleCheck.assess(ShortArray(16_000)))
+
+        val clipped = ShortArray(16_000) { if (it % 2 == 0) 32767 else -32767 }
+        assertEquals(SampleQuality.CLIPPED, SampleCheck.assess(clipped))
+
+        // 100ms of speech: real, but nothing like enough to warp against.
+        assertEquals(SampleQuality.TOO_SHORT, SampleCheck.assess(tone(300.0, 100)))
+
+        assertEquals(SampleQuality.GOOD, SampleCheck.assess(tone(300.0, 600)))
+    }
+
+    /** Every refusal has to say something a person can act on, or it is just a red light. */
+    @Test
+    fun everyRefusalTellsYouWhatToDoAboutIt() {
+        for (q in SampleQuality.entries) {
+            val text = SampleCheck.describe(q)
+            assertTrue("$q has no description", text.isNotBlank())
+            if (q != SampleQuality.GOOD) {
+                assertTrue("$q does not say what to do: $text", text.contains(" "))
+            }
+        }
+    }
+
+    /**
+     * The waveform on the pad is how you tell which recording is under your finger, so it has to
+     * be the shape of the audio rather than a decoration that merely exists.
+     */
+    @Test
+    fun theWaveformIsTheShapeOfTheAudio() {
+        assertEquals(0, waveform(ShortArray(0), 16).size)
+        assertEquals(16, waveform(tone(300.0, 500), 16).size)
+
+        // Silence at the front, sound at the back: the picture must show that and not the reverse.
+        val half = ShortArray(16_000)
+        val loud = tone(300.0, 500, 0.9)
+        for (i in loud.indices) if (8_000 + i < half.size) half[8_000 + i] = loud[i]
+        val shape = waveform(half, 8)
+        assertTrue("the quiet half must read quiet", shape.take(4).max() < 0.05f)
+        assertTrue("the loud half must read loud", shape.drop(4).max() > 0.5f)
+
+        for (v in waveform(tone(300.0, 500, 1.0), 32)) {
+            assertTrue("a bucket outside 0..1 would draw off the pad", v in 0f..1f)
+        }
+    }
+
     @Test
     fun theDiagnosticsLineSaysWhatItMeans() {
         assertEquals("s0  rms0  offline", Diagnostics().line())
