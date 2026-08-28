@@ -437,16 +437,19 @@ check("a command is scored by its best sample, not its average",
 # colour alone to mean off, there are two languages on one screen.
 check("hollow means off and solid means on, everywhere",
       "Icons.Filled.Mic else Icons.Outlined.Mic" in ui
-      and "Icons.Filled.FiberManualRecord else Icons.Outlined.Circle" in ui
-      and "Icons.Filled.FiberManualRecord else Icons.Outlined.Circle" in ui,
-      "the microphone and the record arm say it the same way, and an empty pad is a hollow ring")
+      and 'if (recording) "listening" else "empty"' in ui
+      and "FiberManualRecord" not in code_only(ui),
+      "the microphone says it with fill; a line with no sample says it in a word, because a line "
+      "is wide enough for one and a glyph would be smaller information in more space")
 
 # Recording and matching must never run at once: a word lit by the sample being recorded is a
 # light that means nothing.
-check("recording and listening are exclusive",
-      "granted && !recordArmed && (listening || settingsOpen)" in ui
-      and "combinedClickable(enabled = armed" in ui,
-      "arming for recording disarms the matcher, and slots only accept a press while armed")
+# There is no arm mode any more. What must stay true is that a capture suspends matching for as
+# long as it lasts — a word lit by the sample being recorded is a light that means nothing.
+check("a capture suspends matching while it runs",
+      "// Nothing else happens while capturing: no matching, no gate." in engine
+      and "main.postDelayed({ tick() }, AUDIO_LEVEL_SAMPLE_MS)\n                return" in engine,
+      "the tick returns early while a capture is open, so nothing is matched against it")
 
 check("each sample slot can be re-recorded on its own",
       "onRecord(control, slot)" in ui and "for (slot in 0 until Store.SAMPLES)" in ui
@@ -501,7 +504,7 @@ check("a bad recording is refused, and the refusal says what to do",
 # The pads carry the shape of what is on them. A pad that only says "filled" cannot tell you
 # whether you caught the word or the cough before it.
 check("every pad shows the waveform of its own sample",
-      "waveform(samples, 28)" in ui and "fun waveform(" in dsp,
+      "waveform(samples, 96)" in ui and "fun waveform(" in dsp,
       "the pad draws real peaks from the stored audio, not a filled state")
 
 print()

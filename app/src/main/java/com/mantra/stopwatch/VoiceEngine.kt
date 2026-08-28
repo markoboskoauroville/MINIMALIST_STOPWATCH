@@ -68,8 +68,33 @@ class VoiceEngine(
         onState(if (armed) "listening" else "meter only")
     }
 
+
     /** The raw ring, for the recorder in settings. */
     fun recent(ms: Int): ShortArray = probe?.recent(ms) ?: ShortArray(0)
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // CAPTURE. Press a pad and this listens: it waits for the word, records while it lasts, and
+    // stops when it ends. There is no arm button and no fixed length, because a fixed length is
+    // a worse recording in both directions — it keeps the silence you left if you were quick and
+    // it cuts you off if you were not.
+    //
+    // While a capture is running, matching is suspended. A word lit by the sample being recorded
+    // would be a light that means nothing.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    private var capture: Capture? = null
+    private var onCaptured: ((ShortArray?) -> Unit)? = null
+
+    fun startCapture(done: (ShortArray?) -> Unit) {
+        capture = Capture().also { it.begin(SystemClock.elapsedRealtime()) }
+        onCaptured = done
+    }
+
+    fun cancelCapture() {
+        capture = null
+        onCaptured = null
+    }
+
+    val capturing: Boolean get() = capture != null
 
     /**
      * ONE CLOCK, TTT mini's 50ms, and it never stops while the meter is up. Everything happens
@@ -83,6 +108,30 @@ class VoiceEngine(
             val level = smoother.update(p.maxAmplitude())
             onLevel(level)
             val now = SystemClock.elapsedRealtime()
+
+            val c = capture
+            if (c != null) {
+                when (c.update(level, now)) {
+                    CaptureState.DONE -> {
+                        val samples = p.recent(c.windowMs(now))
+                        val done = onCaptured
+                        capture = null
+                        onCaptured = null
+                        done?.invoke(samples)
+                    }
+                    CaptureState.TIMED_OUT -> {
+                        val done = onCaptured
+                        capture = null
+                        onCaptured = null
+                        done?.invoke(null)
+                    }
+                    else -> Unit
+                }
+                // Nothing else happens while capturing: no matching, no gate.
+                main.postDelayed({ tick() }, AUDIO_LEVEL_SAMPLE_MS)
+                return
+            }
+
             if (templates.isNotEmpty() && gate.shouldOpen(level, now)) {
                 // A short wait so the whole word is in the ring before it is read. The gate fires
                 // on the first loud frame; the rest of the word has not been spoken yet.

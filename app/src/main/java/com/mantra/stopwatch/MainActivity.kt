@@ -34,7 +34,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Mic
@@ -44,7 +43,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.StayCurrentLandscape
 import androidx.compose.material.icons.filled.StayCurrentPortrait
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,7 +56,6 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,7 +83,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -122,9 +118,6 @@ private val PANEL_IDLE = Color(0xFF0D0D0D)
 
 /** Red means recording, everywhere. It is the one colour in this app that is not a grey ramp. */
 private val RECORD_RED = Color(0xFF9B3B33)
-
-/** How long a recorded command is. A word plus the air around it, and no more. */
-private const val RECORD_MS = 1_500L
 
 private val EDGE = 12.dp
 private val LOCK_ZONE = 56.dp
@@ -229,7 +222,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // ─────────────────────────────────────────────────────────────────────────────────────────
     var scores by remember { mutableStateOf<List<Pair<Control, Double>>>(emptyList()) }
     var templatesReady by remember { mutableStateOf(0) }
-    var recordArmed by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(SettingsTab.LOOK) }
 
     val engine = remember {
@@ -280,8 +272,11 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // With the panel open and recording disarmed, matching runs whether or not the microphone
     // switch on the main screen is on. That is the test Baba asked for: disengage recording, say
     // a command, watch the word light. The press is suppressed elsewhere, so nothing moves.
-    DisposableEffect(listening, granted, settingsOpen, recordArmed) {
-        engine.setArmed(granted && !recordArmed && (listening || settingsOpen))
+    // NOT CAPTURING MEANS TESTING. There is no third mode and no switch between them: pressing a
+    // pad suspends matching for as long as that one capture lasts, and matching resumes the
+    // moment it ends. Everything the person has to know is which pad they pressed.
+    DisposableEffect(listening, granted, settingsOpen) {
+        engine.setArmed(granted && (listening || settingsOpen))
         onDispose { }
     }
 
@@ -475,8 +470,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 engine = engine,
                 store = store,
                 onRecorded = { templatesReady++ },
-                recordArmed = recordArmed,
-                onArm = { recordArmed = it },
                 tab = tab,
                 onTab = { tab = it },
                 lit = lit,
@@ -592,8 +585,6 @@ private fun SettingsGrid(
     engine: VoiceEngine,
     store: Store,
     onRecorded: () -> Unit,
-    recordArmed: Boolean,
-    onArm: (Boolean) -> Unit,
     tab: SettingsTab,
     onTab: (SettingsTab) -> Unit,
     lit: Lit,
@@ -620,25 +611,30 @@ private fun SettingsGrid(
     var recordingFor by remember { mutableStateOf<Pair<Control, Int>?>(null) }
     var note by remember { mutableStateOf("") }
     val recording = recordingFor != null
-    val scope = rememberCoroutineScope()
 
-    // Copied from TTT mini's arrangement rather than invented: the capture is already running,
-    // so recording is not opening a microphone, it is waiting a fixed time and then taking what
-    // the ring has. RECORD_MS is the length of the sample kept.
+    // The microphone is already open, so recording is not opening anything: it is deciding which
+    // slice of the ring to keep.
+    //
+    // PRESS, SPEAK, AND IT STOPS WHEN YOU STOP. No arm button and no fixed length: the capture
+    // waits for the word, records while it lasts, and ends on the silence after it. When nothing
+    // is capturing the app is testing, which is the only other thing it could be doing.
     fun onRecord(control: Control, slot: Int) {
         if (recording) return
         recordingFor = control to slot
-        scope.launch {
-            delay(RECORD_MS)
-            val samples = engine.recent(RECORD_MS.toInt())
-            // JUDGED BEFORE IT IS STORED. A sampler that will keep two seconds of room tone as
-            // the sound of a word is a trap: the pad looks filled, the count says three of three,
-            // and the only symptom is that matching quietly stops being reliable.
-            val quality = SampleCheck.assess(samples)
-            note = SampleCheck.describe(quality)
-            if (quality == SampleQuality.GOOD) {
-                store.saveSample(control, slot, samples)
-                onRecorded()
+        note = "speak"
+        engine.startCapture { samples ->
+            if (samples == null) {
+                note = "heard nothing, tap again"
+            } else {
+                // JUDGED BEFORE IT IS STORED. A sampler that keeps room tone as the sound of a
+                // word is a trap: the pad looks filled, the count says three of three, and the
+                // only symptom is that matching quietly stops being reliable.
+                val quality = SampleCheck.assess(samples)
+                note = SampleCheck.describe(quality)
+                if (quality == SampleQuality.GOOD) {
+                    store.saveSample(control, slot, samples)
+                    onRecorded()
+                }
             }
             recordingFor = null
         }
@@ -705,16 +701,15 @@ private fun SettingsGrid(
         if (tab == SettingsTab.VOICE) {
             VoicePads(
                 width = gridWidth,
+                height = maxHeight - header - gap * 3,
                 colour = colour,
                 level = level,
                 lit = lit,
                 now = tickNow,
                 scores = scores,
-                recordArmed = recordArmed,
                 recordingFor = recordingFor,
                 note = note,
                 store = store,
-                onArm = onArm,
                 onRecord = ::onRecord,
                 onClear = { c, s -> store.clearSample(c, s); onRecorded() },
             )
@@ -857,50 +852,46 @@ private fun Tab(label: String, selected: Boolean, colour: Long, onPress: () -> U
 @Composable
 private fun VoicePads(
     width: Dp,
+    height: Dp,
     colour: Long,
     level: Float,
     lit: Lit,
     now: Long,
     scores: List<Pair<Control, Double>>,
-    recordArmed: Boolean,
     recordingFor: Pair<Control, Int>?,
     note: String,
     store: Store,
-    onArm: (Boolean) -> Unit,
     onRecord: (Control, Int) -> Unit,
     onClear: (Control, Int) -> Unit,
 ) {
-    val gap = 6.dp
-    val labelWidth = 58.dp
-    val scoreWidth = 44.dp
-    val pad = ((width - labelWidth - scoreWidth - gap * 4) / Store.SAMPLES).coerceAtMost(76.dp)
+    val gap = 4.dp
+    val rows = Control.entries.size * Store.SAMPLES
+    val header = 26.dp
+    val footer = 18.dp
+    // ONE SAMPLE, ONE LINE. Nine of them, each as tall as the space allows. A three by three grid
+    // of small squares is a keyboard; nine full-width lines is a sample list, which is what this
+    // is — and it is the shape that leaves room for a waveform you can actually read.
+    val rowH = ((height - header - footer - gap * (rows + 1)) / rows).coerceIn(18.dp, 46.dp)
 
     Column(Modifier.width(width), horizontalAlignment = Alignment.CenterHorizontally) {
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = gap),
+            modifier = Modifier.fillMaxWidth().height(header),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Glyph(
-                icon = if (recordArmed) Icons.Filled.FiberManualRecord else Icons.Outlined.Circle,
-                label = if (recordArmed) "Stop recording" else "Arm recording",
-                tone = Tone.SECONDARY,
-                size = 34.dp,
-                tint = if (recordArmed) RECORD_RED else null,
-            ) { onArm(!recordArmed) }
             Text(
                 text = when {
-                    recordingFor != null -> "REC " + Heard.primary(recordingFor.first).uppercase()
-                    recordArmed -> "ARMED"
-                    else -> "LISTEN"
+                    recordingFor != null -> "SPEAK"
+                    else -> "TAP A LINE TO RECORD"
                 },
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
-                    color = if (recordArmed) RECORD_RED else GLYPH_SECOND,
+                    color = if (recordingFor != null) RECORD_RED else GLYPH_SECOND,
                     fontSize = 11.sp,
                 ),
                 maxLines = 1,
-                modifier = Modifier.padding(end = gap),
+                softWrap = false,
+                modifier = Modifier.padding(end = gap * 2),
             )
             Box(Modifier.weight(1f)) { MaScopeMeter(level = level, tint = Color(colour)) }
         }
@@ -908,49 +899,53 @@ private fun VoicePads(
         Control.entries.forEach { control ->
             val on = lit.isLit(control, now)
             val score = scores.firstOrNull { it.first == control }?.second
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = gap),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = Heard.primary(control).uppercase(),
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        color = if (on) Color(colour) else GLYPH_SECOND,
-                        fontSize = 12.sp,
-                    ),
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.width(labelWidth),
-                )
-                for (slot in 0 until Store.SAMPLES) {
+            for (slot in 0 until Store.SAMPLES) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = gap),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        // The command on its first line only. Repeating it three times is three
+                        // times the reading for the same fact, and the grouping is visible from
+                        // the indentation without it.
+                        text = if (slot == 0) Heard.primary(control).uppercase() else "",
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            color = if (on) Color(colour) else GLYPH_SECOND,
+                            fontSize = 12.sp,
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.width(58.dp),
+                    )
                     Pad(
                         samples = store.loadSample(control, slot),
                         recording = recordingFor == Pair(control, slot),
-                        armed = recordArmed,
                         lit = on,
                         colour = colour,
-                        size = pad,
-                        onPress = { if (recordArmed) onRecord(control, slot) },
-                        onLongPress = { if (recordArmed) onClear(control, slot) },
+                        height = rowH,
+                        modifier = Modifier.weight(1f),
+                        onPress = { onRecord(control, slot) },
+                        onLongPress = { onClear(control, slot) },
                     )
-                    Spacer(Modifier.width(gap))
+                    Text(
+                        // The score belongs to the command, so it sits on the command's own line.
+                        text = if (slot == 0) score?.let { "%.2f".format(it) } ?: "--" else "",
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            color = when {
+                                slot != 0 -> GLYPH_OFF
+                                on -> Color(colour)
+                                score == null -> GLYPH_OFF
+                                else -> GLYPH_SECOND
+                            },
+                            fontSize = 11.sp,
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.width(42.dp).padding(start = gap),
+                    )
                 }
-                Text(
-                    text = score?.let { "%.2f".format(it) } ?: "--",
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        color = when {
-                            score == null -> GLYPH_OFF
-                            on -> Color(colour)
-                            else -> GLYPH_SECOND
-                        },
-                        fontSize = 11.sp,
-                    ),
-                    maxLines = 1,
-                    softWrap = false,
-                    modifier = Modifier.width(scoreWidth),
-                )
             }
         }
 
@@ -964,56 +959,56 @@ private fun VoicePads(
             ),
             maxLines = 1,
             softWrap = false,
+            modifier = Modifier.height(footer),
         )
     }
 }
 
-/**
- * One pad. Outline when empty, waveform when loaded, red while it is being recorded.
- *
- * A long press clears it, and only while armed — the same rule as recording, because clearing a
- * take is destroying work and should not be reachable in the mode where you are only listening.
- */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Pad(
     samples: ShortArray?,
     recording: Boolean,
-    armed: Boolean,
     lit: Boolean,
     colour: Long,
-    size: Dp,
+    height: Dp,
+    modifier: Modifier = Modifier,
     onPress: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val loaded = samples != null && samples.isNotEmpty()
     val shape = remember(samples?.size, samples?.firstOrNull()) {
-        if (samples == null) FloatArray(0) else waveform(samples, 28)
+        if (samples == null) FloatArray(0) else waveform(samples, 96)
     }
     val edge = when {
         recording -> RECORD_RED
-        lit && loaded -> Color(colour)
-        loaded -> GLYPH_SECOND
+        lit && shape.isNotEmpty() -> Color(colour)
+        shape.isNotEmpty() -> GLYPH_SECOND
         else -> GLYPH_OFF
     }
 
+    // ALWAYS PRESSABLE. There is no arm mode any more: a press starts a capture, and a long press
+    // clears the line. Nothing is ever inert, so nothing has to be explained.
     Box(
-        Modifier
-            .size(width = size, height = 34.dp)
+        modifier
+            .height(height)
             .clip(RoundedCornerShape(3.dp))
-            .background(if (recording) RECORD_RED.copy(alpha = 0.18f) else PANEL_IDLE)
+            .background(if (recording) RECORD_RED.copy(alpha = 0.15f) else PANEL_IDLE)
             .border(1.dp, edge, RoundedCornerShape(3.dp))
-            .combinedClickable(enabled = armed, onClick = onPress, onLongClick = onLongPress),
+            .combinedClickable(onClick = onPress, onLongClick = onLongPress),
         contentAlignment = Alignment.Center,
     ) {
         if (shape.isEmpty()) {
-            // An empty pad says empty by being empty. Hollow is off, everywhere in this app.
             Text(
-                text = "\u25CB",
-                style = TextStyle(fontFamily = FontFamily.Monospace, color = GLYPH_OFF, fontSize = 11.sp),
+                text = if (recording) "listening" else "empty",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = if (recording) RECORD_RED else GLYPH_OFF,
+                    fontSize = 10.sp,
+                ),
+                maxLines = 1,
             )
         } else {
-            Canvas(Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 5.dp)) {
+            Canvas(Modifier.fillMaxSize().padding(horizontal = 3.dp, vertical = 4.dp)) {
                 val mid = this.size.height / 2f
                 val step = this.size.width / shape.size
                 shape.forEachIndexed { i, v ->
@@ -1021,7 +1016,7 @@ private fun Pad(
                     drawRect(
                         color = edge,
                         topLeft = Offset(i * step, mid - h),
-                        size = Size(step * 0.7f, h * 2f),
+                        size = Size(step * 0.8f, h * 2f),
                     )
                 }
             }

@@ -416,6 +416,65 @@ class StopwatchTest {
         }
     }
 
+    /**
+     * Press, speak, and it stops when you stop. Every branch of that is walked here, because the
+     * alternative is discovering the behaviour by recording nine samples on a phone.
+     */
+    @Test
+    fun aCaptureWaitsForTheWordAndEndsWhenTheWordEnds() {
+        val c = Capture()
+        c.begin(0)
+        assertEquals(CaptureState.WAITING, c.update(0.01f, 100))
+        assertEquals("silence is not the word starting", CaptureState.WAITING, c.update(0.2f, 500))
+
+        assertEquals(CaptureState.SPEAKING, c.update(0.6f, 1_000))
+        assertEquals("a gap inside a word is not the end of it", CaptureState.SPEAKING, c.update(0.05f, 1_300))
+        assertEquals(CaptureState.SPEAKING, c.update(0.7f, 1_400))
+
+        // Quiet from 1_800 onwards; the hangover is 550ms.
+        assertEquals(CaptureState.SPEAKING, c.update(0.02f, 1_800))
+        assertEquals(CaptureState.SPEAKING, c.update(0.02f, 2_300))
+        assertEquals(CaptureState.DONE, c.update(0.02f, 2_400))
+    }
+
+    @Test
+    fun aCaptureGivesUpIfNobodySpeaks() {
+        val c = Capture()
+        c.begin(0)
+        assertEquals(CaptureState.WAITING, c.update(0.0f, 3_900))
+        assertEquals(CaptureState.TIMED_OUT, c.update(0.0f, 4_000))
+    }
+
+    /** A noisy room must not be able to hold a capture open for ever. */
+    @Test
+    fun aCaptureHasACeiling() {
+        val c = Capture()
+        c.begin(0)
+        c.update(0.9f, 100)
+        assertEquals(CaptureState.SPEAKING, c.update(0.9f, 2_000))
+        assertEquals(CaptureState.DONE, c.update(0.9f, 2_100))
+    }
+
+    /**
+     * The window reaches back PAST the onset. The level only crosses the threshold once the word
+     * is underway, so reading from the crossing point clips the first consonant off every single
+     * recording — a fault that would look like poor matching rather than like a bad capture.
+     */
+    @Test
+    fun theWindowReachesBackBeforeTheWordWasNoticed() {
+        val c = Capture()
+        c.begin(0)
+        c.update(0.9f, 1_000)                 // onset at 1_000
+        val w = c.windowMs(1_600)             // 600ms of speech
+        assertTrue("must include the lead-in, was $w", w >= 600 + 200)
+        assertTrue("and must stay inside the ring, was $w", w <= Capture.MAX_WINDOW_MS)
+
+        // Even a very short utterance asks for enough audio to be worth aligning.
+        c.begin(0)
+        c.update(0.9f, 100)
+        assertTrue(c.windowMs(150) >= Capture.MIN_WINDOW_MS)
+    }
+
     @Test
     fun theDiagnosticsLineSaysWhatItMeans() {
         assertEquals("s0  rms0  offline", Diagnostics().line())
