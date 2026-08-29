@@ -49,6 +49,52 @@ class StopwatchTest {
      * Truncation, not rounding. 9.96 seconds have not been 10 seconds yet, and a display that
      * runs ahead of the measurement is the one direction a stopwatch may never fail in.
      */
+    /**
+     * SINGLE shows only the fields with something in them. The point of it is size: two glyphs
+     * instead of eight is roughly four times the digit height on the same screen.
+     */
+    @Test
+    fun singleShowsOnlyTheFieldsThatHaveStarted() {
+        fun f(ms: Long) = Face.format(ms, Display.SINGLE)
+        assertEquals("00", f(0))
+        assertEquals("09", f(9_900))
+        assertEquals("59", f(59_999))
+        assertEquals("01:00", f(60_000))          // the minute arrives, and so does a field
+        assertEquals("59:59", f(3_599_999))
+        assertEquals("01:00:00", f(3_600_000))    // and again at the hour
+        assertEquals("09:59:59", f(35_999_999))
+    }
+
+    /**
+     * IT STEPS EXACTLY TWICE, and never anywhere else. A width that changed inside a field would
+     * make the digits resize while counting, which is the fault the whole face was built to
+     * avoid; stepping at a minute and at an hour is a change you can see coming.
+     */
+    @Test
+    fun singleChangesWidthTwiceAndAtKnownMoments() {
+        fun len(ms: Long) = Face.format(ms, Display.SINGLE).length
+
+        for (ms in 0L until 60_000L step 313L) assertEquals("under a minute", 2, len(ms))
+        for (ms in 60_000L until 3_600_000L step 7_919L) assertEquals("under an hour", 5, len(ms))
+        for (ms in 3_600_000L until 7_200_000L step 7_919L) assertEquals("over an hour", 8, len(ms))
+
+        assertEquals(2, len(59_999))
+        assertEquals(5, len(60_000))
+        assertEquals(5, len(3_599_999))
+        assertEquals(8, len(3_600_000))
+    }
+
+    /** MULTI must be untouched by any of this: it is the default and it never changes width. */
+    @Test
+    fun multiIsUnchangedAndStillNeverMoves() {
+        assertEquals("00:00:00", Face.format(0, Display.MULTI))
+        assertEquals("00:00:00", Face.format(0))
+        val lengths = (0L until 7_200_000L step 7_919L)
+            .map { Face.format(it, Display.MULTI).length }
+            .toSet()
+        assertEquals(setOf(8), lengths)
+    }
+
     @Test
     fun truncatesRatherThanRounds() {
         assertEquals("00:00:09", Face.format(9_600))

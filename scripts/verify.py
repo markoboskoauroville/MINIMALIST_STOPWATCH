@@ -519,6 +519,21 @@ check("the flash is always a difference from the digits it flashes",
       "white digits flash amber, everything else flashes white; a fixed colour would be "
       "invisible for the default")
 
+# SINGLE is worth having only because the digits get bigger, and they only get bigger if the
+# measured string is the shorter one. Sizing on MULTI and drawing SINGLE would size for eight
+# glyphs and draw two — the setting would appear to do nothing.
+check("the digits are measured on the string the setting actually draws",
+      "Face.format(elapsed, display)" in code_only(ui)
+      and "remember(text.length" in code_only(ui),
+      "one format call feeds both the measurement and the draw, so they cannot disagree")
+
+# MULTI must keep its promise: one width for the life of the app. SINGLE steps twice, at known
+# moments, and never inside a field.
+check("both display modes have a width that only changes at a field boundary",
+      'display == Display.MULTI) return "%02d:%02d:%02d"' in src
+      and "m > 0L ->" in src and "else ->" in src,
+      "MULTI is one branch and one width; SINGLE is three branches and three widths")
+
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
 if failures:

@@ -65,6 +65,10 @@ class Store(private val context: Context) {
         get() = p.getBoolean(Keys.K_LISTENING, false)
         set(v) = p.edit().putBoolean(Keys.K_LISTENING, v).apply()
 
+    var display: Display
+        get() = if (p.getBoolean(Keys.K_SINGLE, false)) Display.SINGLE else Display.MULTI
+        set(v) = p.edit().putBoolean(Keys.K_SINGLE, v == Display.SINGLE).apply()
+
     var weight: Weight
         get() = if (p.getBoolean(Keys.K_BOLD, false)) Weight.BOLD else Weight.NORMAL
         set(v) = p.edit().putBoolean(Keys.K_BOLD, v == Weight.BOLD).apply()
@@ -177,6 +181,7 @@ class Store(private val context: Context) {
         const val K_LANDSCAPE = "landscape"
         const val K_COLOUR = "colour"
         const val K_BOLD = "bold"
+        const val K_SINGLE = "single"
         const val K_LISTENING = "listening"
     }
 }

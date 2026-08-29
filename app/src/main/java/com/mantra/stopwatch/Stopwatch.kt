@@ -71,6 +71,24 @@ enum class Tone { PRIMARY, HIGHLIGHT, SECONDARY, DEAD }
  */
 enum class Orientation { PORTRAIT, LANDSCAPE }
 
+/**
+ * How much of the clock is on the screen.
+ *
+ * MULTI is what this app has always done: HH:MM:SS from zero, so the width never changes and
+ * nothing ever resizes under you. It is the right default and it is what v4 was asked for.
+ *
+ * SINGLE shows only the fields that have anything in them — two digits until the first minute,
+ * then MM:SS, then HH:MM:SS. Each of those is a shorter string, so the digits are enormous at
+ * the start and step down as the measurement grows.
+ *
+ * THE TWO OPTIONS ARE THE SAME ARGUMENT WITH TWO ANSWERS. v1 and v3 rejected showing the hour
+ * from zero because it makes the digits permanently smaller to defend against an hour that
+ * rarely arrives; v4 reversed that because a width that never changes is worth more than size.
+ * Both are true and which one wins depends on what is being timed, so it stops being a decision
+ * made once in the source and becomes a switch.
+ */
+enum class Display { MULTI, SINGLE }
+
 data class Stopwatch(
     val phase: Phase = Phase.STOPPED,
     val startedAt: Long = 0L,
@@ -267,14 +285,22 @@ data class Stopwatch(
  * rather than prevented; a stopwatch running for four days has other problems.
  */
 object Face {
-    fun format(ms: Long): String {
+    fun format(ms: Long, display: Display = Display.MULTI): String {
         val t = if (ms < 0L) 0L else ms
         val seconds = t / 1000L
         val s = seconds % 60L
         val minutes = seconds / 60L
         val m = minutes % 60L
         val h = minutes / 60L
-        return "%02d:%02d:%02d".format(h, m, s)
+        if (display == Display.MULTI) return "%02d:%02d:%02d".format(h, m, s)
+        // SINGLE drops the fields that are still empty. Two glyphs for the first minute, five for
+        // the first hour, eight after that — and NOTHING between those three, so the size steps
+        // twice in a whole hour rather than drifting.
+        return when {
+            h > 0L -> "%02d:%02d:%02d".format(h, m, s)
+            m > 0L -> "%02d:%02d".format(m, s)
+            else -> "%02d".format(s)
+        }
     }
 
     /**

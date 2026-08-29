@@ -167,6 +167,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var orientation by remember { mutableStateOf(store.orientation) }
     var colour by remember { mutableLongStateOf(store.colour) }
     var weight by remember { mutableStateOf(store.weight) }
+    var display by remember { mutableStateOf(store.display) }
     var settingsOpen by remember { mutableStateOf(false) }
 
     // VOICE. The switch is a preference; the microphone follows it and the app's own lifecycle.
@@ -384,7 +385,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         val screenW = maxWidth
         val screenH = maxHeight
         val landscape = screenW > screenH
-        val text = Face.format(elapsed)
+        val text = Face.format(elapsed, display)
 
         val button = if (landscape) 56.dp else 72.dp
         val strip = if (landscape) 72.dp else 108.dp
@@ -494,6 +495,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 landscape = landscape,
                 colour = colour,
                 weight = weight,
+                display = display,
+                onDisplay = { display = it; store.display = it },
                 listening = listening,
                 level = level,
                 scores = scores,
@@ -609,6 +612,8 @@ private fun SettingsGrid(
     landscape: Boolean,
     colour: Long,
     weight: Weight,
+    display: Display,
+    onDisplay: (Display) -> Unit,
     listening: Boolean,
     level: Float,
     scores: List<Pair<Control, Double>>,
@@ -780,6 +785,18 @@ private fun SettingsGrid(
             val half = (gridWidth - gap) / 2
             WeightCell("88:88:88", Weight.NORMAL, weight, colour, half, onWeight)
             WeightCell("88:88:88", Weight.BOLD, weight, colour, half, onWeight)
+        }
+
+        // DISPLAY, shown the way the weight is shown: in the thing it describes. A cell reading
+        // "MULTI" tells you a word; a cell reading 88:88:88 beside one reading 88 tells you what
+        // the screen is about to look like, which is the actual question.
+        Row(
+            modifier = Modifier.padding(top = gap),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            val half = (gridWidth - gap) / 2
+            DisplayCell("88:88:88", Display.MULTI, display, colour, weight, half, onDisplay)
+            DisplayCell("88", Display.SINGLE, display, colour, weight, half, onDisplay)
         }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
@@ -1050,6 +1067,44 @@ private fun Pad(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DisplayCell(
+    sample: String,
+    represents: Display,
+    current: Display,
+    colour: Long,
+    weight: Weight,
+    width: Dp,
+    onDisplay: (Display) -> Unit,
+) {
+    val chosen = represents == current
+    Box(
+        Modifier
+            .size(width = width, height = 52.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (chosen) PANEL_CHOSEN else PANEL_IDLE),
+        contentAlignment = Alignment.Center,
+    ) {
+        IconButton(
+            onClick = { onDisplay(represents) },
+            modifier = Modifier.size(width = width, height = 52.dp),
+        ) {
+            Text(
+                text = sample,
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = if (weight == Weight.BOLD) FontWeight.Bold else FontWeight.Normal,
+                    color = if (chosen) Color(colour) else GLYPH,
+                    // The SINGLE cell is set larger, because being larger IS what it does.
+                    fontSize = if (represents == Display.SINGLE) 30.sp else 20.sp,
+                ),
+                maxLines = 1,
+                softWrap = false,
+            )
         }
     }
 }

@@ -579,3 +579,40 @@ One failed open, one failed closed, from the same mistake. **Checks now strip co
 looking at Voice.kt**, and the tip check reads the expression rather than the file. That is
 eight `verify.py` faults recorded across five sessions, every one of which read as a pass or a
 puzzling fail rather than as a broken check.
+
+---
+
+# v19 — 28.8.2026, the display setting
+
+## MULTI or SINGLE, and why this one became a switch
+
+**Chosen: a setting, with MULTI as the default.**
+
+MULTI is HH:MM:SS from zero — the width never changes, nothing ever resizes under you, and there
+is no branch in the formatter. SINGLE shows only the fields that have started: two glyphs until
+the first minute, then MM:SS, then HH:MM:SS, so the digits are enormous at the start and step
+down twice.
+
+**THIS IS THE SAME ARGUMENT v1, v3 AND v4 ALREADY HAD, AND IT HAS TWO ANSWERS.** v1 and v3
+rejected showing the hour from zero because it makes the digits permanently smaller in order to
+defend against an hour that almost never arrives. v4 reversed them, because a width that never
+moves is worth more than size. Both remain true, and which one wins depends on what is being
+timed — an eight-second take across a room is not a forty-minute one on a desk.
+
+That is the definition of a setting rather than a decision: a question whose answer legitimately
+changes with the use, not one where somebody simply has not worked out the right answer yet. The
+brief says to resist adding things, and the test that gets past it is whether the app was making
+a choice on the person's behalf that it had no way to make correctly.
+
+**What SINGLE costs, written down so nobody reads it as a bug:** the digits resize twice during a
+measurement, at one minute and at one hour. That is the exact fault MULTI exists to avoid. It is
+not a defect in SINGLE, it is what SINGLE is.
+
+**Both cells are shown in the thing they describe**, like the weight cells beside them: one reads
+88:88:88 at 20sp and the other reads 88 at 30sp. A cell reading "SINGLE" would tell you a word;
+these tell you what the screen is about to look like, which is the actual question being asked.
+
+**The check that matters here** is that the digits are measured on the string the setting actually
+draws. Sizing on MULTI and drawing SINGLE would size for eight glyphs and draw two, and the
+setting would appear to do nothing at all — a failure that looks like a dead control rather than
+like a sizing bug.
