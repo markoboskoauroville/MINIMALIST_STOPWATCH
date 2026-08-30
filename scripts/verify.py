@@ -486,7 +486,7 @@ check("a command is scored by its best sample, not its average",
 # colour alone to mean off, there are two languages on one screen.
 check("hollow means off and solid means on, everywhere",
       "Icons.Filled.Mic else Icons.Outlined.Mic" in ui
-      and 'if (recording) "listening" else "empty"' in ui
+      and 'if (recording) "\\u2026" else "empty"' in ui
       and "FiberManualRecord" not in code_only(ui),
       "the microphone says it with fill; a line with no sample says it in a word, because a line "
       "is wide enough for one and a glyph would be smaller information in more space")
@@ -694,6 +694,18 @@ check("renaming a command does not stop the old word working",
 check("a refused rename says why in words",
       '"one word only"' in voice and "already answers to that" in voice,
       "every refusal names the problem rather than reporting a state")
+
+# An app that is full screen has taken the system bars away and the back gesture with them. An
+# app with no exit is a trap however good it is.
+check("there is a way out of the full screen",
+      "Icons.Outlined.PowerSettingsNew" in code_only(ui) and "activity.finish()" in code_only(ui),
+      "the power mark, top of the screen, not a cross")
+
+# A recorder that shows nothing until it stops asks you to talk into a hole and find out
+# afterwards. The meter says audio is arriving; only the shape says what arrived.
+check("the waveform is drawn while it is being recorded",
+      "if (recording) live else remember(" in code_only(ui) and "LIVE_MAX" in code_only(ui),
+      "one value per level tick, halved rather than trimmed when it fills")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

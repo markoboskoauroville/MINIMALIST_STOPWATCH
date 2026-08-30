@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Spacer
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.filled.StayCurrentLandscape
 import androidx.compose.material.icons.filled.StayCurrentPortrait
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Mic
+import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -134,6 +136,9 @@ private val RECORD_RED = Color(0xFF9B3B33)
  * reads as an acknowledgement rather than as the digits having changed colour.
  */
 private const val FLASH_MS = 140L
+
+/** Forty values is two seconds at the level tick; this is room for four times that. */
+private const val LIVE_MAX = 160
 
 private val EDGE = 12.dp
 private val LOCK_ZONE = 56.dp
@@ -290,6 +295,20 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     }
     var lit by remember { mutableStateOf(Lit()) }
 
+    /**
+     * THE WAVEFORM AS IT FORMS, ported in spirit from SAMPLE_PLAYER's Recorder.live.
+     *
+     * A recorder that shows nothing until it stops asks you to talk into a hole and find out
+     * afterwards. The meter says audio is arriving; only the SHAPE says what arrived — whether the
+     * word is centred, whether you started too late, whether the take is worth keeping. On a
+     * professional recorder that display is not decoration, it is the thing you watch.
+     *
+     * One value per level tick, which is 50ms, so a two-second take is forty values. Capped, and
+     * halved rather than trimmed when the cap is reached, which is the same thing a waveform does
+     * when it is drawn narrower.
+     */
+    var live by remember { mutableStateOf(FloatArray(0)) }
+
     // The permission ask. Deleted by accident in the v12 rewrite of this block and caught by the
     // compiler, which is the cheapest place for it to be caught and the reason the build runs
     // before anything is published.
@@ -348,7 +367,16 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 commit(state.press(control, SystemClock.elapsedRealtime()))
             }
         }
-        VoiceHub.onLevel = { level = it }
+        VoiceHub.onLevel = { value ->
+            level = value
+            // Read at call time, so this sees the current recording rather than the one that was
+            // in progress when these callbacks were installed.
+            if (recordingFor != null) {
+                val next = live + value
+                live = if (next.size <= LIVE_MAX) next
+                else FloatArray(next.size / 2) { next[it * 2] }
+            }
+        }
         VoiceHub.onHeard = { hit, s ->
             scores = s
             if (hit != null) lit = Lit.of(hit, SystemClock.elapsedRealtime())
@@ -553,6 +581,30 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             store.orientation = orientation
         }
 
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // THE WAY OUT.
+        //
+        // The app is full screen, which took the system bars away and the back gesture with them.
+        // An app with no exit is a trap however good it is, and this one is meant to be left
+        // running on a bench.
+        //
+        // THE POWER MARK, NOT A CROSS. A cross is a thing being cancelled — it says the screen
+        // was a mistake. The power mark is the oldest and best-drawn symbol in the whole of
+        // consumer electronics: a broken circle with a stroke through the gap, one continuous
+        // idea, no corners, and it means the thing is being switched off rather than dismissed.
+        // Outlined, so it obeys the same rule as everything else on this screen: hollow is off,
+        // and this control is the one that turns everything off.
+        //
+        // Dim, because it is used once a day and the digits are used constantly.
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        Glyph(
+            icon = Icons.Outlined.PowerSettingsNew,
+            label = "Close the stopwatch",
+            tone = Tone.SECONDARY,
+            size = 40.dp,
+            modifier = Modifier.align(Alignment.TopCenter).padding(EDGE),
+        ) { activity.finish() }
+
         Glyph(
             icon = if (settingsOpen) Icons.Default.Close else Icons.Default.Settings,
             label = if (settingsOpen) "Close settings" else "Settings",
@@ -584,7 +636,14 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             label = if (listening) "Voice on" else "Voice off",
             tone = if (listening) Tone.PRIMARY else Tone.SECONDARY,
             size = 40.dp,
-            modifier = Modifier.align(Alignment.TopCenter).padding(EDGE),
+            // OFF EXACT CENTRE NOW, and this is a real loss worth naming. It was put in the
+            // middle at v10 because a row has two ends and a middle and the ends were taken. The
+            // exit needs the middle more: it is the control somebody reaches for when they cannot
+            // find one, and the microphone is a control they already know where to find.
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(EDGE)
+                .offset(x = (-56).dp),
         ) {
             if (!listening && !granted) {
                 askForMicrophone.launch(Manifest.permission.RECORD_AUDIO)
@@ -740,6 +799,8 @@ private fun SettingsGrid(
     onLapMode: (LapMode) -> Unit,
     names: Map<Control, String>,
     onNames: (Map<Control, String>) -> Unit,
+    live: FloatArray,
+    onLive: (FloatArray) -> Unit,
     preroll: PrerollMode,
     onPreroll: (PrerollMode) -> Unit,
     context: android.content.Context,
@@ -787,6 +848,7 @@ private fun SettingsGrid(
     var confirming by remember { mutableStateOf<Pair<Control, Int>?>(null) }
 
     fun beginRecording(control: Control, slot: Int) {
+        onLive(FloatArray(0))
         recordingFor = control to slot
         confirming = null
         note = "recording — press again to stop"
@@ -898,6 +960,7 @@ private fun SettingsGrid(
                 onSamplerMode = { samplerMode = it; confirming = null },
                 names = names,
                 onNames = onNames,
+                live = live,
                 editing = editing,
                 onEditing = { editing = it },
                 onNote = { note = it },
@@ -1100,6 +1163,7 @@ private fun VoicePads(
     onSamplerMode: (SamplerMode) -> Unit,
     names: Map<Control, String>,
     onNames: (Map<Control, String>) -> Unit,
+    live: FloatArray,
     editing: Control?,
     onEditing: (Control?) -> Unit,
     onNote: (String) -> Unit,
@@ -1217,6 +1281,7 @@ private fun VoicePads(
                     )
                     Pad(
                         samples = store.loadSample(control, slot),
+                        live = if (recordingFor == Pair(control, slot)) live else FloatArray(0),
                         recording = recordingFor == Pair(control, slot),
                         lit = on,
                         colour = colour,
@@ -1305,6 +1370,7 @@ private fun NameField(
 @Composable
 private fun Pad(
     samples: ShortArray?,
+    live: FloatArray,
     recording: Boolean,
     lit: Boolean,
     colour: Long,
@@ -1313,7 +1379,8 @@ private fun Pad(
     onPress: () -> Unit,
     onLongPress: () -> Unit,
 ) {
-    val shape = remember(samples?.size, samples?.firstOrNull()) {
+    // While recording, the shape IS the live one — drawn as it arrives rather than after it stops.
+    val shape = if (recording) live else remember(samples?.size, samples?.firstOrNull()) {
         if (samples == null) FloatArray(0) else waveform(samples, 96)
     }
     val edge = when {
@@ -1336,7 +1403,7 @@ private fun Pad(
     ) {
         if (shape.isEmpty()) {
             Text(
-                text = if (recording) "listening" else "empty",
+                text = if (recording) "\u2026" else "empty",
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     color = if (recording) RECORD_RED else GLYPH_OFF,
