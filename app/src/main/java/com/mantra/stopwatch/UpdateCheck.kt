@@ -50,7 +50,11 @@ object UpdateCheck {
                 }
                 val body = connection.inputStream.bufferedReader().use { it.readText() }
                 val json = JSONObject(body)
-                val tag = json.optString("tag_name", null)
+                // optString with a null fallback fights Kotlin's nullability: the Java overload
+                // wants a non-null default. An empty string means the same thing here — Updates
+                // refuses it as "not a version" rather than guessing — and it does not lie to the
+                // type system to say so.
+                val tag = json.optString("tag_name").takeIf { it.isNotBlank() }
                 val assets = json.optJSONArray("assets")
                 val url = (0 until (assets?.length() ?: 0))
                     .map { assets!!.getJSONObject(it) }
