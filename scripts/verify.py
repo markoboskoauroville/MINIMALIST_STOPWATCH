@@ -792,6 +792,13 @@ check("the timer ending sounds different from a measurement starting",
       and "GoSound.play(context)" in code_only(ui),
       "the bird at zero, the recorded word at the start of a count-in")
 
+# The preset row was laid out on a hardcoded five, which was a fact about the list rather than
+# about the row. Deriving the width from the list means adding a preset can never push one off
+# the edge of the panel — a failure that would only show on the narrowest phone.
+check("the preset row is laid out from the list, not from a count",
+      "TimerLength.entries.size" in code_only(ui) and "gap * (n - 1)) / n" in code_only(ui),
+      "one cell per preset, whatever the list holds")
+
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
 if failures:

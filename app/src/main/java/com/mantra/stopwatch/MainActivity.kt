@@ -1149,7 +1149,8 @@ private fun SettingsGrid(
         if (tab == SettingsTab.TIMER) {
             RowLabel("PRESET", colour)
             Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                val fifth = (gridWidth - gap * 4) / 5
+                val n = TimerLength.entries.size
+                val cellW = (gridWidth - gap * (n - 1)) / n
                 TimerLength.entries.forEach { length ->
                     LapCell(
                         // Shown as the clock will read it. "05:00" is what you will be looking
@@ -1157,7 +1158,7 @@ private fun SettingsGrid(
                         sample = Face.format(length.seconds * 1000L, Display.SINGLE),
                         chosen = length.seconds == timerSeconds,
                         colour = colour,
-                        width = fifth,
+                        width = cellW,
                     ) { onTimerSeconds(length.seconds) }
                 }
             }

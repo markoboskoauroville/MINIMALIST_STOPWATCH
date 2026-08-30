@@ -139,6 +139,13 @@ enum class AppMode { STOPWATCH, TIMER }
  * kitchen or on a mat actually asks for.
  */
 enum class TimerLength(val seconds: Int) {
+    /**
+     * Thirty seconds, and it is the one that was missing. The presets ran from a minute upwards,
+     * which quietly said that anything shorter was unusual — and half a minute is a plank, a
+     * rest between sets, and steeping tea. The custom control could always reach it; a preset is
+     * what stops you having to.
+     */
+    HALF(30),
     ONE(60),
     THREE(180),
     FIVE(300),

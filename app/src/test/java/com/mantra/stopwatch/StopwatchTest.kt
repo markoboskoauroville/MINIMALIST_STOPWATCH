@@ -1175,10 +1175,26 @@ class StopwatchTest {
     /** The offered lengths are what they claim, in seconds, so the face cannot disagree. */
     @Test
     fun theTimerLengthsAreWhatTheyClaim() {
+        assertEquals(30, TimerLength.HALF.seconds)
         assertEquals(60, TimerLength.ONE.seconds)
         assertEquals(180, TimerLength.THREE.seconds)
         assertEquals(1_500, TimerLength.TWENTY_FIVE.seconds)
         for (l in TimerLength.entries) assertTrue("$l must be positive", l.seconds > 0)
+
+        // The row is laid out as one cell per preset, so the count is a layout fact as much as a
+        // list of durations: a sixth entry has to be a sixth cell or one of them is off the edge.
+        assertEquals("six presets, six cells", 6, TimerLength.entries.size)
+
+        // Every preset must be reachable by the custom control too, or a preset could set a value
+        // the minus and plus could never return to.
+        for (l in TimerLength.entries) {
+            assertTrue("$l is outside the custom range", l.seconds in TIMER_MIN..TIMER_MAX)
+        }
+
+        // In order, and no duplicates: a row with the same duration twice has a dead cell in it.
+        val seconds = TimerLength.entries.map { it.seconds }
+        assertEquals("presets must ascend", seconds.sorted(), seconds)
+        assertEquals("no duplicates", seconds.size, seconds.toSet().size)
     }
 
     /**
