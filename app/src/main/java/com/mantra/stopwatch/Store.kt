@@ -85,6 +85,18 @@ class Store(private val context: Context) {
             e.apply()
         }
 
+    var appMode: AppMode
+        get() = if (p.getBoolean(Keys.K_TIMER, false)) AppMode.TIMER else AppMode.STOPWATCH
+        set(v) = p.edit().putBoolean(Keys.K_TIMER, v == AppMode.TIMER).apply()
+
+    var timerLength: TimerLength
+        get() = try {
+            TimerLength.valueOf(p.getString(Keys.K_LENGTH, TimerLength.FIVE.name) ?: "")
+        } catch (e: IllegalArgumentException) {
+            TimerLength.FIVE
+        }
+        set(v) = p.edit().putString(Keys.K_LENGTH, v.name).apply()
+
     var preroll: PrerollMode
         get() = if (p.getBoolean(Keys.K_PREROLL, false)) PrerollMode.TEN else PrerollMode.OFF
         set(v) = p.edit().putBoolean(Keys.K_PREROLL, v == PrerollMode.TEN).apply()
@@ -217,6 +229,8 @@ class Store(private val context: Context) {
         const val K_LAP = "lapMode"
         const val K_PREROLL = "preroll"
         const val K_NAME = "name_"
+        const val K_TIMER = "timerMode"
+        const val K_LENGTH = "timerLength"
         const val K_LISTENING = "listening"
     }
 }

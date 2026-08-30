@@ -122,6 +122,45 @@ enum class Display { MULTI, SINGLE }
  * — you already started, you are standing in the water, and a second start ceremony would be a
  * delay with no purpose.
  */
+/**
+ * Which way the clock runs. S counts up, T counts down.
+ *
+ * THE TIMING MODEL DOES NOT CHANGE, and that is the whole design. A timer is not a second clock
+ * with its own start instant and its own drift; it is the same elapsed figure subtracted from a
+ * length. Everything that was proven about startedAt and accumulated over twenty-nine versions —
+ * the reboot rules, the process death, the never-adding-deltas — holds for both modes because
+ * both modes are the same measurement read two ways.
+ */
+enum class AppMode { STOPWATCH, TIMER }
+
+/**
+ * How long the timer runs. Presets rather than a field, for the same reason the pool lengths are
+ * presets: this app has no keyboard by design, and these are the durations somebody standing in a
+ * kitchen or on a mat actually asks for.
+ */
+enum class TimerLength(val seconds: Int) {
+    ONE(60),
+    THREE(180),
+    FIVE(300),
+    TEN(600),
+    TWENTY_FIVE(1_500),
+}
+
+/**
+ * What the timer shows: the length less what has elapsed, and never below zero.
+ *
+ * CLAMPED AT ZERO RATHER THAN GOING NEGATIVE. A timer that runs past its end and shows a minus
+ * sign has stopped being a timer and become a stopwatch nobody asked for, and the figure it shows
+ * is one somebody could read as time remaining.
+ */
+fun timerRemaining(lengthMs: Long, elapsedMs: Long): Long {
+    val left = lengthMs - elapsedMs
+    return if (left < 0L) 0L else left
+}
+
+/** Whether the timer has run out. Separate from the figure, because zero is a state as well. */
+fun timerFinished(lengthMs: Long, elapsedMs: Long): Boolean = elapsedMs >= lengthMs
+
 enum class PrerollMode(val seconds: Int) {
     OFF(0),
     TEN(10),

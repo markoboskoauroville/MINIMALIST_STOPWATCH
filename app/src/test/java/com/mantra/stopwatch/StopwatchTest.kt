@@ -1132,6 +1132,40 @@ class StopwatchTest {
     }
 
     /**
+     * A timer is the same measurement read the other way, which is why nothing in the timing
+     * model changed to add one. Everything proven about startedAt and accumulated holds for both.
+     */
+    @Test
+    fun theTimerIsTheLengthLessWhatHasElapsed() {
+        assertEquals(60_000L, timerRemaining(60_000, 0))
+        assertEquals(59_000L, timerRemaining(60_000, 1_000))
+        assertEquals(1L, timerRemaining(60_000, 59_999))
+        assertEquals(0L, timerRemaining(60_000, 60_000))
+
+        // CLAMPED, NOT NEGATIVE. A timer that runs past its end and shows a minus sign has become
+        // a stopwatch nobody asked for, and the figure could be read as time remaining.
+        assertEquals(0L, timerRemaining(60_000, 90_000))
+        assertEquals(0L, timerRemaining(0, 5_000))
+    }
+
+    /** Finished is a state, not a figure: zero on the display and zero left are different facts. */
+    @Test
+    fun theTimerKnowsWhenItHasRunOut() {
+        assertFalse(timerFinished(60_000, 59_999))
+        assertTrue(timerFinished(60_000, 60_000))
+        assertTrue(timerFinished(60_000, 61_000))
+    }
+
+    /** The offered lengths are what they claim, in seconds, so the face cannot disagree. */
+    @Test
+    fun theTimerLengthsAreWhatTheyClaim() {
+        assertEquals(60, TimerLength.ONE.seconds)
+        assertEquals(180, TimerLength.THREE.seconds)
+        assertEquals(1_500, TimerLength.TWENTY_FIVE.seconds)
+        for (l in TimerLength.entries) assertTrue("$l must be positive", l.seconds > 0)
+    }
+
+    /**
      * No word may belong to two controls. If one ever did, [Heard.match] would refuse it and the
      * command would silently stop working with nothing to show why.
      */

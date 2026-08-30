@@ -183,6 +183,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var weight by remember { mutableStateOf(store.weight) }
     var display by remember { mutableStateOf(store.display) }
     var lapMode by remember { mutableStateOf(store.lapMode) }
+    var appMode by remember { mutableStateOf(store.appMode) }
+    var timerLength by remember { mutableStateOf(store.timerLength) }
     var names by remember { mutableStateOf(store.names) }
     var preroll by remember { mutableStateOf(store.preroll) }
 
@@ -258,6 +260,17 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     }
 
     val elapsed = state.elapsed(now)
+
+    // THE TIMER ENDS ITSELF, and says so with the same word that starts a measurement. A timer
+    // that reaches zero and carries on running is a timer that has to be watched, which is the
+    // one thing a timer exists to avoid.
+    LaunchedEffect(appMode, timerLength, state.phase, elapsed / 1000L) {
+        if (appMode != AppMode.TIMER || state.phase != Phase.RUNNING) return@LaunchedEffect
+        if (timerFinished(timerLength.seconds * 1000L, elapsed)) {
+            commit(state.pause(SystemClock.elapsedRealtime()))
+            GoSound.play(context)
+        }
+    }
 
     // THE COUNTDOWN'S OWN CLOCK. It ticks at 100ms rather than the stopwatch's one second,
     // because a number counting down needs to change on the second it names rather than up to a
@@ -495,7 +508,12 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         val screenW = maxWidth
         val screenH = maxHeight
         val landscape = screenW > screenH
-        val text = Face.format(elapsed, display)
+        // ONE MEASUREMENT, READ TWO WAYS. The timer does not have its own clock: it is the same
+        // elapsed figure subtracted from a length, so everything proven about startedAt and
+        // accumulated over twenty-nine versions holds for both modes without being proven twice.
+        val lengthMs = timerLength.seconds * 1000L
+        val shown = if (appMode == AppMode.TIMER) timerRemaining(lengthMs, elapsed) else elapsed
+        val text = Face.format(shown, display)
         val countdown = prerollLabel(prerollEndsAt - prerollNow).takeIf { prerollEndsAt > 0L }
 
         val button = if (landscape) 56.dp else 72.dp
@@ -606,6 +624,45 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         // between the two on a phone held either way up. A fixed number would sit beside the
         // microphone in portrait and be lost in the middle of nowhere in landscape.
         // ─────────────────────────────────────────────────────────────────────────────────────
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // S OR T, mirroring the power mark on the other side of the microphone.
+        //
+        // A LETTER, NOT A GLYPH, and that is deliberate. There is no icon in the Material set
+        // that says "stopwatch rather than timer" without being read twice — both are clocks and
+        // both are drawn as circles with hands. S and T are read instantly, they are the words
+        // themselves, and they are set in the same monospaced face as the digits so they belong
+        // to the screen rather than sitting on top of it.
+        //
+        // The letter shown is the mode you are IN, not the one the press would give. This is the
+        // one control on the screen that breaks that rule, and it breaks it for the same reason
+        // the microphone does: it is a STATE. You need to know which clock you are looking at
+        // before you look at the number, and a control that only says what it would become
+        // leaves that question unanswered.
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        Text(
+            text = if (appMode == AppMode.TIMER) "T" else "S",
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                color = if (appMode == AppMode.TIMER) Color(colour) else GLYPH,
+                fontSize = 18.sp,
+            ),
+            maxLines = 1,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(EDGE)
+                .offset(x = -(screenW / 4 - 16.dp))
+                .clickable {
+                    // Changing which way the clock runs mid-measurement would leave a figure on
+                    // screen that means something different from the one that was there a moment
+                    // before, so the measurement is cleared with the mode.
+                    appMode = if (appMode == AppMode.TIMER) AppMode.STOPWATCH else AppMode.TIMER
+                    store.appMode = appMode
+                    commit(state.stop())
+                }
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+        )
+
         Glyph(
             icon = Icons.Outlined.PowerSettingsNew,
             label = "Close the stopwatch",
@@ -682,6 +739,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 onDisplay = { display = it; store.display = it },
                 lapMode = lapMode,
                 onLapMode = { lapMode = it; store.lapMode = it },
+                appMode = appMode,
+                timerLength = timerLength,
+                onTimerLength = { timerLength = it; store.timerLength = it; commit(state.stop()) },
                 names = names,
                 onNames = { names = it; store.names = it; VoiceHub.reloadTemplates(context) },
                 live = live,
@@ -807,6 +867,9 @@ private fun SettingsGrid(
     onDisplay: (Display) -> Unit,
     lapMode: LapMode,
     onLapMode: (LapMode) -> Unit,
+    appMode: AppMode,
+    timerLength: TimerLength,
+    onTimerLength: (TimerLength) -> Unit,
     names: Map<Control, String>,
     onNames: (Map<Control, String>) -> Unit,
     live: FloatArray,
@@ -1068,6 +1131,29 @@ private fun SettingsGrid(
             LapCell("10", LapMode.OFF, if (preroll == PrerollMode.TEN) LapMode.OFF else LapMode.COUNT,
                 colour, third) { onPreroll(PrerollMode.TEN) }
             GoCell(third, colour, context, goRecorded) { goRecorded++ }
+        }
+
+        // THE TIMER'S LENGTH, and it is only here in timer mode. A setting for a mode you are not
+        // in is a row to read past every time, and this panel is already long enough that the
+        // sampler had to be moved to its own tab.
+        if (appMode == AppMode.TIMER) {
+            Row(
+                modifier = Modifier.padding(top = gap),
+                horizontalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                val fifth = (gridWidth - gap * 4) / 5
+                TimerLength.entries.forEach { length ->
+                    LapCell(
+                        // Shown as the clock will read, not as a word. "05:00" is what you will
+                        // be looking at; "five minutes" is a description of it.
+                        sample = Face.format(length.seconds * 1000L, Display.SINGLE),
+                        represents = LapMode.OFF,
+                        current = if (length == timerLength) LapMode.OFF else LapMode.COUNT,
+                        colour = colour,
+                        width = fifth,
+                    ) { onTimerLength(length) }
+                }
+            }
         }
 
         // ─────────────────────────────────────────────────────────────────────────────────────

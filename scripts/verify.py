@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 100
+TEST_FLOOR = 103
 
 
 def code_only(text):
@@ -592,8 +592,11 @@ check("nothing heard counts while the app is making a noise",
 # SINGLE is worth having only because the digits get bigger, and they only get bigger if the
 # measured string is the shorter one. Sizing on MULTI and drawing SINGLE would size for eight
 # glyphs and draw two — the setting would appear to do nothing.
+# `shown` rather than `elapsed`, because the timer subtracts before it formats. Sizing on one
+# figure and drawing the other would size for the wrong number of glyphs the moment a timer ran
+# past an hour boundary the stopwatch had not reached.
 check("the digits are measured on the string the setting actually draws",
-      "Face.format(elapsed, display)" in code_only(ui)
+      "Face.format(shown, display)" in code_only(ui)
       and "remember(text.length" in code_only(ui),
       "one format call feeds both the measurement and the draw, so they cannot disagree")
 
@@ -714,6 +717,13 @@ check("the microphone keeps the centre and the exit sits beside it",
 check("the waveform is drawn while it is being recorded",
       "if (recording) live else remember(" in code_only(ui) and "LIVE_MAX" in code_only(ui),
       "one value per level tick, halved rather than trimmed when it fills")
+
+# A timer is the same measurement read the other way. If it ever grows its own clock, everything
+# proven about startedAt and accumulated over twenty-nine versions has to be proven a second time.
+check("the timer has no clock of its own",
+      "fun timerRemaining(" in src and "timerRemaining(lengthMs, elapsed)" in code_only(ui)
+      and "startedAt" not in src.split("fun timerRemaining(")[1].split("\n}")[0],
+      "the length less the elapsed figure, clamped at zero, and nothing else")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
