@@ -169,6 +169,10 @@ object GoSound {
      */
     fun playSamples(samples: ShortArray, rate: Int) {
         if (samples.isEmpty() || rate !in 8_000..96_000) return
+        // Deaf for the length of the sound plus the length of the ring the matcher reads, before
+        // a single sample of it is written. Arming this after playback starts would leave a
+        // window in which the app can already hear itself.
+        MicMute.muteFor(samples.size * 1000L / rate, android.os.SystemClock.elapsedRealtime())
         thread(name = "go-play", isDaemon = true) {
             val min = AudioTrack.getMinBufferSize(rate, CHANNEL_OUT, ENCODING)
             if (min <= 0) return@thread

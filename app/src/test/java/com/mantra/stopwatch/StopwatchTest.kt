@@ -702,28 +702,21 @@ class StopwatchTest {
      * therefore worthless unless it is always a visible difference, and the case a fixed white
      * flash would get wrong is the commonest one of all: white digits, which nobody has changed.
      */
+    /**
+     * The flash takes the digits away rather than brightening them, and the property that makes
+     * that safe is one the palette already guarantees: no swatch can be black.
+     */
     @Test
     fun theFlashIsAlwaysADifferenceFromTheDigitsItFlashes() {
-        assertEquals("white digits cannot flash white", Palette.ACCENT, Palette.flashOf(0xFFFFFFFF))
-        assertEquals(Palette.ACCENT, Palette.flashOf(0xFFE2E8F0))
-        assertEquals("a coloured digit flashes white", Palette.DEFAULT, Palette.flashOf(0xFFE8A64B))
-        assertEquals(Palette.DEFAULT, Palette.flashOf(0xFFEF4444))
-
-        // No swatch in the grid may sit so close to its own flash colour that the flash vanishes.
         for (c in Palette.SWATCHES) {
-            val flash = Palette.flashOf(c)
-            val a = Palette.luminance(c)
-            val b = Palette.luminance(flash)
-            val ratio = (maxOf(a, b) + 0.05) / (minOf(a, b) + 0.05)
-            assertTrue("%08X flashes to %08X at only %.2f".format(c, flash, ratio), ratio >= 1.25)
+            assertEquals("every colour flashes to the background", Palette.BLACK, Palette.flashOf(c))
+            // The contrast floor the palette already asserts IS the guarantee that the flash is
+            // visible, so there is no separate threshold here that could drift out of step.
+            assertTrue(
+                "%08X would vanish against its own flash".format(c),
+                Palette.contrastOnBlack(c) >= 4.5,
+            )
         }
-    }
-
-    /** The flash colour must itself be readable, since for a moment it IS the digits. */
-    @Test
-    fun theFlashColoursAreLegibleOnBlack() {
-        assertTrue(Palette.contrastOnBlack(Palette.ACCENT) >= 4.5)
-        assertTrue(Palette.contrastOnBlack(Palette.DEFAULT) >= 4.5)
     }
 
     @Test
@@ -1060,6 +1053,36 @@ class StopwatchTest {
                 (other as SamplerPress.Refused).why.contains("start"),
             )
         }
+    }
+
+    /**
+     * THE APP MUST NOT HEAR ITSELF. The count-in ends, the Go word plays, the app hears its own
+     * Go word and stops the stopwatch it just started — every part working exactly as designed.
+     */
+    @Test
+    fun theMicrophoneIsDeafWhileTheAppIsMakingANoise() {
+        MicMute.clearForTest()
+        assertFalse("nothing is playing, so everything counts", MicMute.muted(0))
+
+        MicMute.muteFor(soundMs = 400, now = 1_000)
+        assertTrue("during the sound", MicMute.muted(1_200))
+
+        // THE TAIL IS THE PART THAT IS EASY TO GET WRONG. The matcher reads the last second and a
+        // half from a ring, so unmuting when the sound ends leaves it sitting in the ring for the
+        // very next comparison to find.
+        assertTrue("just after the sound ends, still deaf", MicMute.muted(1_500))
+        assertTrue("and until the ring has cleared", MicMute.muted(2_900))
+        assertFalse("then it counts again", MicMute.muted(3_100))
+    }
+
+    /** Two sounds overlapping must leave it deaf until the later one has cleared the ring. */
+    @Test
+    fun aSecondSoundCannotShortenTheMute() {
+        MicMute.clearForTest()
+        MicMute.muteFor(soundMs = 2_000, now = 0)
+        MicMute.muteFor(soundMs = 100, now = 100)
+        assertTrue("the short sound must not cut the long one's tail", MicMute.muted(3_000))
+        MicMute.clearForTest()
     }
 
     /**

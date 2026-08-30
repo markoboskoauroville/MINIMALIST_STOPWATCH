@@ -145,6 +145,14 @@ class VoiceEngine(
                 return
             }
 
+            // NOTHING HEARD COUNTS WHILE THIS APP IS MAKING A NOISE. The meter carries on, so the
+            // bar still moves and it is visible that the sound is being heard — it simply cannot
+            // trigger anything. A meter that froze here would look like a fault.
+            if (MicMute.muted(now)) {
+                main.postDelayed({ tick() }, AUDIO_LEVEL_SAMPLE_MS)
+                return
+            }
+
             if (templates.isNotEmpty() && gate.shouldOpen(level, now)) {
                 // A short wait so the whole word is in the ring before it is read. The gate fires
                 // on the first loud frame; the rest of the word has not been spoken yet.

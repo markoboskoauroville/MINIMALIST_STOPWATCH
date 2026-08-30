@@ -511,3 +511,42 @@ object SamplerGesture {
         }
     }
 }
+
+/**
+ * THE MICROPHONE IS DEAF WHILE THIS APP IS MAKING A NOISE.
+ *
+ * Baba found this the hard way: the count-in ends, the Go word plays, the app hears its own Go
+ * word, and the stopwatch it just started is stopped again by a sound it made itself. The feature
+ * defeated itself, which is the worst shape a bug can have — every part worked exactly as
+ * designed.
+ *
+ * There is no clever fix and no clever fix is wanted. While this app is playing audio, nothing
+ * heard counts.
+ *
+ * THE TAIL IS THE PART THAT IS EASY TO GET WRONG. The matcher does not compare what is arriving
+ * now, it compares THE LAST SECOND AND A HALF from a ring — so unmuting the instant playback ends
+ * leaves the played sound sitting in the ring, where the very next comparison will find it. The
+ * mute has to outlast the sound by at least the length of the window the matcher reads, or the
+ * feedback comes back a moment later wearing a different hat.
+ */
+object MicMute {
+
+    @Volatile private var until = 0L
+
+    /** How long after a sound ends before what is heard can count again. */
+    const val TAIL_MS = 1_600L
+
+    fun muteFor(soundMs: Long, now: Long) {
+        val ends = now + soundMs + TAIL_MS
+        // Never shorten an existing mute. Two sounds overlapping must leave the microphone deaf
+        // until the LATER of them has cleared the ring.
+        if (ends > until) until = ends
+    }
+
+    fun muted(now: Long): Boolean = now < until
+
+    /** Only for tests, and named so it reads as such at the call site. */
+    fun clearForTest() {
+        until = 0L
+    }
+}

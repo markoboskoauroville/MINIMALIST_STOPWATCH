@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 96
+TEST_FLOOR = 97
 
 
 def code_only(text):
@@ -61,6 +61,7 @@ palette_src = (MAIN / "Palette.kt").read_text()
 ui = UI.read_text()
 store = STORE.read_text()
 meter = (ROOT / "app/src/main/java/com/mantra/stopwatch/MaMeter.kt").read_text()
+go = (MAIN / "GoSound.kt").read_text()
 dsp = (ROOT / "app/src/main/java/com/mantra/stopwatch/Dsp.kt").read_text()
 probe = (ROOT / "app/src/main/java/com/mantra/stopwatch/MicProbe.kt").read_text()
 engine = (ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceEngine.kt").read_text()
@@ -572,9 +573,17 @@ check("the flash fires only when the state actually changed",
       "a press on a dead control registered nothing and must not claim to have")
 
 check("the flash is always a difference from the digits it flashes",
-      "Palette.flashOf(colour)" in code_only(ui) and "fun flashOf(" in palette_src,
-      "white digits flash amber, everything else flashes white; a fixed colour would be "
-      "invisible for the default")
+      "Palette.flashOf(colour)" in code_only(ui) and "fun flashOf(" in palette_src
+      and "BLACK" in palette_src,
+      "the digits vanish rather than brighten; the palette's own contrast floor is what "
+      "guarantees the flash is visible, so there is no second threshold to keep in step")
+
+# THE APP MUST NOT HEAR ITSELF. The count-in ends, the Go word plays, the app hears its own Go
+# word and stops the stopwatch it just started. Every part working exactly as designed.
+check("nothing heard counts while the app is making a noise",
+      "MicMute.muted(now)" in engine and "MicMute.muteFor(" in code_only(go),
+      "the mute is armed before a sample is written, and outlasts the sound by the length of "
+      "the ring the matcher reads")
 
 # SINGLE is worth having only because the digits get bigger, and they only get bigger if the
 # measured string is the shorter one. Sizing on MULTI and drawing SINGLE would size for eight
@@ -602,8 +611,6 @@ check("the lap counter never touches the clock",
 check("stop clears the lap count with everything else",
       "if (next.phase == Phase.STOPPED && state.phase != Phase.STOPPED) laps = 0" in code_only(ui),
       "the reset that clears the digits clears the lengths too")
-
-go = (MAIN / "GoSound.kt").read_text()
 
 # The Go word is the only sound this app makes and the only recording it plays back. It is kept
 # at the best rate the phone will open, and the rate is stored WITH the audio — a sample recorded

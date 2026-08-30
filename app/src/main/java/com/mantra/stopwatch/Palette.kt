@@ -68,11 +68,28 @@ object Palette {
      * the Mantra amber. Both are far from every swatch in the grid, both clear the contrast
      * floor by a wide margin, and between them they cover the whole palette.
      */
-    fun flashOf(current: Long): Long =
-        if (luminance(current) > NEAR_WHITE) ACCENT else DEFAULT
+    fun flashOf(current: Long): Long = BLACK
 
-    /** Above this a colour is close enough to white that flashing white would be invisible. */
-    private const val NEAR_WHITE = 0.75
+    /**
+     * THE FLASH IS THE BACKGROUND, so the digits VANISH for a moment rather than brightening.
+     *
+     * v18 flashed white, or amber when the digits were already white. It worked and it was the
+     * wrong direction: a screen that is deliberately black with one bright thing on it, in a dark
+     * room, punishes you for looking at it every time a command lands. Baba's words were that it
+     * burns his eyes, and on a screen designed to be readable across a room in the dark that is
+     * not a small complaint.
+     *
+     * Taking the digits AWAY is the same event and costs nothing to look at. It is also better
+     * information: a blink is unmistakable at the edge of vision, where a brightening of something
+     * already bright is not.
+     *
+     * AND IT NEEDS NO RULE ABOUT WHICH COLOUR. The white flash had to check whether the digits
+     * were already near white, because flashing white digits white is no flash at all. Black is
+     * the one colour nothing in the palette can be — every swatch clears a contrast ratio of 4.5
+     * against it, asserted in Test 1 — so the flash is always a difference by construction rather
+     * than by a threshold somebody has to keep right.
+     */
+    const val BLACK: Long = 0xFF000000
 
     /** The accent that runs through every other app in the account. */
     const val ACCENT: Long = 0xFFE8A64B
