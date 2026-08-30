@@ -89,6 +89,16 @@ class Store(private val context: Context) {
         get() = if (p.getBoolean(Keys.K_TIMER, false)) AppMode.TIMER else AppMode.STOPWATCH
         set(v) = p.edit().putBoolean(Keys.K_TIMER, v == AppMode.TIMER).apply()
 
+    /** The duration in force, in seconds. A preset writes it; the plus and minus nudge it. */
+    var timerSeconds: Int
+        get() = p.getInt(Keys.K_SECONDS, TimerLength.FIVE.seconds).coerceIn(TIMER_MIN, TIMER_MAX)
+        set(v) = p.edit().putInt(Keys.K_SECONDS, v.coerceIn(TIMER_MIN, TIMER_MAX)).apply()
+
+    /** One saved custom duration, or 0. Beside the presets rather than among them. */
+    var savedPreset: Int
+        get() = p.getInt(Keys.K_SAVED, 0)
+        set(v) = p.edit().putInt(Keys.K_SAVED, v).apply()
+
     var timerLength: TimerLength
         get() = try {
             TimerLength.valueOf(p.getString(Keys.K_LENGTH, TimerLength.FIVE.name) ?: "")
@@ -231,6 +241,8 @@ class Store(private val context: Context) {
         const val K_NAME = "name_"
         const val K_TIMER = "timerMode"
         const val K_LENGTH = "timerLength"
+        const val K_SECONDS = "timerSeconds"
+        const val K_SAVED = "savedPreset"
         const val K_LISTENING = "listening"
     }
 }

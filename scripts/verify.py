@@ -725,6 +725,29 @@ check("the timer has no clock of its own",
       and "startedAt" not in src.split("fun timerRemaining(")[1].split("\n}")[0],
       "the length less the elapsed figure, clamped at zero, and nothing else")
 
+# FOUR TABS, because three unrelated jobs had been sharing one panel — and the specific damage was
+# two rows of near-identical cells with nothing on screen saying which was which.
+check("the settings are separated into their own tabs",
+      code_only(ui).count("SettingsTab.") >= 8 and "enum class SettingsTab { LOOK, VOICE, TIMER, LAP }" in code_only(ui),
+      "look, voice, timer and lap; a setting for a mode you are not in is a row to read past")
+
+# A caption is the one word that turns four identical boxes into two questions.
+check("every row of look-alike cells carries a caption",
+      'RowLabel("WEIGHT"' in code_only(ui) and 'RowLabel("FIELDS"' in code_only(ui),
+      "the two rows Baba could not tell apart now say which is which")
+
+# The lap counter is not self-evident from four boxes, and a control nobody understands is a
+# control nobody uses.
+check("the settings that need explaining have help text",
+      "private fun Help(" in code_only(ui) and code_only(ui).count("Help(") >= 4,
+      "two lines at most, and only where the cells cannot speak for themselves")
+
+# The custom duration is nudged through the pure function, not by arithmetic in the interface.
+check("the custom duration is nudged through the tested function",
+      "timerNudge(timerSeconds, up = false)" in code_only(ui)
+      and "timerNudge(timerSeconds, up = true)" in code_only(ui),
+      "the step rule lives in one place and Test 1 walks it")
+
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
 if failures:

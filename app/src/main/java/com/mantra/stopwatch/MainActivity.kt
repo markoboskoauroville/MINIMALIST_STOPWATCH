@@ -184,7 +184,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var display by remember { mutableStateOf(store.display) }
     var lapMode by remember { mutableStateOf(store.lapMode) }
     var appMode by remember { mutableStateOf(store.appMode) }
-    var timerLength by remember { mutableStateOf(store.timerLength) }
+    var timerSeconds by remember { mutableIntStateOf(store.timerSeconds) }
+    var savedPreset by remember { mutableIntStateOf(store.savedPreset) }
     var names by remember { mutableStateOf(store.names) }
     var preroll by remember { mutableStateOf(store.preroll) }
 
@@ -264,9 +265,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // THE TIMER ENDS ITSELF, and says so with the same word that starts a measurement. A timer
     // that reaches zero and carries on running is a timer that has to be watched, which is the
     // one thing a timer exists to avoid.
-    LaunchedEffect(appMode, timerLength, state.phase, elapsed / 1000L) {
+    LaunchedEffect(appMode, timerSeconds, state.phase, elapsed / 1000L) {
         if (appMode != AppMode.TIMER || state.phase != Phase.RUNNING) return@LaunchedEffect
-        if (timerFinished(timerLength.seconds * 1000L, elapsed)) {
+        if (timerFinished(timerSeconds * 1000L, elapsed)) {
             commit(state.pause(SystemClock.elapsedRealtime()))
             GoSound.play(context)
         }
@@ -511,7 +512,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         // ONE MEASUREMENT, READ TWO WAYS. The timer does not have its own clock: it is the same
         // elapsed figure subtracted from a length, so everything proven about startedAt and
         // accumulated over twenty-nine versions holds for both modes without being proven twice.
-        val lengthMs = timerLength.seconds * 1000L
+        val lengthMs = timerSeconds * 1000L
         val shown = if (appMode == AppMode.TIMER) timerRemaining(lengthMs, elapsed) else elapsed
         val text = Face.format(shown, display)
         val countdown = prerollLabel(prerollEndsAt - prerollNow).takeIf { prerollEndsAt > 0L }
@@ -740,8 +741,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 lapMode = lapMode,
                 onLapMode = { lapMode = it; store.lapMode = it },
                 appMode = appMode,
-                timerLength = timerLength,
-                onTimerLength = { timerLength = it; store.timerLength = it; commit(state.stop()) },
+                timerSeconds = timerSeconds,
+                savedPreset = savedPreset,
+                onTimerSeconds = { timerSeconds = it; store.timerSeconds = it; commit(state.stop()) },
+                onSavePreset = { savedPreset = timerSeconds; store.savedPreset = timerSeconds },
                 names = names,
                 onNames = { names = it; store.names = it; VoiceHub.reloadTemplates(context) },
                 live = live,
@@ -868,8 +871,10 @@ private fun SettingsGrid(
     lapMode: LapMode,
     onLapMode: (LapMode) -> Unit,
     appMode: AppMode,
-    timerLength: TimerLength,
-    onTimerLength: (TimerLength) -> Unit,
+    timerSeconds: Int,
+    savedPreset: Int,
+    onTimerSeconds: (Int) -> Unit,
+    onSavePreset: () -> Unit,
     names: Map<Control, String>,
     onNames: (Map<Control, String>) -> Unit,
     live: FloatArray,
@@ -1025,6 +1030,114 @@ private fun SettingsGrid(
         ) {
             Tab("LOOK", tab == SettingsTab.LOOK, colour) { onTab(SettingsTab.LOOK) }
             Tab("VOICE", tab == SettingsTab.VOICE, colour) { onTab(SettingsTab.VOICE) }
+            Tab("TIMER", tab == SettingsTab.TIMER, colour) { onTab(SettingsTab.TIMER) }
+            Tab("LAP", tab == SettingsTab.LAP, colour) { onTab(SettingsTab.LAP) }
+        }
+
+        if (tab == SettingsTab.LAP) {
+            RowLabel("LAP COUNTER", colour)
+            Help(
+                "A number above the digits, counting lengths. Tap it or say lap to add one. " +
+                    "Stop clears it. Choose a pool length and it counts metres as well.",
+                colour,
+            )
+        Row(
+            modifier = Modifier.padding(top = gap),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            val quarter = (gridWidth - gap * 3) / 4
+            LapCell("off", LapMode.OFF, lapMode, colour, quarter, onLapMode)
+            LapCell("3", LapMode.COUNT, lapMode, colour, quarter, onLapMode)
+            LapCell("3 (75 m)", LapMode.M25, lapMode, colour, quarter, onLapMode)
+            LapCell("3 (150 m)", LapMode.M50, lapMode, colour, quarter, onLapMode)
+        }
+            return@Column
+        }
+
+        if (tab == SettingsTab.TIMER) {
+            RowLabel("PRESET", colour)
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                val fifth = (gridWidth - gap * 4) / 5
+                TimerLength.entries.forEach { length ->
+                    LapCell(
+                        // Shown as the clock will read it. "05:00" is what you will be looking
+                        // at; "five minutes" is a description of it.
+                        sample = Face.format(length.seconds * 1000L, Display.SINGLE),
+                        represents = LapMode.OFF,
+                        current = if (length.seconds == timerSeconds) LapMode.OFF else LapMode.COUNT,
+                        colour = colour,
+                        width = fifth,
+                    ) { onTimerSeconds(length.seconds) }
+                }
+            }
+
+            // THE BIG BOX, big on purpose: this is the number being set and everything around it
+            // is a way of changing it. Minus and plus either side, the duration between them, in
+            // the face the clock will show it in.
+            RowLabel("CUSTOM", colour)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = gap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Nudge("\u2212", colour) { onTimerSeconds(timerNudge(timerSeconds, up = false)) }
+                Text(
+                    text = Face.format(timerSeconds * 1000L, Display.SINGLE),
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(colour),
+                        fontSize = 34.sp,
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                )
+                Nudge("+", colour) { onTimerSeconds(timerNudge(timerSeconds, up = true)) }
+            }
+            Help(
+                "The step follows the number: fifteen seconds under two minutes, " +
+                    "half a minute under ten, a minute above.",
+                colour,
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                val half = (gridWidth - gap) / 2
+                LapCell("save as preset", LapMode.OFF, LapMode.COUNT, colour, half) { onSavePreset() }
+                LapCell(
+                    sample = if (savedPreset > 0)
+                        Face.format(savedPreset * 1000L, Display.SINGLE) else "\u2014",
+                    represents = LapMode.OFF,
+                    current = if (savedPreset > 0 && savedPreset == timerSeconds) LapMode.OFF
+                    else LapMode.COUNT,
+                    colour = colour,
+                    width = half,
+                ) { if (savedPreset > 0) onTimerSeconds(savedPreset) }
+            }
+
+            // COUNT-IN LIVES HERE NOW. It belongs to whichever clock is about to start, and the
+            // timer is a clock — it already worked in both modes, it was simply filed under the
+            // one place nobody would look for it.
+            RowLabel("COUNT-IN", colour)
+            Help("A pause before the clock starts, ending with the word you record.", colour)
+        // THE COUNTDOWN, and beside it the word that plays when it ends.
+        //
+        // The GO cell is a recorder, not a setting: press it and say whatever you want to hear.
+        // It sits here rather than in the VOICE tab because it is not a command — nothing ever
+        // matches against it, it is only played — and putting it among the templates would
+        // invite it to be treated as one.
+        Row(
+            modifier = Modifier.padding(top = gap),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            val third = (gridWidth - gap * 2) / 3
+            LapCell("no count-in", LapMode.OFF, if (preroll == PrerollMode.OFF) LapMode.OFF else LapMode.COUNT,
+                colour, third) { onPreroll(PrerollMode.OFF) }
+            LapCell("10", LapMode.OFF, if (preroll == PrerollMode.TEN) LapMode.OFF else LapMode.COUNT,
+                colour, third) { onPreroll(PrerollMode.TEN) }
+            GoCell(third, colour, context, goRecorded) { goRecorded++ }
+        }
+            return@Column
         }
 
         if (tab == SettingsTab.VOICE) {
@@ -1081,8 +1194,14 @@ private fun SettingsGrid(
             }
         }
 
+        // A CAPTION ON EACH ROW. Two rows of near-identical cells with nothing on screen saying
+        // which is which is not a minimal interface, it is an unlabelled one. Baba read the four
+        // boxes as "normal, fat, and a third I do not understand" and there was no way he could
+        // have read them otherwise.
+        //
         // Normal or bold, shown in the thing they describe. A row reading "Bold" set in bold
         // tells you less than the digits themselves set in bold, which is what is being chosen.
+        RowLabel("WEIGHT", colour)
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             val half = (gridWidth - gap) / 2
             WeightCell("88:88:88", Weight.NORMAL, weight, colour, half, onWeight)
@@ -1092,6 +1211,7 @@ private fun SettingsGrid(
         // DISPLAY, shown the way the weight is shown: in the thing it describes. A cell reading
         // "MULTI" tells you a word; a cell reading 88:88:88 beside one reading 88 tells you what
         // the screen is about to look like, which is the actual question.
+        RowLabel("FIELDS", colour)
         Row(
             modifier = Modifier.padding(top = gap),
             horizontalArrangement = Arrangement.spacedBy(gap),
@@ -1099,61 +1219,6 @@ private fun SettingsGrid(
             val half = (gridWidth - gap) / 2
             DisplayCell("88:88:88", Display.MULTI, display, colour, weight, half, onDisplay)
             DisplayCell("88", Display.SINGLE, display, colour, weight, half, onDisplay)
-        }
-
-        // THE LAP COUNTER, shown the way everything else in this tab is shown: in the thing it
-        // describes. A cell reading "25 m" tells you a word; a cell reading 3 (75 m) is what will
-        // actually sit above the digits after three lengths.
-        Row(
-            modifier = Modifier.padding(top = gap),
-            horizontalArrangement = Arrangement.spacedBy(gap),
-        ) {
-            val quarter = (gridWidth - gap * 3) / 4
-            LapCell("off", LapMode.OFF, lapMode, colour, quarter, onLapMode)
-            LapCell("3", LapMode.COUNT, lapMode, colour, quarter, onLapMode)
-            LapCell("3 (75 m)", LapMode.M25, lapMode, colour, quarter, onLapMode)
-            LapCell("3 (150 m)", LapMode.M50, lapMode, colour, quarter, onLapMode)
-        }
-
-        // THE COUNTDOWN, and beside it the word that plays when it ends.
-        //
-        // The GO cell is a recorder, not a setting: press it and say whatever you want to hear.
-        // It sits here rather than in the VOICE tab because it is not a command — nothing ever
-        // matches against it, it is only played — and putting it among the templates would
-        // invite it to be treated as one.
-        Row(
-            modifier = Modifier.padding(top = gap),
-            horizontalArrangement = Arrangement.spacedBy(gap),
-        ) {
-            val third = (gridWidth - gap * 2) / 3
-            LapCell("no count-in", LapMode.OFF, if (preroll == PrerollMode.OFF) LapMode.OFF else LapMode.COUNT,
-                colour, third) { onPreroll(PrerollMode.OFF) }
-            LapCell("10", LapMode.OFF, if (preroll == PrerollMode.TEN) LapMode.OFF else LapMode.COUNT,
-                colour, third) { onPreroll(PrerollMode.TEN) }
-            GoCell(third, colour, context, goRecorded) { goRecorded++ }
-        }
-
-        // THE TIMER'S LENGTH, and it is only here in timer mode. A setting for a mode you are not
-        // in is a row to read past every time, and this panel is already long enough that the
-        // sampler had to be moved to its own tab.
-        if (appMode == AppMode.TIMER) {
-            Row(
-                modifier = Modifier.padding(top = gap),
-                horizontalArrangement = Arrangement.spacedBy(gap),
-            ) {
-                val fifth = (gridWidth - gap * 4) / 5
-                TimerLength.entries.forEach { length ->
-                    LapCell(
-                        // Shown as the clock will read, not as a word. "05:00" is what you will
-                        // be looking at; "five minutes" is a description of it.
-                        sample = Face.format(length.seconds * 1000L, Display.SINGLE),
-                        represents = LapMode.OFF,
-                        current = if (length == timerLength) LapMode.OFF else LapMode.COUNT,
-                        colour = colour,
-                        width = fifth,
-                    ) { onTimerLength(length) }
-                }
-            }
         }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
@@ -1218,7 +1283,81 @@ private fun SettingsGrid(
 }
 
 /** Which half of the settings panel is showing. */
-enum class SettingsTab { LOOK, VOICE }
+/**
+ * FOUR TABS, because three unrelated jobs had been sharing one panel.
+ *
+ * The colour grid, the sampler, the timer and the lap counter answer different questions and are
+ * reached at different moments. Stacked together they made a panel taller than a landscape phone
+ * — and, the thing Baba actually hit, they put two rows of identical-looking cells next to each
+ * other with nothing on screen to say which was which.
+ */
+enum class SettingsTab { LOOK, VOICE, TIMER, LAP }
+
+/**
+ * The caption above a row of cells.
+ *
+ * Small, dim, and set in the same face as everything else. It is not a heading competing for
+ * attention — it is the one word that turns four identical boxes into two questions.
+ */
+@Composable
+private fun RowLabel(text: String, colour: Long) {
+    Text(
+        text = text,
+        style = TextStyle(
+            fontFamily = FontFamily.Monospace,
+            color = Color(colour).copy(alpha = 0.55f),
+            fontSize = 9.sp,
+        ),
+        maxLines = 1,
+        modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 2.dp),
+    )
+}
+
+/**
+ * A sentence explaining what a setting does.
+ *
+ * This app has resisted prose for thirty versions and it was right to. But a lap counter is not
+ * self-evident from a row of four boxes, and a control nobody understands is a control nobody
+ * uses — which is a worse outcome than a line of small grey text in a panel you opened on
+ * purpose. Two lines at most, and only where the cells cannot speak for themselves.
+ */
+@Composable
+private fun Help(text: String, colour: Long) {
+    Text(
+        text = text,
+        style = TextStyle(
+            fontFamily = FontFamily.Monospace,
+            color = Color(colour).copy(alpha = 0.38f),
+            fontSize = 9.sp,
+            lineHeight = 12.sp,
+        ),
+        maxLines = 3,
+        modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+    )
+}
+
+/** The minus and the plus. Big enough to hit without looking, which is the whole job. */
+@Composable
+private fun Nudge(mark: String, colour: Long, onPress: () -> Unit) {
+    Box(
+        Modifier
+            .size(52.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(PANEL_IDLE)
+            .clickable { onPress() },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = mark,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                color = Color(colour),
+                fontSize = 24.sp,
+            ),
+            maxLines = 1,
+        )
+    }
+}
 
 @Composable
 private fun Tab(label: String, selected: Boolean, colour: Long, onPress: () -> Unit) {
