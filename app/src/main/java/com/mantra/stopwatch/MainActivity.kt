@@ -170,6 +170,13 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var weight by remember { mutableStateOf(store.weight) }
     var display by remember { mutableStateOf(store.display) }
     var lapMode by remember { mutableStateOf(store.lapMode) }
+    var preroll by remember { mutableStateOf(store.preroll) }
+
+    // THE COUNTDOWN. Zero means no countdown is running; otherwise it is the instant it ends,
+    // on the same monotonic clock as everything else in this app, because a countdown that used
+    // the wall clock would jump when a time server corrected it.
+    var prerollEndsAt by remember { mutableLongStateOf(0L) }
+    var prerollNow by remember { mutableLongStateOf(0L) }
 
     // THE LAP COUNT LIVES HERE, NOT IN THE STOPWATCH. It counts lengths of a pool; the stopwatch
     // measures time, and the one thing that model has never done in twenty versions is let
@@ -206,6 +213,22 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         flashing = false
     }
 
+    // Starting a measurement from zero with the countdown on does not start the clock: it starts
+    // the countdown, and the clock starts when that ends. Everything else — resuming a pause,
+    // pausing, stopping — is immediate, because a start ceremony in front of those would be a
+    // delay with no purpose.
+    fun beginPreroll(): Boolean {
+        if (preroll == PrerollMode.OFF) return false
+        if (state.phase != Phase.STOPPED) return false
+        prerollEndsAt = SystemClock.elapsedRealtime() + preroll.seconds * 1000L
+        prerollNow = SystemClock.elapsedRealtime()
+        return true
+    }
+
+    fun cancelPreroll() {
+        prerollEndsAt = 0L
+    }
+
     fun commit(next: Stopwatch) {
         // Stop clears the laps with everything else. A lap count left over from the last swim,
         // sitting above a stopwatch reading zero, is a number that will be believed.
@@ -217,6 +240,26 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     }
 
     val elapsed = state.elapsed(now)
+
+    // THE COUNTDOWN'S OWN CLOCK. It ticks at 100ms rather than the stopwatch's one second,
+    // because a number counting down needs to change on the second it names rather than up to a
+    // second late. It runs only while a countdown is open, so it costs nothing the rest of the
+    // time.
+    LaunchedEffect(prerollEndsAt) {
+        if (prerollEndsAt == 0L) return@LaunchedEffect
+        while (isActive) {
+            prerollNow = SystemClock.elapsedRealtime()
+            if (prerollNow >= prerollEndsAt) {
+                prerollEndsAt = 0L
+                // The word plays as the clock starts, not before it: the sound marks the start
+                // rather than announcing that one is coming.
+                commit(state.play(SystemClock.elapsedRealtime()))
+                GoSound.play(context)
+                return@LaunchedEffect
+            }
+            delay(100L)
+        }
+    }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // THE MICROPHONE.
@@ -280,11 +323,23 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 if (control == Control.LAP) {
                     laps++
                     flashes++
+                } else if (control == Control.PLAY && prerollEndsAt == 0L &&
+                    state.phase != Phase.RUNNING && !settingsOpen && beginPreroll()
+                ) {
+                    // Spoken "start" gets the countdown too. It is the case that needs it most:
+                    // the phone is already on the bench and the whole point of saying it rather
+                    // than pressing it is that you are not standing over it.
+                    flashes++
+                } else if (!settingsOpen) {
+                    // DETECTION ONLY WHILE THE PANEL IS OPEN. The word lights, the clock does not
+                    // move. It is the only way to tell "it did not hear me" from "it heard me and
+                    // did the wrong thing".
+                    //
+                    // A spoken command also cancels a countdown, for the same reason a pressed
+                    // one does: it is no longer wanted.
+                    cancelPreroll()
+                    commit(state.press(control, SystemClock.elapsedRealtime()))
                 }
-                // DETECTION ONLY WHILE THE PANEL IS OPEN. The word lights, the clock does not
-                // move. It is the only way to tell "it did not hear me" from "it heard me and
-                // did the wrong thing", and Baba asked for exactly this test.
-                if (!settingsOpen) commit(state.press(control, SystemClock.elapsedRealtime()))
             },
             onState = { voiceState = it },
         )
@@ -404,6 +459,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         val screenH = maxHeight
         val landscape = screenW > screenH
         val text = Face.format(elapsed, display)
+        val countdown = prerollLabel(prerollEndsAt - prerollNow).takeIf { prerollEndsAt > 0L }
 
         val button = if (landscape) 56.dp else 72.dp
         val strip = if (landscape) 72.dp else 108.dp
@@ -433,7 +489,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             }
 
             Digits(
-                text = text,
+                text = countdown ?: text,
                 colour = Color(if (flashing) Palette.flashOf(colour) else colour),
                 weight = weight,
                 width = screenW - EDGE * 2,
@@ -451,9 +507,19 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 // The spoken word comes from Control.spoken and is not written here. It is what
                 // Voice Access listens for, it is what the tip in the settings panel prints, and
                 // there is one copy of it so the two can never disagree.
-                Transport(Icons.Default.PlayArrow, Control.PLAY, state, button, ::commit)
-                Transport(Icons.Default.Pause, Control.PAUSE, state, button, ::commit)
-                Transport(Icons.Default.Stop, Control.STOP, state, button, ::commit)
+                // PLAY goes through the countdown; the other two cancel it. A countdown running
+                // while somebody presses stop is a countdown that is no longer wanted, and
+                // leaving it to finish would start a measurement nobody asked for.
+                Transport(Icons.Default.PlayArrow, Control.PLAY, state, button) { next ->
+                    if (prerollEndsAt > 0L) cancelPreroll()
+                    else if (!(next.phase == Phase.RUNNING && beginPreroll())) commit(next)
+                }
+                Transport(Icons.Default.Pause, Control.PAUSE, state, button) { next ->
+                    cancelPreroll(); commit(next)
+                }
+                Transport(Icons.Default.Stop, Control.STOP, state, button) { next ->
+                    cancelPreroll(); commit(next)
+                }
             }
         }
 
@@ -540,6 +606,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 onDisplay = { display = it; store.display = it },
                 lapMode = lapMode,
                 onLapMode = { lapMode = it; store.lapMode = it },
+                preroll = preroll,
+                onPreroll = { preroll = it; store.preroll = it },
+                context = context,
                 listening = listening,
                 level = level,
                 scores = scores,
@@ -659,6 +728,9 @@ private fun SettingsGrid(
     onDisplay: (Display) -> Unit,
     lapMode: LapMode,
     onLapMode: (LapMode) -> Unit,
+    preroll: PrerollMode,
+    onPreroll: (PrerollMode) -> Unit,
+    context: android.content.Context,
     listening: Boolean,
     level: Float,
     scores: List<Pair<Control, Double>>,
@@ -688,6 +760,7 @@ private fun SettingsGrid(
 
     // THE RECORDING STATE, and it belongs to the panel rather than to the screen: nothing
     // outside settings can start a recording, so nothing outside settings needs to know.
+    var goRecorded by remember { mutableIntStateOf(0) }
     var recordingFor by remember { mutableStateOf<Pair<Control, Int>?>(null) }
     var note by remember { mutableStateOf("") }
     val recording = recordingFor != null
@@ -856,6 +929,24 @@ private fun SettingsGrid(
             LapCell("3", LapMode.COUNT, lapMode, colour, quarter, onLapMode)
             LapCell("3 (75 m)", LapMode.M25, lapMode, colour, quarter, onLapMode)
             LapCell("3 (150 m)", LapMode.M50, lapMode, colour, quarter, onLapMode)
+        }
+
+        // THE COUNTDOWN, and beside it the word that plays when it ends.
+        //
+        // The GO cell is a recorder, not a setting: press it and say whatever you want to hear.
+        // It sits here rather than in the VOICE tab because it is not a command — nothing ever
+        // matches against it, it is only played — and putting it among the templates would
+        // invite it to be treated as one.
+        Row(
+            modifier = Modifier.padding(top = gap),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            val third = (gridWidth - gap * 2) / 3
+            LapCell("no count-in", LapMode.OFF, if (preroll == PrerollMode.OFF) LapMode.OFF else LapMode.COUNT,
+                colour, third) { onPreroll(PrerollMode.OFF) }
+            LapCell("10", LapMode.OFF, if (preroll == PrerollMode.TEN) LapMode.OFF else LapMode.COUNT,
+                colour, third) { onPreroll(PrerollMode.TEN) }
+            GoCell(third, colour, context, goRecorded) { goRecorded++ }
         }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
@@ -1126,6 +1217,63 @@ private fun Pad(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * The GO recorder. Press it, say the word, it stops when you stop — the same rule as every other
+ * capture in this app, so "press and say it" means one thing everywhere.
+ *
+ * Hollow when there is nothing recorded, solid when there is, red while recording. Same language
+ * as the microphone and the sample lines.
+ */
+@Composable
+private fun GoCell(
+    width: Dp,
+    colour: Long,
+    context: android.content.Context,
+    recordedTick: Int,
+    onRecorded: () -> Unit,
+) {
+    var busy by remember { mutableStateOf(false) }
+    val exists = remember(recordedTick, busy) { GoSound.exists(context) }
+    Box(
+        Modifier
+            .size(width = width, height = 44.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (busy) RECORD_RED.copy(alpha = 0.15f) else PANEL_IDLE),
+        contentAlignment = Alignment.Center,
+    ) {
+        IconButton(
+            onClick = {
+                if (busy) return@IconButton
+                busy = true
+                GoSound.record(context) { ok ->
+                    busy = false
+                    if (ok) onRecorded()
+                }
+            },
+            modifier = Modifier.size(width = width, height = 44.dp),
+        ) {
+            Text(
+                text = when {
+                    busy -> "say it"
+                    exists -> "GO \u25CF"
+                    else -> "GO \u25CB"
+                },
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = when {
+                        busy -> RECORD_RED
+                        exists -> Color(colour)
+                        else -> GLYPH
+                    },
+                    fontSize = 11.sp,
+                ),
+                maxLines = 1,
+                softWrap = false,
+            )
         }
     }
 }

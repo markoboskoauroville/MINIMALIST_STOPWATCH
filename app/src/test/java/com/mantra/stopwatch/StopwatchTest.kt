@@ -932,6 +932,53 @@ class StopwatchTest {
     }
 
     /**
+     * The lap label is the one piece of arithmetic in that feature, and arithmetic that is wrong
+     * at length forty is worse than nothing, because it will be believed.
+     *
+     * THIS TEST WAS WRITTEN AT v21 AND NEVER REACHED THE FILE. The script that inserted it hit an
+     * assertion on an earlier anchor and aborted before writing, and the suite stayed green
+     * because the test was not there to fail. The lap label shipped untested for a version.
+     */
+    @Test
+    fun theLapLabelCountsLengthsAndDistance() {
+        assertNull("off means nothing above the digits", lapLabel(3, LapMode.OFF))
+        assertEquals("0", lapLabel(0, LapMode.COUNT))
+        assertEquals("7", lapLabel(7, LapMode.COUNT))
+
+        assertEquals("0  (0 m)", lapLabel(0, LapMode.M25))
+        assertEquals("1  (25 m)", lapLabel(1, LapMode.M25))
+        assertEquals("3  (75 m)", lapLabel(3, LapMode.M25))
+        assertEquals("40  (1000 m)", lapLabel(40, LapMode.M25))
+        assertEquals("3  (150 m)", lapLabel(3, LapMode.M50))
+
+        // Cannot arise from the interface, and if it ever did it must read as zero rather than
+        // as a negative distance.
+        assertEquals("0  (0 m)", lapLabel(-2, LapMode.M25))
+    }
+
+    /**
+     * The countdown shows the second you are IN, not the number of whole seconds left. Every
+     * countdown a person has watched behaves that way, and truncating instead would show the
+     * first number for a fraction of a second and the last one for a whole one.
+     */
+    @Test
+    fun theCountdownShowsTheSecondBeingLivedThrough() {
+        assertEquals("10", prerollLabel(10_000))
+        assertEquals("10", prerollLabel(9_400))
+        assertEquals("10", prerollLabel(9_001))
+        assertEquals("9", prerollLabel(9_000))
+        assertEquals("1", prerollLabel(1))
+        assertNull("at zero the countdown is over", prerollLabel(0))
+        assertNull("and it never goes negative", prerollLabel(-500))
+    }
+
+    @Test
+    fun theCountdownLengthsAreWhatTheyClaim() {
+        assertEquals(0, PrerollMode.OFF.seconds)
+        assertEquals(10, PrerollMode.TEN.seconds)
+    }
+
+    /**
      * No word may belong to two controls. If one ever did, [Heard.match] would refuse it and the
      * command would silently stop working with nothing to show why.
      */

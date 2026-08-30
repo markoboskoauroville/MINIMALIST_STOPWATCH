@@ -418,7 +418,8 @@ check("the meter runs on a clock, not on the audio buffer",
 # The tester must be able to hear a command without the stopwatch moving, or there is no way to
 # tell 'it did not hear me' from 'it heard me and did the wrong thing'.
 check("the tester detects without acting",
-      "if (!settingsOpen) commit(state.press(control" in ui,
+      "} else if (!settingsOpen) {" in code_only(ui)
+      and "commit(state.press(control, SystemClock.elapsedRealtime()))" in code_only(ui),
       "with the panel open the word lights and the press is suppressed")
 
 # The recogniser is gone entirely. If any part of it comes back, the tone comes back with it.
@@ -550,6 +551,28 @@ check("the lap counter never touches the clock",
 check("stop clears the lap count with everything else",
       "if (next.phase == Phase.STOPPED && state.phase != Phase.STOPPED) laps = 0" in code_only(ui),
       "the reset that clears the digits clears the lengths too")
+
+go = (MAIN / "GoSound.kt").read_text()
+
+# The Go word is the only sound this app makes and the only recording it plays back. It is kept
+# at the best rate the phone will open, and the rate is stored WITH the audio — a sample recorded
+# at 48000 and played at 44100 is a word said too slowly by somebody too deep, and nothing in the
+# file would say why.
+check("the Go word keeps its own sample rate",
+      "buf.putInt(rate)" in code_only(go) and "val rate = buf.getInt()" in code_only(go)
+      and "fun bestRate()" in code_only(go),
+      "the rate is discovered by opening the device, and written into the first four bytes")
+
+# A countdown that survived a stop would start a measurement nobody asked for.
+check("every command cancels a running countdown",
+      code_only(ui).count("cancelPreroll()") >= 4,
+      "pause, stop and any spoken command cancel it; play toggles it")
+
+# The countdown must only ever delay a start from zero. Putting a ceremony in front of resuming a
+# pause would be a delay with no purpose.
+check("the countdown only ever delays a start from zero",
+      "if (state.phase != Phase.STOPPED) return false" in code_only(ui),
+      "resuming a pause, pausing and stopping are all immediate")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

@@ -65,6 +65,10 @@ class Store(private val context: Context) {
         get() = p.getBoolean(Keys.K_LISTENING, false)
         set(v) = p.edit().putBoolean(Keys.K_LISTENING, v).apply()
 
+    var preroll: PrerollMode
+        get() = if (p.getBoolean(Keys.K_PREROLL, false)) PrerollMode.TEN else PrerollMode.OFF
+        set(v) = p.edit().putBoolean(Keys.K_PREROLL, v == PrerollMode.TEN).apply()
+
     var lapMode: LapMode
         get() = try {
             LapMode.valueOf(p.getString(Keys.K_LAP, LapMode.OFF.name) ?: LapMode.OFF.name)
@@ -191,6 +195,7 @@ class Store(private val context: Context) {
         const val K_BOLD = "bold"
         const val K_SINGLE = "single"
         const val K_LAP = "lapMode"
+        const val K_PREROLL = "preroll"
         const val K_LISTENING = "listening"
     }
 }

@@ -112,6 +112,35 @@ enum class Display { MULTI, SINGLE }
  * keyboard on a screen whose whole design is that it has no keyboard, for a number that changes
  * about once a year.
  */
+/**
+ * The countdown before a measurement starts, so you can put the phone down and get to the wall.
+ *
+ * OFF is the default and always was. TEN is ten seconds, which is what was asked for and is about
+ * the time it takes to set a phone on a bench and reach the end of a lane.
+ *
+ * IT APPLIES ONLY FROM ZERO. Resuming a paused measurement must not sit there counting to itself
+ * — you already started, you are standing in the water, and a second start ceremony would be a
+ * delay with no purpose.
+ */
+enum class PrerollMode(val seconds: Int) {
+    OFF(0),
+    TEN(10),
+}
+
+/**
+ * What the digits show while the countdown runs, or null when it is over.
+ *
+ * COUNTS DOWN IN WHOLE SECONDS AND SHOWS THE ONE YOU ARE IN. At 9.4 seconds remaining this reads
+ * 10, not 9: the number on the screen is the second currently being lived through, which is how
+ * every countdown a person has ever watched behaves. Truncating instead would show 10 for a
+ * fraction of a second and 0 for a whole one, and the last second would be the wrong length.
+ */
+fun prerollLabel(remainingMs: Long): String? {
+    if (remainingMs <= 0L) return null
+    val seconds = (remainingMs + 999L) / 1000L
+    return seconds.toString()
+}
+
 enum class LapMode(val metres: Int?) {
     OFF(null),
     COUNT(null),
