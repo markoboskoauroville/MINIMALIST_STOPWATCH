@@ -25,6 +25,9 @@ STORE = MAIN / "Store.kt"
 failures = []
 checks_run = []
 
+# The number of tests that existed when this line was last updated. See the ratchet at the end.
+TEST_FLOOR = 92
+
 
 def code_only(text):
     """
@@ -573,6 +576,22 @@ check("every command cancels a running countdown",
 check("the countdown only ever delays a start from zero",
       "if (state.phase != Phase.STOPPED) return false" in code_only(ui),
       "resuming a pause, pausing and stopping are all immediate")
+
+# ── THE RATCHET ──────────────────────────────────────────────────────────────────────────────
+#
+# FOUR EDITS ON THIS PROJECT HAVE SILENTLY MATCHED NOTHING AND REPORTED SUCCESS, and twice that
+# hid missing tests behind a green suite. The lap arithmetic shipped untested for a whole version
+# because the script meant to add its test aborted before writing, and the suite stayed green
+# precisely BECAUSE the test was not there to fail. Green looked like proof and was absence.
+#
+# So the count is written down and may only go up. Deleting a test is a deliberate act and needs
+# this line changed in the same commit; an edit that quietly fails to add one now goes red.
+TESTS = (ROOT / "app/src/test/java/com/mantra/stopwatch/StopwatchTest.kt").read_text()
+test_count = TESTS.count("@Test")
+check("the test count has not gone backwards",
+      test_count >= TEST_FLOOR,
+      f"{test_count} cases, floor is {TEST_FLOOR}. Raise the floor when you add tests; "
+      f"lowering it is a deliberate act and should be argued for in the commit")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
