@@ -1051,10 +1051,8 @@ private fun SettingsGrid(
                 horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
                 val half = (gridWidth - gap) / 2
-                LapCell("off", LapMode.OFF, if (lapOn) LapMode.COUNT else LapMode.OFF,
-                    colour, half) { onLapOn(false) }
-                LapCell("on", LapMode.OFF, if (lapOn) LapMode.OFF else LapMode.COUNT,
-                    colour, half) { onLapOn(true) }
+                LapCell("off", chosen = !lapOn, colour = colour, width = half) { onLapOn(false) }
+                LapCell("on", chosen = lapOn, colour = colour, width = half) { onLapOn(true) }
             }
 
             // THE POOL LENGTH, SET RATHER THAN CHOSEN. No presets: pools are 25 and 50 in most of
@@ -1101,8 +1099,7 @@ private fun SettingsGrid(
                         // Shown as the clock will read it. "05:00" is what you will be looking
                         // at; "five minutes" is a description of it.
                         sample = Face.format(length.seconds * 1000L, Display.SINGLE),
-                        represents = LapMode.OFF,
-                        current = if (length.seconds == timerSeconds) LapMode.OFF else LapMode.COUNT,
+                        chosen = length.seconds == timerSeconds,
                         colour = colour,
                         width = fifth,
                     ) { onTimerSeconds(length.seconds) }
@@ -1141,13 +1138,11 @@ private fun SettingsGrid(
 
             Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
                 val half = (gridWidth - gap) / 2
-                LapCell("save as preset", LapMode.OFF, LapMode.COUNT, colour, half) { onSavePreset() }
+                LapCell("save as preset", chosen = false, colour = colour, width = half) { onSavePreset() }
                 LapCell(
                     sample = if (savedPreset > 0)
                         Face.format(savedPreset * 1000L, Display.SINGLE) else "\u2014",
-                    represents = LapMode.OFF,
-                    current = if (savedPreset > 0 && savedPreset == timerSeconds) LapMode.OFF
-                    else LapMode.COUNT,
+                    chosen = savedPreset > 0 && savedPreset == timerSeconds,
                     colour = colour,
                     width = half,
                 ) { if (savedPreset > 0) onTimerSeconds(savedPreset) }
@@ -1169,10 +1164,8 @@ private fun SettingsGrid(
             horizontalArrangement = Arrangement.spacedBy(gap),
         ) {
             val third = (gridWidth - gap * 2) / 3
-            LapCell("no count-in", LapMode.OFF, if (preroll == PrerollMode.OFF) LapMode.OFF else LapMode.COUNT,
-                colour, third) { onPreroll(PrerollMode.OFF) }
-            LapCell("10", LapMode.OFF, if (preroll == PrerollMode.TEN) LapMode.OFF else LapMode.COUNT,
-                colour, third) { onPreroll(PrerollMode.TEN) }
+            LapCell("no count-in", chosen = preroll == PrerollMode.OFF, colour = colour, width = third) { onPreroll(PrerollMode.OFF) }
+            LapCell("10", chosen = preroll == PrerollMode.TEN, colour = colour, width = third) { onPreroll(PrerollMode.TEN) }
             GoCell(third, colour, context, goRecorded) { goRecorded++ }
         }
             return@Column
@@ -1761,13 +1754,11 @@ private fun GoCell(
 @Composable
 private fun LapCell(
     sample: String,
-    represents: LapMode,
-    current: LapMode,
+    chosen: Boolean,
     colour: Long,
     width: Dp,
-    onLapMode: (LapMode) -> Unit,
+    onPress: () -> Unit,
 ) {
-    val chosen = represents == current
     Box(
         Modifier
             .size(width = width, height = 44.dp)
@@ -1776,7 +1767,7 @@ private fun LapCell(
         contentAlignment = Alignment.Center,
     ) {
         IconButton(
-            onClick = { onLapMode(represents) },
+            onClick = onPress,
             modifier = Modifier.size(width = width, height = 44.dp),
         ) {
             Text(
