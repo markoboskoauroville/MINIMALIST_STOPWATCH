@@ -7,6 +7,17 @@
       earned it. It is held only while the app is on screen AND the switch is on: there is no
       service, no foreground notification, and nothing listens when the stopwatch is not visible.
     -->
+    <!--
+      The only reason this app reaches the network: asking GitHub whether there is a newer
+      release. The repository is public, so the request carries no token and nothing that could
+      not be read over somebody's shoulder.
+
+      Note what is NOT here: REQUEST_INSTALL_PACKAGES. An app that can install software without
+      being asked again is a serious thing for a stopwatch to be, so the download URL is handed
+      to Android and its own installer takes over, with its own dialogue and its own warnings.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <!--

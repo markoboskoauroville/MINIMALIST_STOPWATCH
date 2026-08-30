@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 111
+TEST_FLOOR = 116
 
 
 def code_only(text):
@@ -798,6 +798,28 @@ check("the timer ending sounds different from a measurement starting",
 check("the preset row is laid out from the list, not from a count",
       "TimerLength.entries.size" in code_only(ui) and "gap * (n - 1)) / n" in code_only(ui),
       "one cell per preset, whatever the list holds")
+
+# AN APP THAT CAN INSTALL SOFTWARE WITHOUT BEING ASKED AGAIN is a serious thing for a stopwatch
+# to be. The download URL goes to Android, whose own installer takes over with its own dialogue.
+manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text()
+check("the updater cannot install anything by itself",
+      "REQUEST_INSTALL_PACKAGES" not in manifest
+      and "android.permission.INTERNET" in manifest
+      and "Intent.ACTION_VIEW" in (MAIN / "UpdateCheck.kt").read_text(),
+      "it asks, it reports, and it hands the URL to the phone")
+
+# Compared as NUMBERS. As text, "9" sorts after "35", so a string comparison would tell everybody
+# they were up to date from version ten onwards and never mention it again.
+check("versions are compared as numbers",
+      "fun compare(current: Int" in (MAIN / "Updates.kt").read_text()
+      and "latest > current" in (MAIN / "Updates.kt").read_text(),
+      "the tag is parsed to an integer, and a tag that is not one is refused rather than guessed")
+
+# A check that hangs is a control that never answers and a person who presses it again.
+check("the update check cannot hang",
+      "connectTimeout = 8_000" in (MAIN / "UpdateCheck.kt").read_text()
+      and "readTimeout = 8_000" in (MAIN / "UpdateCheck.kt").read_text(),
+      "both timeouts bounded, and every failure reports a reason rather than a shrug")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

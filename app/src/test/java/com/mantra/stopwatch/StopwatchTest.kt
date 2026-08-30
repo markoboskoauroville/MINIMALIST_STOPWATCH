@@ -1313,6 +1313,69 @@ class StopwatchTest {
     }
 
     /**
+     * THE FAULT THIS TEST EXISTS FOR APPEARS EXACTLY ONCE, AT VERSION TEN, and then never
+     * announces itself again: compared as text, "9" sorts after "35", so a string comparison
+     * tells everybody they are up to date for ever.
+     */
+    @Test
+    fun versionsAreComparedAsNumbersNotAsText() {
+        assertTrue(Updates.compare(9, "v35", "u") is UpdateState.Available)
+        assertTrue(Updates.compare(35, "v9", "u") is UpdateState.UpToDate)
+        assertTrue(Updates.compare(35, "v36", "u") is UpdateState.Available)
+        assertTrue(Updates.compare(35, "v35", "u") is UpdateState.UpToDate)
+
+        assertEquals(36, (Updates.compare(35, "v36", "u") as UpdateState.Available).version)
+    }
+
+    @Test
+    fun aTagThatIsNotAVersionIsRefusedRatherThanGuessedAt() {
+        assertNull(Updates.versionOf(null))
+        assertNull(Updates.versionOf(""))
+        assertNull(Updates.versionOf("latest"))
+        assertNull(Updates.versionOf("v1.2.3"))
+        assertEquals(35, Updates.versionOf("v35"))
+        assertEquals(35, Updates.versionOf("35"))
+
+        // A confident wrong answer about whether somebody is out of date is worse than saying so.
+        assertTrue(Updates.compare(35, "latest", "u") is UpdateState.Failed)
+    }
+
+    /**
+     * A build made from an unreleased commit is NEWER than the newest release. Offering it a
+     * downgrade would be offering to undo work that has not shipped yet.
+     */
+    @Test
+    fun aBuildAheadOfTheReleasesIsNotOfferedADowngrade() {
+        val state = Updates.compare(40, "v35", "u")
+        assertTrue(state is UpdateState.UpToDate)
+        assertEquals(40, (state as UpdateState.UpToDate).version)
+    }
+
+    /** A release with no artefact cannot be offered, however new its tag is. */
+    @Test
+    fun aReleaseWithNothingToDownloadIsNotOffered() {
+        assertTrue(Updates.compare(35, "v36", null) is UpdateState.UpToDate)
+    }
+
+    /** Every state has to say something, or the control reports by going blank. */
+    @Test
+    fun everyUpdateStateSaysSomething() {
+        val states = listOf(
+            UpdateState.Idle,
+            UpdateState.Checking,
+            UpdateState.UpToDate(35),
+            UpdateState.Available(36, "u"),
+            UpdateState.Failed("no network"),
+        )
+        for (s in states) {
+            val text = Updates.describe(s, 35)
+            assertTrue("$s says nothing", text.isNotBlank())
+            assertTrue("$s is too long for the header: $text", text.length <= 24)
+        }
+        assertEquals("v35", Updates.describe(UpdateState.Idle, 35))
+    }
+
+    /**
      * No word may belong to two controls. If one ever did, [Heard.match] would refuse it and the
      * command would silently stop working with nothing to show why.
      */

@@ -934,6 +934,7 @@ private fun SettingsGrid(
     // THE RECORDING STATE, and it belongs to the panel rather than to the screen: nothing
     // outside settings can start a recording, so nothing outside settings needs to know.
     var goRecorded by remember { mutableIntStateOf(0) }
+    var update by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
     var recordingFor by remember { mutableStateOf<Pair<Control, Int>?>(null) }
     var note by remember { mutableStateOf("") }
     val recording = recordingFor != null
@@ -1027,14 +1028,36 @@ private fun SettingsGrid(
             // than decided again per screen: a way out that moves between screens is a way out
             // that has to be looked for, and looking for the exit is the moment an interface
             // stops being trusted.
+            // THE VERSION IS THE UPDATE CONTROL. It is already the one place in the app that
+            // says which build this is, and "is there a newer one" is the only other question
+            // anybody asks about a version number. A separate button would be a second control
+            // for one idea.
+            //
+            // Press once to ask. Press again, when it says one is ready, to fetch it.
+            val current = BuildConfig.VERSION_NAME.toIntOrNull() ?: 0
             Text(
-                text = "v" + BuildConfig.VERSION_NAME,
+                text = Updates.describe(update, current),
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
-                    color = GLYPH_SECOND,
+                    color = when (update) {
+                        is UpdateState.Available -> Color(colour)
+                        is UpdateState.Failed -> RECORD_RED
+                        else -> GLYPH_SECOND
+                    },
                     fontSize = 12.sp,
                 ),
                 maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .clickable {
+                        val state = update
+                        if (state is UpdateState.Available) {
+                            UpdateCheck.download(context, state.url)
+                        } else if (state !is UpdateState.Checking) {
+                            UpdateCheck.check(current) { update = it }
+                        }
+                    }
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
             )
             Box(Modifier.weight(1f))
             Glyph(Icons.Default.Close, "Close settings", Tone.HIGHLIGHT, 32.dp, onPress = onClose)
