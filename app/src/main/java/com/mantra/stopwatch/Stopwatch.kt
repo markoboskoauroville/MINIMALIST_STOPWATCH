@@ -153,6 +153,31 @@ enum class TimerLength(val seconds: Int) {
  * sign has stopped being a timer and become a stopwatch nobody asked for, and the figure it shows
  * is one somebody could read as time remaining.
  */
+/**
+ * Nudging a custom duration up or down.
+ *
+ * THE STEP IS NOT CONSTANT, and that is the point of writing it down rather than leaving it to
+ * the interface. Below two minutes it moves in fifteens, because the difference between forty-five
+ * seconds and a minute matters when you are holding a plank. Above ten minutes it moves in
+ * minutes, because nobody sets a twenty-two minute rest in fifteen-second increments and making
+ * them press eighty-eight times to find out is contempt disguised as precision.
+ */
+fun timerStep(seconds: Int): Int = when {
+    seconds < 120 -> 15
+    seconds < 600 -> 30
+    else -> 60
+}
+
+/** Bounded at both ends: a timer of zero is not a timer, and one of six hours is a calendar. */
+fun timerNudge(seconds: Int, up: Boolean): Int {
+    val step = timerStep(if (up) seconds else seconds - 1)
+    val next = if (up) seconds + step else seconds - step
+    return next.coerceIn(TIMER_MIN, TIMER_MAX)
+}
+
+const val TIMER_MIN = 15
+const val TIMER_MAX = 6 * 60 * 60
+
 fun timerRemaining(lengthMs: Long, elapsedMs: Long): Long {
     val left = lengthMs - elapsedMs
     return if (left < 0L) 0L else left

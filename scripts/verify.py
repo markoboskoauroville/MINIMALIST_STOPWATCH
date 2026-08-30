@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 103
+TEST_FLOOR = 106
 
 
 def code_only(text):

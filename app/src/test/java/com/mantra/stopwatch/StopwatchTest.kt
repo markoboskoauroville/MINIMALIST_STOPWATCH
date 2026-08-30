@@ -1166,6 +1166,45 @@ class StopwatchTest {
     }
 
     /**
+     * The step is not constant, and that is why it is here rather than in the interface. Making
+     * somebody press eighty-eight times to reach twenty-two minutes is contempt disguised as
+     * precision; making them jump a minute at a time near forty-five seconds is uselessly coarse.
+     */
+    @Test
+    fun theCustomTimerStepsByAnAmountThatSuitsTheDuration() {
+        assertEquals(15, timerStep(30))
+        assertEquals(15, timerStep(119))
+        assertEquals(30, timerStep(120))
+        assertEquals(30, timerStep(599))
+        assertEquals(60, timerStep(600))
+
+        assertEquals(60, timerNudge(45, up = true))
+        assertEquals(30, timerNudge(45, up = false))
+        assertEquals(150, timerNudge(120, up = true))
+        assertEquals(660, timerNudge(600, up = true))
+    }
+
+    /** Bounded at both ends: a timer of zero is not a timer and one of six hours is a calendar. */
+    @Test
+    fun theCustomTimerCannotLeaveItsRange() {
+        assertEquals(TIMER_MIN, timerNudge(TIMER_MIN, up = false))
+        assertEquals(TIMER_MIN, timerNudge(1, up = false))
+        assertEquals(TIMER_MAX, timerNudge(TIMER_MAX, up = true))
+        for (s in listOf(15, 60, 119, 120, 599, 600, 3_600)) {
+            assertTrue(timerNudge(s, up = true) in TIMER_MIN..TIMER_MAX)
+            assertTrue(timerNudge(s, up = false) in TIMER_MIN..TIMER_MAX)
+        }
+    }
+
+    /** Up then down must return where it started, or the control drifts as you hunt for a value. */
+    @Test
+    fun nudgingUpThenDownReturnsToWhereItStarted() {
+        for (s in listOf(30, 45, 105, 120, 300, 570, 600, 1_800)) {
+            assertEquals("from $s", s, timerNudge(timerNudge(s, up = true), up = false))
+        }
+    }
+
+    /**
      * No word may belong to two controls. If one ever did, [Heard.match] would refuse it and the
      * command would silently stop working with nothing to show why.
      */
