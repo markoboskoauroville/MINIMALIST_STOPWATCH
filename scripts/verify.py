@@ -735,7 +735,8 @@ check("the timer has no clock of its own",
 # FOUR TABS, because three unrelated jobs had been sharing one panel — and the specific damage was
 # two rows of near-identical cells with nothing on screen saying which was which.
 check("the settings are separated into their own tabs",
-      code_only(ui).count("SettingsTab.") >= 8 and "enum class SettingsTab { LOOK, VOICE, TIMER, LAP }" in code_only(ui),
+      code_only(ui).count("SettingsTab.") >= 10
+      and "enum class SettingsTab { LOOK, VOICE, WATCH, TIMER, LAP }" in code_only(ui),
       "look, voice, timer and lap; a setting for a mode you are not in is a row to read past")
 
 # A caption is the one word that turns four identical boxes into two questions.
@@ -754,6 +755,28 @@ check("the custom duration is nudged through the tested function",
       "timerNudge(timerSeconds, up = false)" in code_only(ui)
       and "timerNudge(timerSeconds, up = true)" in code_only(ui),
       "the step rule lives in one place and Test 1 walks it")
+
+# CLOSE ON THE RIGHT, ALWAYS. Written into MANTRA_MANIFEST as a standing rule. A way out that
+# moves between screens is a way out that has to be looked for, and looking for the exit is the
+# moment an interface stops being trusted.
+# The header row only, found by the Row that holds the version — searching the whole file finds
+# the corner gear's own "Close settings" label first, which is a different control entirely.
+header = re.search(r"BuildConfig\.VERSION_NAME.*?\n        \}", code_only(ui), re.S)
+header_text = header.group(0) if header else ""
+check("the way out of a panel is on the right",
+      "Close settings" in header_text,
+      "the version sits on the left and the close on the right, per the manifest")
+
+# Each clock keeps its own count-in: ten seconds is right for walking to the end of a lane and
+# wrong for a plank you are already holding.
+check("each clock has its own count-in",
+      "fun preroll(mode: AppMode)" in store and "store.setPreroll(appMode, seconds)" in code_only(ui),
+      "stored per mode, and the screen reads whichever clock is showing")
+
+# The lap count is read across a room like everything else on this screen.
+check("the lap count is sized to fill its band",
+      "Digits(\n                    text = label," in code_only(ui),
+      "the same binary search the clock uses, so it is as large as the space allows")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

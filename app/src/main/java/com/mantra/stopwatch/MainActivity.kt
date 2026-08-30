@@ -188,7 +188,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var timerSeconds by remember { mutableIntStateOf(store.timerSeconds) }
     var savedPreset by remember { mutableIntStateOf(store.savedPreset) }
     var names by remember { mutableStateOf(store.names) }
-    var preroll by remember { mutableStateOf(store.preroll) }
+    var prerollStopwatch by remember { mutableIntStateOf(store.preroll(AppMode.STOPWATCH)) }
+    var prerollTimer by remember { mutableIntStateOf(store.preroll(AppMode.TIMER)) }
+    val preroll = if (appMode == AppMode.TIMER) prerollTimer else prerollStopwatch
 
     // Read once, up here, because the countdown effect below needs it and effects belong
     // beside the state they drive rather than below the values they happen to use.
@@ -240,9 +242,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // pausing, stopping — is immediate, because a start ceremony in front of those would be a
     // delay with no purpose.
     fun beginPreroll(): Boolean {
-        if (preroll == PrerollMode.OFF) return false
+        if (preroll <= 0) return false
         if (state.phase != Phase.STOPPED) return false
-        prerollEndsAt = SystemClock.elapsedRealtime() + preroll.seconds * 1000L
+        prerollEndsAt = SystemClock.elapsedRealtime() + preroll * 1000L
         prerollNow = SystemClock.elapsedRealtime()
         return true
     }
@@ -526,22 +528,28 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             // readout: tapping it is the other way to count a length, and at the end of a length
             // in a pool a thumb finds a wide target above the numbers more easily than a small
             // one anywhere else.
+            // THE LAP COUNT FILLS THE SPACE ABOVE THE DIGITS.
+            //
+            // It was 28sp pinned under the top controls, which put a small number in a large
+            // empty band — and this is a display read across a room, where a small number is a
+            // number nobody reads. It now takes its own share of the height and is sized to fill
+            // it by the same binary search the digits use, so it is as large as the space allows
+            // rather than a figure somebody typed.
+            //
+            // A THIRD OF THE HEIGHT, NOT HALF. The lap count is context; the clock is the
+            // measurement. Giving them equal weight would make you look twice to find out which
+            // number is which, and the one you came for is the one below.
             lapLabel(laps, lapOn, lapMetres)?.let { label ->
-                Text(
+                Digits(
                     text = label,
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = if (weight == Weight.BOLD) FontWeight.Bold else FontWeight.Normal,
-                        color = Color(colour),
-                        fontSize = 28.sp,
-                    ),
-                    maxLines = 1,
-                    softWrap = false,
+                    colour = Color(if (flashing) Palette.flashOf(colour) else colour),
+                    weight = weight,
+                    width = screenW - EDGE * 4,
+                    height = (screenH - strip - LOCK_ZONE) * 0.30f,
                     modifier = Modifier
+                        .weight(0.30f)
                         .fillMaxWidth()
-                        .clickable { laps++; flashes++ }
-                        .padding(top = LOCK_ZONE, bottom = 4.dp),
-                    textAlign = TextAlign.Center,
+                        .clickable { laps++; flashes++ },
                 )
             }
 
@@ -753,7 +761,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 live = live,
                 onLive = { live = it },
                 preroll = preroll,
-                onPreroll = { preroll = it; store.preroll = it },
+                onPreroll = { seconds ->
+                    if (appMode == AppMode.TIMER) prerollTimer = seconds else prerollStopwatch = seconds
+                    store.setPreroll(appMode, seconds)
+                },
                 context = context,
                 listening = listening,
                 level = level,
@@ -884,8 +895,8 @@ private fun SettingsGrid(
     onNames: (Map<Control, String>) -> Unit,
     live: FloatArray,
     onLive: (FloatArray) -> Unit,
-    preroll: PrerollMode,
-    onPreroll: (PrerollMode) -> Unit,
+    preroll: Int,
+    onPreroll: (Int) -> Unit,
     context: android.content.Context,
     listening: Boolean,
     level: Float,
@@ -1005,8 +1016,10 @@ private fun SettingsGrid(
             modifier = Modifier.width(gridWidth).height(header),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Glyph(Icons.Default.Close, "Close settings", Tone.HIGHLIGHT, 32.dp, onPress = onClose)
-            Box(Modifier.weight(1f))
+            // CLOSE ON THE RIGHT, ALWAYS. Written into MANTRA_MANIFEST as a standing rule rather
+            // than decided again per screen: a way out that moves between screens is a way out
+            // that has to be looked for, and looking for the exit is the moment an interface
+            // stops being trusted.
             Text(
                 text = "v" + BuildConfig.VERSION_NAME,
                 style = TextStyle(
@@ -1016,10 +1029,12 @@ private fun SettingsGrid(
                 ),
                 maxLines = 1,
             )
+            Box(Modifier.weight(1f))
+            Glyph(Icons.Default.Close, "Close settings", Tone.HIGHLIGHT, 32.dp, onPress = onClose)
         }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
-        // TWO TABS, because the panel now holds two unrelated jobs.
+        // FIVE TABS, because five unrelated jobs had been sharing one panel.
         //
         // LOOK is adjustment: colour and weight, things you change once and rarely return to.
         // VOICE is machinery: recording the commands and proving they are heard. Mixing them put
@@ -1035,6 +1050,7 @@ private fun SettingsGrid(
         ) {
             Tab("LOOK", tab == SettingsTab.LOOK, colour) { onTab(SettingsTab.LOOK) }
             Tab("VOICE", tab == SettingsTab.VOICE, colour) { onTab(SettingsTab.VOICE) }
+            Tab("WATCH", tab == SettingsTab.WATCH, colour) { onTab(SettingsTab.WATCH) }
             Tab("TIMER", tab == SettingsTab.TIMER, colour) { onTab(SettingsTab.TIMER) }
             Tab("LAP", tab == SettingsTab.LAP, colour) { onTab(SettingsTab.LAP) }
         }
@@ -1085,6 +1101,39 @@ private fun SettingsGrid(
             Help(
                 "A metre at a time, because a pool is whatever length it is. " +
                     "Take it below one and it counts lengths only.",
+                colour,
+            )
+            return@Column
+        }
+
+        // THE STOPWATCH'S OWN COUNT-IN, and it is the only thing a stopwatch has to configure.
+        // That is as it should be: a stopwatch counts up from nothing and there is nothing else
+        // to say about it.
+        if (tab == SettingsTab.WATCH) {
+            RowLabel("COUNT-IN", colour)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = gap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Nudge("\u2212", colour) { onPreroll(prerollNudge(preroll, up = false)) }
+                Text(
+                    text = if (preroll <= 0) "off" else "$preroll s",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(colour),
+                        fontSize = if (preroll <= 0) 20.sp else 34.sp,
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                )
+                Nudge("+", colour) { onPreroll(prerollNudge(preroll, up = true)) }
+            }
+            Help(
+                "This clock only. The stopwatch and the timer keep their own. " +
+                    "It ends with the word recorded under VOICE.",
                 colour,
             )
             return@Column
@@ -1159,15 +1208,31 @@ private fun SettingsGrid(
         // It sits here rather than in the VOICE tab because it is not a command — nothing ever
         // matches against it, it is only played — and putting it among the templates would
         // invite it to be treated as one.
-        Row(
-            modifier = Modifier.padding(top = gap),
-            horizontalArrangement = Arrangement.spacedBy(gap),
-        ) {
-            val third = (gridWidth - gap * 2) / 3
-            LapCell("no count-in", chosen = preroll == PrerollMode.OFF, colour = colour, width = third) { onPreroll(PrerollMode.OFF) }
-            LapCell("10", chosen = preroll == PrerollMode.TEN, colour = colour, width = third) { onPreroll(PrerollMode.TEN) }
-            GoCell(third, colour, context, goRecorded) { goRecorded++ }
-        }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = gap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Nudge("\u2212", colour) { onPreroll(prerollNudge(preroll, up = false)) }
+                Text(
+                    text = if (preroll <= 0) "off" else "$preroll s",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(colour),
+                        fontSize = if (preroll <= 0) 20.sp else 34.sp,
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                )
+                Nudge("+", colour) { onPreroll(prerollNudge(preroll, up = true)) }
+            }
+            Help(
+                "This clock only. The stopwatch and the timer keep their own. " +
+                    "It ends with the word recorded under VOICE.",
+                colour,
+            )
             return@Column
         }
 
@@ -1322,7 +1387,7 @@ private fun SettingsGrid(
  * — and, the thing Baba actually hit, they put two rows of identical-looking cells next to each
  * other with nothing on screen to say which was which.
  */
-enum class SettingsTab { LOOK, VOICE, TIMER, LAP }
+enum class SettingsTab { LOOK, VOICE, WATCH, TIMER, LAP }
 
 /**
  * The caption above a row of cells.

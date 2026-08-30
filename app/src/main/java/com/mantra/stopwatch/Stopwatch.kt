@@ -186,10 +186,20 @@ fun timerRemaining(lengthMs: Long, elapsedMs: Long): Long {
 /** Whether the timer has run out. Separate from the figure, because zero is a state as well. */
 fun timerFinished(lengthMs: Long, elapsedMs: Long): Boolean = elapsedMs >= lengthMs
 
-enum class PrerollMode(val seconds: Int) {
-    OFF(0),
-    TEN(10),
-}
+/**
+ * The count-in, in seconds. Zero is off.
+ *
+ * A NUMBER RATHER THAN OFF-OR-TEN, and one per mode. Ten seconds is right for walking to the end
+ * of a lane and wrong for a plank you are already holding, and the two clocks are used for
+ * different things by the same person on the same day.
+ *
+ * Five at a time: below five there is no time to do anything, and nobody needs a count-in of
+ * thirty-seven.
+ */
+const val PREROLL_MAX = 60
+
+fun prerollNudge(seconds: Int, up: Boolean): Int =
+    (if (up) seconds + 5 else seconds - 5).coerceIn(0, PREROLL_MAX)
 
 /**
  * What the digits show while the countdown runs, or null when it is over.

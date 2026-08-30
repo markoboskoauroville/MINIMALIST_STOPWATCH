@@ -1008,10 +1008,21 @@ class StopwatchTest {
         assertNull("and it never goes negative", prerollLabel(-500))
     }
 
+    /**
+     * The count-in is a number now, and one per clock: ten seconds is right for walking to the
+     * end of a lane and wrong for a plank you are already holding.
+     */
     @Test
-    fun theCountdownLengthsAreWhatTheyClaim() {
-        assertEquals(0, PrerollMode.OFF.seconds)
-        assertEquals(10, PrerollMode.TEN.seconds)
+    fun theCountInIsSetInFivesAndZeroIsOff() {
+        assertEquals(5, prerollNudge(0, up = true))
+        assertEquals(0, prerollNudge(5, up = false))
+        assertEquals("zero is off, and it cannot go below it", 0, prerollNudge(0, up = false))
+        assertEquals(PREROLL_MAX, prerollNudge(PREROLL_MAX, up = true))
+        assertEquals(15, prerollNudge(10, up = true))
+        for (s in 0..PREROLL_MAX step 5) {
+            assertTrue(prerollNudge(s, up = true) in 0..PREROLL_MAX)
+            assertTrue(prerollNudge(s, up = false) in 0..PREROLL_MAX)
+        }
     }
 
     /**

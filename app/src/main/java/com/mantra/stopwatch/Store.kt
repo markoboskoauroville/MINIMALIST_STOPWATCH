@@ -107,9 +107,13 @@ class Store(private val context: Context) {
         }
         set(v) = p.edit().putString(Keys.K_LENGTH, v.name).apply()
 
-    var preroll: PrerollMode
-        get() = if (p.getBoolean(Keys.K_PREROLL, false)) PrerollMode.TEN else PrerollMode.OFF
-        set(v) = p.edit().putBoolean(Keys.K_PREROLL, v == PrerollMode.TEN).apply()
+    /** One count-in per clock, because they are used for different things on the same day. */
+    fun preroll(mode: AppMode): Int =
+        p.getInt(Keys.K_PREROLL + mode.name, 0).coerceIn(0, PREROLL_MAX)
+
+    fun setPreroll(mode: AppMode, seconds: Int) {
+        p.edit().putInt(Keys.K_PREROLL + mode.name, seconds.coerceIn(0, PREROLL_MAX)).apply()
+    }
 
     var lapOn: Boolean
         get() = p.getBoolean(Keys.K_LAP_ON, false)
