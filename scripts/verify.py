@@ -315,16 +315,50 @@ check("the reminder prints one bare word per control, from the matcher's own lis
 # No word may belong to two controls, or match() refuses it and the command silently stops
 # working. Test 1 asserts this on the real map; this counts the words so a shrunken vocabulary
 # cannot pass by being empty.
-vocab = re.findall(r'Control\.(PLAY|PAUSE|STOP) to setOf\((.*?)\),\n', voice, re.S)
+# NAMED THE THREE CONTROLS THAT EXISTED WHEN IT WAS WRITTEN, so when LAP arrived at v21 this
+# check carried on passing while ignoring a quarter of the vocabulary. It now reads the control
+# list from the enum, so a control cannot be added without its words being checked too.
+# From the Control enum's own body, not from every constructor call in the file — PrerollMode and
+# LapMode also have upper-case members with arguments, and matching those made this report four
+# controls with no vocabulary while there were four controls, all of which had one.
+control_body = re.search(r"enum class Control[^{]*\{(.*?)\n\}", src, re.S)
+controls_in_enum = re.findall(
+    r"^    ([A-Z][A-Z_]*)\(", control_body.group(1) if control_body else "", re.M
+)
+vocab = re.findall(r'Control\.([A-Z_]+) to setOf\((.*?)\),\n', voice, re.S)
 words = {c: set(re.findall(r'"([^"]+)"', body)) for c, body in vocab}
 overlap = [w for c in words for d in words if c < d for w in (words[c] & words[d])]
-check("the spoken vocabulary is three disjoint lists",
-      len(words) == 3 and not overlap and all(len(v) >= 5 for v in words.values()),
-      f"{sum(len(v) for v in words.values())} words across 3 controls, {len(overlap)} shared")
+missing = [c for c in controls_in_enum if c not in words]
+check("every control has its own disjoint list of words",
+      not missing and not overlap and all(len(v) >= 4 for v in words.values()),
+      f"{sum(len(v) for v in words.values())} words across {len(words)} controls, "
+      f"{len(overlap)} shared, {len(missing)} controls with no vocabulary")
 
 # ── 8j ───────────────────────────────────────────────────────────────────────────────────────
-# The microphone must be held by the app's own lifecycle and nothing else. If a Service ever
-# appears here, the promise that nothing listens while the stopwatch is off screen is broken and
+# THIS CHECK HAD NO BODY. Its comment survived and its check() call did not, so for several
+# versions the file contained a paragraph explaining a rule that nothing enforced. A comment
+# without a check is worse than neither: it reads as coverage.
+#
+# The rule it described has also been REVERSED, deliberately and at Baba's word. Until v23 the
+# microphone closed with the screen; now it outlives the screen while voice is switched on,
+# because a hands-free control that only works while you are looking at it is not hands-free.
+# What must stay true is that it does not outlive the SWITCH.
+check("the microphone outlives the screen only while voice is on",
+      "if (!listening) ListeningService.stop(context)" in code_only(ui)
+      and "ListeningService.start(context) else ListeningService.stop(context)" in code_only(ui),
+      "the service is the microphone's lifetime, and the switch is the service's")
+
+# Android will not allow a background microphone without announcing it, and that is right: an app
+# that can hear you must say so where it cannot be missed. The notification is the price of the
+# feature, not an obstacle to it, and it must carry its own way out.
+service = (MAIN / "ListeningService.kt").read_text()
+check("the listening notification says what it is and how to stop it",
+      "setOngoing(true)" in code_only(service)
+      and "Stop listening" in code_only(service)
+      and "START_NOT_STICKY" in code_only(service),
+      "ongoing, with a stop action, and it stays dead if Android kills it rather than "
+      "reopening the microphone later unasked")
+
 
 # ── 8l ───────────────────────────────────────────────────────────────────────────────────────
 # The bar is drawn as a fraction of a width. A level above 1 runs it off the panel, and the curve

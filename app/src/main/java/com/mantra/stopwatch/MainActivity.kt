@@ -311,79 +311,76 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var templatesReady by remember { mutableStateOf(0) }
     var tab by remember { mutableStateOf(SettingsTab.LOOK) }
 
-    val engine = remember {
-        VoiceEngine(
-            onLevel = { level = it },
-            onHeard = { hit, s ->
-                scores = s
-                if (hit != null) lit = Lit.of(hit, SystemClock.elapsedRealtime())
-            },
-            onCommand = { control ->
-                // Lap is a command but not a transport control, so it is routed here rather than
-                // pressed into the model. It counts whether or not the panel is open, because
-                // unlike the transport there is nothing destructive about counting one too many
-                // while testing — and a lap you have swum is a lap whatever screen is showing.
-                if (control == Control.LAP) {
-                    laps++
-                    flashes++
-                } else if (control == Control.PLAY && prerollEndsAt == 0L &&
-                    state.phase != Phase.RUNNING && !settingsOpen && beginPreroll()
-                ) {
-                    // Spoken "start" gets the countdown too. It is the case that needs it most:
-                    // the phone is already on the bench and the whole point of saying it rather
-                    // than pressing it is that you are not standing over it.
-                    flashes++
-                } else if (!settingsOpen) {
-                    // DETECTION ONLY WHILE THE PANEL IS OPEN. The word lights, the clock does not
-                    // move. It is the only way to tell "it did not hear me" from "it heard me and
-                    // did the wrong thing".
-                    //
-                    // A spoken command also cancels a countdown, for the same reason a pressed
-                    // one does: it is no longer wanted.
-                    cancelPreroll()
-                    commit(state.press(control, SystemClock.elapsedRealtime()))
-                }
-            },
-            onState = { voiceState = it },
-        )
-    }
-
-    // The recordings, featured once and handed to the engine. Refeaturing on every match would
-    // be doing the same arithmetic several times a second for an answer that cannot change.
-    LaunchedEffect(templatesReady) {
-        engine.setTemplates(
-            Control.entries.flatMap { c ->
-                (0 until Store.SAMPLES).mapNotNull { slot ->
-                    store.loadSample(c, slot)?.let { Template(c, Dsp.features(it)) }
-                }
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE SCREEN SUBSCRIBES; IT DOES NOT OWN.
+    //
+    // The engine used to be created here, which meant it died with the screen — and a hands-free
+    // control that only works while you are looking at it is not hands-free. It now belongs to
+    // the process, held by VoiceHub, and its lifetime is decided by ListeningService.
+    //
+    // These callbacks are set while this screen exists and cleared when it leaves. In between the
+    // engine carries on without it, which is the entire point.
+    DisposableEffect(Unit) {
+        VoiceHub.onCommand = { control ->
+            // Lap is a command but not a transport control, so it is routed here rather than
+            // pressed into the model.
+            if (control == Control.LAP) {
+                laps++
+                flashes++
+            } else if (control == Control.PLAY && prerollEndsAt == 0L &&
+                state.phase != Phase.RUNNING && !settingsOpen && beginPreroll()
+            ) {
+                flashes++
+            } else if (!settingsOpen) {
+                // DETECTION ONLY WHILE THE PANEL IS OPEN: the word lights, the clock does not
+                // move. And a spoken command cancels a countdown for the same reason a pressed
+                // one does — it is no longer wanted.
+                cancelPreroll()
+                commit(state.press(control, SystemClock.elapsedRealtime()))
             }
-        )
-    }
-
-    // The meter is up whenever the microphone is allowed and there is something to look at: the
-    // settings panel open, or voice armed. It does not depend on which of those it is.
-    val meterWanted = granted && (settingsOpen || listening)
-    DisposableEffect(meterWanted) {
-        if (meterWanted) {
-            engine.startMeter()
-            onDispose { engine.stopMeter() }
-        } else {
-            onDispose { }
+        }
+        VoiceHub.onLevel = { level = it }
+        VoiceHub.onHeard = { hit, s ->
+            scores = s
+            if (hit != null) lit = Lit.of(hit, SystemClock.elapsedRealtime())
+        }
+        VoiceHub.onState = { voiceState = it }
+        onDispose {
+            VoiceHub.onCommand = null
+            VoiceHub.onLevel = null
+            VoiceHub.onHeard = null
+            VoiceHub.onState = null
         }
     }
 
-    // ARMED FOR RECORDING MEANS NOT LISTENING FOR COMMANDS, and the two cannot overlap: a slot
-    // being recorded while the matcher is running would light a word from the sample being
-    // recorded, which is a light that means nothing.
+    // Refeatured when a sample changes, in VoiceHub rather than here, so the templates survive
+    // this screen going away. Doing it here would have lost them at exactly the moment they
+    // matter most: when the phone is in a pocket.
+    LaunchedEffect(templatesReady) { VoiceHub.reloadTemplates(context) }
+
+    // THE SERVICE IS THE MICROPHONE'S LIFETIME NOW.
     //
-    // With the panel open and recording disarmed, matching runs whether or not the microphone
-    // switch on the main screen is on. That is the test Baba asked for: disengage recording, say
-    // a command, watch the word light. The press is suppressed elsewhere, so nothing moves.
+    // It runs while voice is switched on, and while the settings panel is open so the meter and
+    // the tester have something to show. Switching voice off stops it, and the notification goes
+    // with it — the price is paid only while the feature is being used.
+    val wantService = granted && (listening || settingsOpen)
+    DisposableEffect(wantService) {
+        if (wantService) ListeningService.start(context) else ListeningService.stop(context)
+        onDispose { }
+    }
+
+    // Leaving the screen with voice OFF must close the microphone. Leaving it with voice ON must
+    // not — that is the feature. So the panel being open is not enough on its own to keep it
+    // alive once this composition is gone.
+    DisposableEffect(listening) {
+        onDispose { if (!listening) ListeningService.stop(context) }
+    }
+
     // NOT CAPTURING MEANS TESTING. There is no third mode and no switch between them: pressing a
     // pad suspends matching for as long as that one capture lasts, and matching resumes the
     // moment it ends. Everything the person has to know is which pad they pressed.
     DisposableEffect(listening, granted, settingsOpen) {
-        engine.setArmed(granted && (listening || settingsOpen))
+        VoiceHub.setArmed(granted && (listening || settingsOpen))
         onDispose { }
     }
 
@@ -778,7 +775,7 @@ private fun SettingsGrid(
         if (recording) return
         recordingFor = control to slot
         note = "speak"
-        engine.startCapture { samples ->
+        VoiceHub.startCapture { samples ->
             if (samples == null) {
                 note = "heard nothing, tap again"
             } else {
