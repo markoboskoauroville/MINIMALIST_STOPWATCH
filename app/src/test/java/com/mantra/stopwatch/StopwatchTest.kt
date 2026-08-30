@@ -287,13 +287,22 @@ class StopwatchTest {
         assertTrue("and nowhere else: peak $peak, next $others", mag[8] > others * 50)
     }
 
+    /**
+     * A HARMONIC STACK, not two partials, because two partials is not speech.
+     *
+     * The earlier version had a fundamental and one overtone, which puts all its energy in two
+     * of the twenty mel bands. Broadband noise fills all twenty, so a noisy frame could total
+     * MORE than a spoken one — and the denoiser correctly refused to treat the loudest thing in
+     * the window as room. The guard was right and the signal was wrong. A voiced vowel is a
+     * fundamental and a long series of harmonics, so that is what this makes.
+     */
     private fun tone(hz: Double, ms: Int, amplitude: Double = 0.3): ShortArray {
         val n = Dsp.SAMPLE_RATE * ms / 1000
         return ShortArray(n) {
             val t = it.toDouble() / Dsp.SAMPLE_RATE
-            // Two partials, so the mel bands have something to tell apart rather than one line.
-            val v = Math.sin(2 * Math.PI * hz * t) * 0.7 + Math.sin(2 * Math.PI * hz * 2.5 * t) * 0.3
-            (v * amplitude * 32767).toInt().toShort()
+            var v = 0.0
+            for (h in 1..10) v += Math.sin(2 * Math.PI * hz * h * t) / h
+            (v / 2.0 * amplitude * 32767).coerceIn(-32768.0, 32767.0).toInt().toShort()
         }
     }
 
@@ -339,6 +348,90 @@ class StopwatchTest {
         val same = Dsp.dtw(a1, a2)
         val different = Dsp.dtw(a1, b)
         assertTrue("same $same must be nearer than different $different", same < different)
+    }
+
+    private fun noisy(clean: ShortArray, amount: Double, seed: Long = 7): ShortArray {
+        val r = java.util.Random(seed)
+        return ShortArray(clean.size) {
+            val n = r.nextGaussian() * amount * 32767
+            (clean[it] + n).coerceIn(-32768.0, 32767.0).toInt().toShort()
+        }
+    }
+
+    /**
+     * A word with room either side of it, which is what a recording of a word actually looks
+     * like. The first version of this test was a tone that ran wall to wall, and the denoiser
+     * correctly refused to touch it: a window with no quiet part in it has nothing that can be
+     * identified as room. That refusal was right and the test signal was wrong.
+     */
+    private fun utterance(hz: Double, wordMs: Int, roomMs: Int = 300, amplitude: Double = 0.3): ShortArray {
+        val room = ShortArray(Dsp.SAMPLE_RATE * roomMs / 1000)
+        val word = tone(hz, wordMs, amplitude)
+        return room + word + room
+    }
+
+    /**
+     * THE WHOLE POINT OF THE NOISE REDUCTION, stated as the thing that must improve.
+     *
+     * A word spoken in a noisy room must land closer to a clean recording of that word WITH the
+     * cleaning than WITHOUT it. If that is not true the feature is decoration, and it would be
+     * decoration that costs battery.
+     */
+    @Test
+    fun noiseReductionMovesANoisyWordCloserToItsCleanRecording() {
+        val template = Dsp.features(utterance(300.0, 500))
+        val dirty = noisy(utterance(300.0, 500, amplitude = 0.25), amount = 0.05)
+
+        val withCleaning = Dsp.dtw(Dsp.features(dirty, clean = true), template)
+        val without = Dsp.dtw(Dsp.features(dirty, clean = false), template)
+
+        assertTrue(
+            "cleaning must help: with $withCleaning, without $without",
+            withCleaning < without,
+        )
+    }
+
+    /** And it must not damage audio that was already clean. */
+    @Test
+    fun noiseReductionLeavesACleanRecordingRecognisable() {
+        val template = Dsp.features(utterance(300.0, 500))
+        val same = Dsp.features(utterance(300.0, 480, amplitude = 0.4))
+        assertTrue("a clean word must still match itself", Dsp.dtw(same, template) < 0.2)
+    }
+
+    /**
+     * NOISE MUST NOT BECOME A WORD, and the denoiser cannot be what stops it: a window that is
+     * uniformly noisy has no quiet part to learn room from, so it is correctly left alone. What
+     * catches it is dynamic range — a recording in which nothing stands out contains no word,
+     * whatever its absolute level.
+     */
+    @Test
+    fun aRoomWithNoVoiceInItIsStillNothing() {
+        val roomOnly = noisy(ShortArray(16_000), amount = 0.02)
+        assertEquals(SampleQuality.SILENT, SampleCheck.assess(roomOnly))
+    }
+
+    /** Too few frames to take a quantile from must not crash or invent a profile. */
+    /**
+     * TWO TAKES OF DIFFERENT LENGTHS MUST STILL ALIGN. The band that stops an alignment
+     * wandering must never be narrower than the distance it has to travel to reach the end, or
+     * the comparison does not score badly — it fails to score, and looks like silence.
+     */
+    @Test
+    fun aLongTakeAndAShortTakeOfTheSameWordStillCompare() {
+        val short = Dsp.features(utterance(300.0, 300, roomMs = 100))
+        val long = Dsp.features(utterance(300.0, 900, roomMs = 500))
+        assertTrue("both must produce frames", short.isNotEmpty() && long.isNotEmpty())
+        assertTrue("their lengths must actually differ", Math.abs(short.size - long.size) > 20)
+
+        val d = Dsp.dtw(short, long)
+        assertTrue("a length difference must not make them incomparable, was $d", d < 1.0)
+    }
+
+    @Test
+    fun aVeryShortWindowIsCleanedSafely() {
+        val tiny = tone(300.0, 120)
+        assertTrue(Dsp.features(tiny, clean = true).size <= Dsp.features(tiny, clean = false).size + 1)
     }
 
     @Test
@@ -422,10 +515,10 @@ class StopwatchTest {
         val clipped = ShortArray(16_000) { if (it % 2 == 0) 32767 else -32767 }
         assertEquals(SampleQuality.CLIPPED, SampleCheck.assess(clipped))
 
-        // 100ms of speech: real, but nothing like enough to warp against.
-        assertEquals(SampleQuality.TOO_SHORT, SampleCheck.assess(tone(300.0, 100)))
+        // 80ms of speech with room either side: a real word, and nothing like enough of it.
+        assertEquals(SampleQuality.TOO_SHORT, SampleCheck.assess(utterance(300.0, 80, roomMs = 200)))
 
-        assertEquals(SampleQuality.GOOD, SampleCheck.assess(tone(300.0, 600)))
+        assertEquals(SampleQuality.GOOD, SampleCheck.assess(utterance(300.0, 600)))
     }
 
     /** Every refusal has to say something a person can act on, or it is just a red light. */

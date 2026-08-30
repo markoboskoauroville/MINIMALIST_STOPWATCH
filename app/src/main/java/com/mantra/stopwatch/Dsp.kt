@@ -134,7 +134,117 @@ object Dsp {
      * Returns an empty list for silence, which is the honest answer and lets everything above
      * treat "nothing was said" as a case rather than as an error.
      */
-    fun features(samples: ShortArray): List<DoubleArray> {
+    /**
+     * SPECTRAL SUBTRACTION, WHICH IS WHAT AUDITION DOES, WITH ONE CHANGE.
+     *
+     * Audition asks you to select a patch of silence, learns the noise from it, and subtracts
+     * that from the whole file. The learning is the good part; the asking is the part that does
+     * not survive a phone in traffic, because the noise in the street is not the noise it was
+     * when you selected the patch.
+     *
+     * So the profile is taken from the recording itself, every time: for each band, the QUIET
+     * QUANTILE across the frames of this window. A person saying one word leaves far more frames
+     * of room than of voice, so the quiet quantile of a band IS the room in that band — and it is
+     * this room, now, not the room ten minutes ago.
+     *
+     * That is also the answer to "sample the noise, then clean, then sample again": it samples
+     * and cleans in the same pass, on the same audio, so there is never a stale profile.
+     *
+     * ALPHA over-subtracts a little, because a noise estimate that is right on average is too low
+     * half the time and what is left over is musical noise. FLOOR keeps a fraction of the
+     * original rather than going to zero, because zeroing a band makes a hole that the log turns
+     * into a cliff, and the matcher then compares cliffs instead of voices.
+     *
+     * WHY THIS AND NOT AN AI MODEL. RNNoise, the obvious open-source choice, is a 60 to 90 KB
+     * model — a thousandth of the budget offered — and it is genuinely better at this. It is also
+     * C, which means the NDK, CMake, a native build in CI and a shared object per ABI. This is
+     * about 40 lines, needs no toolchain, costs one subtraction per band per frame, and is
+     * testable on a plain JVM, which is how every hard thing in this app finally got right. If it
+     * is not enough in the club, RNNoise is the next step and it is a version of its own.
+     */
+    private fun denoise(bands: MutableList<DoubleArray>) {
+        if (bands.size < MIN_FRAMES_FOR_PROFILE) return
+
+        // THE PROFILE COMES FROM THE QUIETEST FRAMES, NOT FROM A QUANTILE OF EACH BAND.
+        //
+        // The first version took, for each band independently, the 30th percentile across all
+        // frames. Test 1 caught it: on a signal that is voice the whole way through, that
+        // percentile IS the voice, so the subtraction removed the word and left the room. The
+        // fault only showed on a steady test signal — on speech it would have quietly degraded
+        // matching rather than visibly breaking it, which is the more expensive kind of wrong.
+        //
+        // Room frames are identified by TOTAL energy and the profile is the average of those.
+        val totals = DoubleArray(bands.size) { i -> bands[i].sum() }
+        val sorted = totals.clone().also { it.sort() }
+        val quiet = sorted[(sorted.size * QUIET_QUANTILE).toInt().coerceIn(0, sorted.size - 1)]
+        val loud = sorted[sorted.size - 1]
+
+        // NO RELIABLE ESTIMATE, NO SUBTRACTION. If the whole window is equally loud there is
+        // nothing in it that can be identified as room, and subtracting anyway would take a bite
+        // out of the signal. Doing nothing is the honest answer and it is better than guessing.
+        if (loud <= 0.0 || quiet / loud > FLAT_ENOUGH_TO_REFUSE) return
+
+        val profile = DoubleArray(BANDS)
+        var counted = 0
+        for (i in bands.indices) {
+            if (totals[i] <= quiet) {
+                for (b in 0 until BANDS) profile[b] += bands[i][b]
+                counted++
+            }
+        }
+        if (counted == 0) return
+        for (b in 0 until BANDS) profile[b] = profile[b] / counted
+
+        for (f in bands) {
+            for (b in 0 until BANDS) {
+                val cleaned = f[b] - ALPHA * profile[b]
+                f[b] = if (cleaned > FLOOR * f[b]) cleaned else FLOOR * f[b]
+            }
+        }
+    }
+
+    /**
+     * Above this ratio of quiet to loud, the window has no identifiable room in it.
+     *
+     * 0.55 was the first guess and it was too strict. Broadband noise spreads across all twenty
+     * bands while a voice concentrates in a few, so the TOTAL of a noisy frame is closer to the
+     * total of a spoken one than the loudness difference suggests — and the guard refused to
+     * clean recordings that plainly needed it. 0.85 still refuses a genuinely flat window, which
+     * is the only thing this guard is for, and the spectral floor stops the subtraction gouging
+     * holes even when the estimate is poor.
+     */
+    private const val FLAT_ENOUGH_TO_REFUSE = 0.85
+
+    /** The fraction of frames, by total energy, assumed to be room rather than voice. */
+    private const val QUIET_QUANTILE = 0.30
+
+    /** Over-subtract: an estimate that is right on average is too low half the time. */
+    private const val ALPHA = 1.6
+
+    /** Never to zero. A zeroed band is a hole, and the log turns a hole into a cliff. */
+    private const val FLOOR = 0.08
+
+    /** Below this there are not enough frames for a quantile to mean anything. */
+    private const val MIN_FRAMES_FOR_PROFILE = 12
+
+    /** Mean square per frame, straight from the samples, with no normalisation of any kind. */
+    fun frameEnergies(samples: ShortArray): DoubleArray {
+        if (samples.size < FRAME) return DoubleArray(0)
+        val out = ArrayList<Double>()
+        var start = 0
+        while (start + FRAME <= samples.size) {
+            var power = 0.0
+            for (i in 0 until FRAME) {
+                val v = samples[start + i] / 32768.0
+                power += v * v
+            }
+            out.add(power / FRAME)
+            start += HOP
+        }
+        return out.toDoubleArray()
+    }
+
+    fun features(samples: ShortArray, clean: Boolean = true): List<DoubleArray> {
         if (samples.size < FRAME) return emptyList()
         val frames = ArrayList<DoubleArray>()
         val energies = ArrayList<Double>()
@@ -169,14 +279,31 @@ object Dsp {
                 }
                 // The floor stops log going to negative infinity on a silent band, which would
                 // poison every distance computed against it.
-                band[b] = ln(sum + 1e-9)
+                // Magnitude, not log yet: the log happens after the noise is subtracted, because
+                // subtraction is linear in magnitude and means nothing in log.
+                band[b] = sum
             }
             frames.add(band)
             energies.add(power / FRAME)
             start += HOP
         }
 
-        val kept = endpoint(frames, energies)
+        // BEFORE the log, because subtraction is linear in magnitude and meaningless in log.
+        // And before endpointing, because a cleaner signal is a better endpointer: the whole
+        // reason the endpointer used to keep half a second of traffic is that the traffic was
+        // still in the band energies it was measuring.
+        if (clean) denoise(frames)
+
+        // ENDPOINT ON THE CLEANED ENERGY, NOT THE RAW ONE. Test 1 caught this too: a window of
+        // pure room noise was being kept as a short utterance, because the endpointer was still
+        // measuring the energy the noise had before it was removed. Traffic that has been
+        // subtracted out has to look like silence to the thing deciding where the word starts,
+        // or the cleaning helps the matcher and lies to the endpointer.
+        val cleanedEnergies = if (clean) frames.map { it.sum() } else energies
+
+        for (f in frames) for (b in 0 until BANDS) f[b] = ln(f[b] + 1e-9)
+
+        val kept = endpoint(frames, cleanedEnergies)
         return normalise(kept)
     }
 
@@ -255,7 +382,19 @@ object Dsp {
         if (a.isEmpty() || b.isEmpty()) return Double.MAX_VALUE
         val n = a.size
         val m = b.size
-        val band = maxOf(BAND_MIN, (maxOf(n, m) * BAND_FRACTION).toInt())
+        // THE BAND MUST BE AT LEAST THE LENGTH DIFFERENCE, and the first version was not.
+        //
+        // A Sakoe-Chiba band of a tenth of the length stops an alignment wandering off the
+        // diagonal. But if one utterance has 108 frames and the other 58, the path has to travel
+        // 50 frames off the diagonal just to REACH the corner — and with a band of 10 it cannot,
+        // so the cost matrix never reaches its end, the path length is zero, and this returned
+        // Double.MAX_VALUE.
+        //
+        // The matcher reads MAX_VALUE as "nothing like it". So a take noticeably longer or
+        // shorter than its template did not score badly — IT FAILED TO SCORE AT ALL, silently,
+        // and looked exactly like not having been heard. Test 1 found it only because noise made
+        // one window endpoint longer than the other.
+        val band = maxOf(BAND_MIN, abs(n - m) + (maxOf(n, m) * BAND_FRACTION).toInt())
 
         val cost = Array(n + 1) { DoubleArray(m + 1) { Double.MAX_VALUE / 4 } }
         val steps = Array(n + 1) { IntArray(m + 1) }
@@ -379,12 +518,41 @@ object SampleCheck {
     /** A tenth of the samples at the rail is not a loud voice, it is a broken recording. */
     const val CLIP_FRACTION = 0.10
 
+    /**
+     * A word is loud against its own surroundings. Below this ratio nothing stands out, which is
+     * what a window of steady traffic looks like: plenty of level, no shape.
+     */
+    const val MIN_DYNAMIC_RANGE = 3.0
+
     fun assess(samples: ShortArray): SampleQuality {
         if (samples.isEmpty()) return SampleQuality.SILENT
 
         var clipped = 0
         for (v in samples) if (v >= 32000 || v <= -32000) clipped++
         if (clipped > samples.size * CLIP_FRACTION) return SampleQuality.CLIPPED
+
+        // NOTHING STANDS OUT MEANS NO WORD IN IT. A window of steady traffic has plenty of
+        // energy and plenty of frames, and the denoiser correctly leaves it alone because there
+        // is no quiet part to learn the room from. Level cannot tell it from speech; DYNAMIC
+        // RANGE can, because a word is loud against its own surroundings by definition.
+        //
+        // MEASURED ON THE RAW SAMPLES, NOT ON THE FEATURES. The first version measured it on the
+        // feature frames, which are normalised per frame — and normalising is precisely the step
+        // that removes level. It was computing the dynamic range of something that by
+        // construction has none, and rejecting good recordings for it.
+        val energies = Dsp.frameEnergies(samples)
+        if (energies.size >= 3) {
+            val sorted = energies.clone().also { it.sort() }
+            // A LOW QUANTILE, NOT THE MEDIAN. A good recording can easily be half word and half
+            // room, and then the median frame IS a word frame — the check rejected exactly the
+            // well-centred recordings it was meant to protect. The quiet fifth of the frames is
+            // room in anything that contains a word at all, and is the noise floor itself in
+            // anything that does not.
+            val floor = sorted[(sorted.size * 0.2).toInt().coerceIn(0, sorted.size - 1)]
+            val peak = sorted.last()
+            if (peak <= 0.0) return SampleQuality.SILENT
+            if (floor > 0.0 && peak / floor < MIN_DYNAMIC_RANGE) return SampleQuality.SILENT
+        }
 
         val frames = Dsp.features(samples)
         if (frames.isEmpty()) return SampleQuality.SILENT
