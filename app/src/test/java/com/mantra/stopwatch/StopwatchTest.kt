@@ -1017,6 +1017,52 @@ class StopwatchTest {
     }
 
     /**
+     * The press table, ported from SAMPLE_PLAYER. Every branch, because one of them destroys a
+     * recording and the rest are what stop it happening by accident.
+     */
+    @Test
+    fun aPressOnASampleLineMeansOneThingInEachMode() {
+        fun press(mode: SamplerMode, filled: Boolean, rec: Pair<Control, Int>? = null) =
+            SamplerGesture.press(mode, Control.PLAY, 0, filled, rec)
+
+        // LISTEN plays what is there and refuses what is not. It never records.
+        assertEquals(SamplerPress.Play(Control.PLAY, 0), press(SamplerMode.LISTEN, filled = true))
+        assertTrue(press(SamplerMode.LISTEN, filled = false) is SamplerPress.Refused)
+
+        // RECORD asks before it overwrites, and only when there is something to lose.
+        assertEquals(
+            SamplerPress.StartRecording(Control.PLAY, 0),
+            press(SamplerMode.RECORD, filled = false),
+        )
+        assertEquals(
+            SamplerPress.ConfirmOverwrite(Control.PLAY, 0),
+            press(SamplerMode.RECORD, filled = true),
+        )
+    }
+
+    /**
+     * A recording in progress overrides the mode. There is one microphone, so there is one
+     * answer, and it must not depend on which button happened to be showing when it started.
+     */
+    @Test
+    fun aRecordingInProgressAnswersEveryPress() {
+        val busy = Control.PLAY to 1
+        for (mode in SamplerMode.entries) {
+            assertEquals(
+                "the line being recorded stops it, in either mode",
+                SamplerPress.StopRecording(Control.PLAY, 1),
+                SamplerGesture.press(mode, Control.PLAY, 1, filled = false, recording = busy),
+            )
+            val other = SamplerGesture.press(mode, Control.STOP, 2, filled = true, recording = busy)
+            assertTrue("any other line is refused", other is SamplerPress.Refused)
+            assertTrue(
+                "and the refusal says which line is busy",
+                (other as SamplerPress.Refused).why.contains("start"),
+            )
+        }
+    }
+
+    /**
      * No word may belong to two controls. If one ever did, [Heard.match] would refuse it and the
      * command would silently stop working with nothing to show why.
      */

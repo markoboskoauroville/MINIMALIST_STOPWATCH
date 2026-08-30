@@ -438,3 +438,76 @@ class Capture(
         const val MAX_WINDOW_MS = 2_000
     }
 }
+
+/**
+ * WHAT A PRESS ON A SAMPLE LINE MEANS, ported from SAMPLE_PLAYER's Gesture rather than invented a
+ * second time.
+ *
+ * That app faced the same problem with thirty tiles and solved it with a mode plus a pure press
+ * table: the decision is RETURNED rather than performed, so Test 1 can read what a press was
+ * decided to mean without a phone, a microphone or a screen. Two apps in the same account
+ * disagreeing about what pressing a sample does would be two answers to one question.
+ *
+ * TWO MODES, because a press on a line has to mean two different things and one of them destroys
+ * a recording. The stopwatch deleted tap-anywhere at v1 for exactly that reason. It is accepted
+ * here on the same terms SAMPLE_PLAYER accepts it: the mode is never hidden, it is a visible
+ * control, and it is the only thing separating listening to a take from recording over it.
+ */
+enum class SamplerMode {
+    /** A press PLAYS the line, so you can hear what you recorded. */
+    LISTEN,
+
+    /** A press starts recording into the line, and the next press stops it. */
+    RECORD,
+}
+
+/** The decision, returned rather than done. */
+sealed interface SamplerPress {
+    data class Play(val control: Control, val slot: Int) : SamplerPress
+    data class StartRecording(val control: Control, val slot: Int) : SamplerPress
+
+    /**
+     * The line already holds a take and the person pressed it in record mode.
+     *
+     * NOT StartRecording. Recording over a take destroys something that cannot be got back, and a
+     * press is one finger on a small line among twelve. The confirmation is the whole difference
+     * between a mistake that costs a tap and a mistake that costs a take, and it is decided here
+     * rather than in the interface so that Test 1 can prove it is never skipped.
+     */
+    data class ConfirmOverwrite(val control: Control, val slot: Int) : SamplerPress
+    data class StopRecording(val control: Control, val slot: Int) : SamplerPress
+    data class Refused(val why: String) : SamplerPress
+}
+
+object SamplerGesture {
+
+    fun press(
+        mode: SamplerMode,
+        control: Control,
+        slot: Int,
+        filled: Boolean,
+        recording: Pair<Control, Int>?,
+    ): SamplerPress {
+        // A recording in progress overrides the mode entirely. There is one microphone, so there
+        // is one answer, and it does not depend on which button was showing when it started.
+        if (recording != null) {
+            return if (recording == control to slot) {
+                SamplerPress.StopRecording(control, slot)
+            } else {
+                // Not a second recording, and not a silent no-op either: say which line is busy.
+                SamplerPress.Refused("${Heard.primary(recording.first)} ${recording.second + 1} is recording")
+            }
+        }
+        return when (mode) {
+            SamplerMode.LISTEN ->
+                if (filled) SamplerPress.Play(control, slot)
+                // An empty line in listen mode does NOT fall through to recording. That
+                // fall-through is the thing this whole table exists to prevent.
+                else SamplerPress.Refused("nothing recorded there")
+
+            SamplerMode.RECORD ->
+                if (filled) SamplerPress.ConfirmOverwrite(control, slot)
+                else SamplerPress.StartRecording(control, slot)
+        }
+    }
+}

@@ -148,12 +148,28 @@ object GoSound {
     fun play(context: Context) {
         val f = file(context)
         if (!f.exists() || f.length() <= 8) return
+        val bytes = f.readBytes()
+        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+        val rate = buf.getInt()
+        if (rate !in 8_000..96_000) return
+        playSamples(ShortArray((bytes.size - 4) / 2) { buf.getShort() }, rate)
+    }
+
+    /**
+     * LISTENING BACK TO A TAKE, which is half of what a sampler is for.
+     *
+     * Until now a recording could only be compared, never heard, so the only way to find out
+     * whether a take was any good was to say the word and see whether it matched — which conflates
+     * a bad recording with a bad threshold, and those need completely different fixes. Hearing it
+     * separates them in one press.
+     *
+     * The templates are at the matcher's rate rather than the Go word's, which is why the rate is
+     * a parameter: playing 16kHz audio at 48kHz is a word said three times too fast, and nothing
+     * about the samples would say so.
+     */
+    fun playSamples(samples: ShortArray, rate: Int) {
+        if (samples.isEmpty() || rate !in 8_000..96_000) return
         thread(name = "go-play", isDaemon = true) {
-            val bytes = f.readBytes()
-            val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-            val rate = buf.getInt()
-            if (rate !in 8_000..96_000) return@thread
-            val samples = ShortArray((bytes.size - 4) / 2) { buf.getShort() }
             val min = AudioTrack.getMinBufferSize(rate, CHANNEL_OUT, ENCODING)
             if (min <= 0) return@thread
             val track = AudioTrack.Builder()

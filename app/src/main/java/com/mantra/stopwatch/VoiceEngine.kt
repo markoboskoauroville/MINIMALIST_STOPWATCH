@@ -81,20 +81,44 @@ class VoiceEngine(
     // While a capture is running, matching is suspended. A word lit by the sample being recorded
     // would be a light that means nothing.
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    private var capture: Capture? = null
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // RECORDING IS MANUAL. Press to start, press again to stop.
+    //
+    // It used to end itself on silence, which is clever and was wrong. A capture that decides when
+    // you have finished speaking will sometimes decide it during the pause in the middle of a word
+    // and sometimes not until a lorry has gone past, and either way you are left holding a
+    // recording whose boundaries you did not choose. Worse, the failure is invisible: the line
+    // fills, the waveform looks plausible, and the template is half a word.
+    //
+    // Two presses is one more press. It is also the only arrangement where what was recorded is
+    // exactly what was intended, and this is the one place in the app where being sure matters
+    // more than being quick, because everything downstream is compared against it.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    private var capturingSince = 0L
     private var onCaptured: ((ShortArray?) -> Unit)? = null
 
     fun startCapture(done: (ShortArray?) -> Unit) {
-        capture = Capture().also { it.begin(SystemClock.elapsedRealtime()) }
+        capturingSince = SystemClock.elapsedRealtime()
         onCaptured = done
     }
 
+    /** The second press. Hands back everything recorded since the first one. */
+    fun finishCapture() {
+        val since = capturingSince
+        val done = onCaptured
+        capturingSince = 0L
+        onCaptured = null
+        if (done == null || since == 0L) return
+        val ms = (SystemClock.elapsedRealtime() - since).toInt()
+        done(if (ms < MIN_CAPTURE_MS) null else probe?.recent(ms))
+    }
+
     fun cancelCapture() {
-        capture = null
+        capturingSince = 0L
         onCaptured = null
     }
 
-    val capturing: Boolean get() = capture != null
+    val capturing: Boolean get() = capturingSince != 0L
 
     /**
      * ONE CLOCK, TTT mini's 50ms, and it never stops while the meter is up. Everything happens
@@ -109,25 +133,14 @@ class VoiceEngine(
             onLevel(level)
             val now = SystemClock.elapsedRealtime()
 
-            val c = capture
-            if (c != null) {
-                when (c.update(level, now)) {
-                    CaptureState.DONE -> {
-                        val samples = p.recent(c.windowMs(now))
-                        val done = onCaptured
-                        capture = null
-                        onCaptured = null
-                        done?.invoke(samples)
-                    }
-                    CaptureState.TIMED_OUT -> {
-                        val done = onCaptured
-                        capture = null
-                        onCaptured = null
-                        done?.invoke(null)
-                    }
-                    else -> Unit
-                }
-                // Nothing else happens while capturing: no matching, no gate.
+            if (capturing) {
+                // A ceiling, because a recording nobody stopped must not run on until the ring
+                // wraps and starts eating its own beginning. At the ceiling it ends itself and
+                // keeps what it has — the one automatic decision left, and the only one that
+                // cannot lose anything somebody meant to keep.
+                if (now - capturingSince >= MAX_CAPTURE_MS) finishCapture()
+                // Nothing else happens while capturing: no matching, no gate. A word lit by the
+                // sample being recorded is a light that means nothing.
                 main.postDelayed({ tick() }, AUDIO_LEVEL_SAMPLE_MS)
                 return
             }
@@ -156,6 +169,12 @@ class VoiceEngine(
     }
 
     private companion object {
+        /** Shorter than this and the press was a slip rather than a recording. */
+        const val MIN_CAPTURE_MS = 250
+
+        /** The ring holds two seconds; stop before it wraps and eats its own beginning. */
+        const val MAX_CAPTURE_MS = 1_900L
+
         /** Time for the rest of the word to arrive after the gate fires on its first frame. */
         const val TAIL_MS = 500L
 

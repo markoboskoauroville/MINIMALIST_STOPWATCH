@@ -769,13 +769,16 @@ private fun SettingsGrid(
     // PRESS, SPEAK, AND IT STOPS WHEN YOU STOP. No arm button and no fixed length: the capture
     // waits for the word, records while it lasts, and ends on the silence after it. When nothing
     // is capturing the app is testing, which is the only other thing it could be doing.
-    fun onRecord(control: Control, slot: Int) {
-        if (recording) return
+    var samplerMode by remember { mutableStateOf(SamplerMode.RECORD) }
+    var confirming by remember { mutableStateOf<Pair<Control, Int>?>(null) }
+
+    fun beginRecording(control: Control, slot: Int) {
         recordingFor = control to slot
-        note = "speak"
+        confirming = null
+        note = "recording — press again to stop"
         VoiceHub.startCapture { samples ->
             if (samples == null) {
-                note = "heard nothing, tap again"
+                note = "too short, hold it longer"
             } else {
                 // JUDGED BEFORE IT IS STORED. A sampler that keeps room tone as the sound of a
                 // word is a trap: the pad looks filled, the count says three of three, and the
@@ -788,6 +791,32 @@ private fun SettingsGrid(
                 }
             }
             recordingFor = null
+        }
+    }
+
+    /**
+     * EVERY PRESS GOES THROUGH THE TABLE, ported from SAMPLE_PLAYER. What a press MEANS is decided
+     * in pure code that Test 1 can read; this only carries the decision out.
+     */
+    fun onPress(control: Control, slot: Int) {
+        val filled = store.hasSample(control, slot)
+        when (val d = SamplerGesture.press(samplerMode, control, slot, filled, recordingFor)) {
+            is SamplerPress.StopRecording -> VoiceHub.finishCapture()
+            is SamplerPress.StartRecording -> beginRecording(d.control, d.slot)
+            is SamplerPress.Play -> store.loadSample(control, slot)?.let {
+                GoSound.playSamples(it, Dsp.SAMPLE_RATE)
+                note = "playing " + Heard.primary(control) + " " + (slot + 1)
+            }
+            is SamplerPress.ConfirmOverwrite ->
+                // A second press on the same line confirms. Recording over a take destroys
+                // something that cannot be got back, and a press is one finger on a small line.
+                if (confirming == control to slot) {
+                    beginRecording(control, slot)
+                } else {
+                    confirming = control to slot
+                    note = "press again to record over it"
+                }
+            is SamplerPress.Refused -> note = d.why
         }
     }
 
@@ -851,6 +880,8 @@ private fun SettingsGrid(
 
         if (tab == SettingsTab.VOICE) {
             VoicePads(
+                samplerMode = samplerMode,
+                onSamplerMode = { samplerMode = it; confirming = null },
                 width = gridWidth,
                 height = maxHeight - header - gap * 3,
                 colour = colour,
@@ -1046,6 +1077,8 @@ private fun Tab(label: String, selected: Boolean, colour: Long, onPress: () -> U
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun VoicePads(
+    samplerMode: SamplerMode,
+    onSamplerMode: (SamplerMode) -> Unit,
     width: Dp,
     height: Dp,
     colour: Long,
@@ -1089,6 +1122,29 @@ private fun VoicePads(
                 modifier = Modifier.padding(end = gap * 2),
             )
             Box(Modifier.weight(1f)) { MaScopeMeter(level = level, tint = Color(colour)) }
+
+            // THE MODE, AND IT IS NEVER HIDDEN. A press on a line means two different things
+            // depending on this, and one of them destroys a recording. SAMPLE_PLAYER accepts the
+            // same risk on the same terms: the mode is a visible control, and it is the only thing
+            // between listening to a take and recording over it.
+            Text(
+                text = if (samplerMode == SamplerMode.RECORD) "REC" else "LISTEN",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = if (samplerMode == SamplerMode.RECORD) RECORD_RED else Color(colour),
+                    fontSize = 11.sp,
+                ),
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier
+                    .clickable {
+                        onSamplerMode(
+                            if (samplerMode == SamplerMode.RECORD) SamplerMode.LISTEN
+                            else SamplerMode.RECORD
+                        )
+                    }
+                    .padding(start = gap, end = 2.dp),
+            )
         }
 
         Control.entries.forEach { control ->
@@ -1120,7 +1176,7 @@ private fun VoicePads(
                         colour = colour,
                         height = rowH,
                         modifier = Modifier.weight(1f),
-                        onPress = { onRecord(control, slot) },
+                        onPress = { onPress(control, slot) },
                         onLongPress = { onClear(control, slot) },
                     )
                     Text(

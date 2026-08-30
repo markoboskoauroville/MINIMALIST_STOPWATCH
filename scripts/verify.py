@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 94
+TEST_FLOOR = 96
 
 
 def code_only(text):
@@ -496,7 +496,7 @@ check("a capture suspends matching while it runs",
       "the tick returns early while a capture is open, so nothing is matched against it")
 
 check("each sample slot can be re-recorded on its own",
-      "onRecord(control, slot)" in ui and "for (slot in 0 until Store.SAMPLES)" in ui
+      "onPress(control, slot)" in ui and "for (slot in 0 until Store.SAMPLES)" in ui
       and "SampleCheck.assess(samples)" in ui,
       f"{3} slots per command, each with its own press")
 
@@ -640,6 +640,28 @@ check("the test count has not gone backwards",
       test_count >= TEST_FLOOR,
       f"{test_count} cases, floor is {TEST_FLOOR}. Raise the floor when you add tests; "
       f"lowering it is a deliberate act and should be argued for in the commit")
+
+
+
+# RECORDING IS MANUAL. A capture that ends itself sometimes ends inside the pause in the middle
+# of a word, and the failure is invisible: the line fills, the waveform looks plausible, and the
+# template is half a word. If an automatic stop reappears, this goes red.
+check("a recording ends when it is told to, not when it decides",
+      "fun finishCapture()" in engine and "CaptureState.DONE ->" not in code_only(engine),
+      "press starts it, press stops it; the only automatic stop left is the ring ceiling")
+
+# What a press MEANS is decided in pure code, not in the interface, so Test 1 can read it. Ported
+# from SAMPLE_PLAYER rather than invented a second time: two apps in this account disagreeing
+# about what pressing a sample does would be two answers to one question.
+check("what a press means is decided in pure code",
+      "SamplerGesture.press(samplerMode" in code_only(ui) and "object SamplerGesture" in voice,
+      "the table returns a decision; the screen only carries it out")
+
+# Overwriting a take destroys something that cannot be got back, and a press is one finger on a
+# small line among twelve.
+check("recording over a take asks first",
+      "SamplerPress.ConfirmOverwrite" in voice and "press again to record over it" in ui,
+      "the confirmation is in the table, so it cannot be skipped by the interface")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
