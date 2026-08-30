@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 106
+TEST_FLOOR = 107
 
 
 def code_only(text):
@@ -615,6 +615,13 @@ check("the lap counter never touches the clock",
 
 # A lap count left over from the last swim, sitting above a stopwatch reading zero, is a number
 # that will be believed.
+# NO PRESETS FOR THE POOL. A list of two guesses is a list that is wrong for the person who
+# needed the setting, and a stepped control is a list of presets wearing different clothes.
+check("the pool length is set rather than chosen from a list",
+      "fun lapNudge(" in src and "lapNudge(lapMetres, up = true)" in code_only(ui)
+      and "metres + 1 else metres - 1" in src,
+      "a metre at a time, so thirty-three is reachable; zero means count lengths only")
+
 check("stop clears the lap count with everything else",
       "if (next.phase == Phase.STOPPED && state.phase != Phase.STOPPED) laps = 0" in code_only(ui),
       "the reset that clears the digits clears the lengths too")

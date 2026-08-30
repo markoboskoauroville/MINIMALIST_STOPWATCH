@@ -205,12 +205,31 @@ fun prerollLabel(remainingMs: Long): String? {
     return seconds.toString()
 }
 
-enum class LapMode(val metres: Int?) {
-    OFF(null),
-    COUNT(null),
-    M25(25),
-    M50(50),
-}
+/**
+ * Whether the lap counter is showing, and how long a length is.
+ *
+ * NO PRESETS. Pools are 25 and 50 in most of the world, 20 in older municipal baths, 33 and a
+ * third in some, 25 yards in others, and Baba's may be none of those. A list of two guesses is a
+ * list that is wrong for the person who needed the setting, and the number is typed once and
+ * never again.
+ *
+ * ZERO METRES MEANS COUNT ONLY, which is why the two settings are one control. Nudging the length
+ * down past one metre gives a counter that counts lengths and says nothing about distance — the
+ * same thing the old COUNT preset did, without being a separate idea.
+ */
+const val LAP_MIN_METRES = 0
+const val LAP_MAX_METRES = 500
+
+/**
+ * A metre at a time.
+ *
+ * The timer's step grows with the number because a timer is set to many different values. A pool
+ * length is set ONCE, to whatever the pool is, and then never touched — so the only thing that
+ * matters is that every value is reachable. A stepped control that cannot express thirty-three is
+ * a control that is wrong for the person standing in a thirty-three metre pool.
+ */
+fun lapNudge(metres: Int, up: Boolean): Int =
+    (if (up) metres + 1 else metres - 1).coerceIn(LAP_MIN_METRES, LAP_MAX_METRES)
 
 /**
  * What sits above the digits, or null when there is nothing to show.
@@ -219,10 +238,10 @@ enum class LapMode(val metres: Int?) {
  * arithmetic is the thing worth testing: a lap counter that shows the wrong distance at length
  * forty is worse than one that shows nothing, because it will be believed.
  */
-fun lapLabel(laps: Int, mode: LapMode): String? {
-    if (mode == LapMode.OFF) return null
+fun lapLabel(laps: Int, on: Boolean, metres: Int): String? {
+    if (!on) return null
     val n = if (laps < 0) 0 else laps
-    val metres = mode.metres ?: return "$n"
+    if (metres <= 0) return "$n"
     return "$n  (${n * metres} m)"
 }
 

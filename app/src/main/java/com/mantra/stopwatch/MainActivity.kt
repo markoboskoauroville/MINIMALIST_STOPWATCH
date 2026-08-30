@@ -182,7 +182,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var colour by remember { mutableLongStateOf(store.colour) }
     var weight by remember { mutableStateOf(store.weight) }
     var display by remember { mutableStateOf(store.display) }
-    var lapMode by remember { mutableStateOf(store.lapMode) }
+    var lapOn by remember { mutableStateOf(store.lapOn) }
+    var lapMetres by remember { mutableIntStateOf(store.lapMetres) }
     var appMode by remember { mutableStateOf(store.appMode) }
     var timerSeconds by remember { mutableIntStateOf(store.timerSeconds) }
     var savedPreset by remember { mutableIntStateOf(store.savedPreset) }
@@ -525,7 +526,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             // readout: tapping it is the other way to count a length, and at the end of a length
             // in a pool a thumb finds a wide target above the numbers more easily than a small
             // one anywhere else.
-            lapLabel(laps, lapMode)?.let { label ->
+            lapLabel(laps, lapOn, lapMetres)?.let { label ->
                 Text(
                     text = label,
                     style = TextStyle(
@@ -738,8 +739,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 weight = weight,
                 display = display,
                 onDisplay = { display = it; store.display = it },
-                lapMode = lapMode,
-                onLapMode = { lapMode = it; store.lapMode = it },
+                lapOn = lapOn,
+                lapMetres = lapMetres,
+                onLapOn = { lapOn = it; store.lapOn = it },
+                onLapMetres = { lapMetres = it; store.lapMetres = it },
                 appMode = appMode,
                 timerSeconds = timerSeconds,
                 savedPreset = savedPreset,
@@ -868,8 +871,10 @@ private fun SettingsGrid(
     weight: Weight,
     display: Display,
     onDisplay: (Display) -> Unit,
-    lapMode: LapMode,
-    onLapMode: (LapMode) -> Unit,
+    lapOn: Boolean,
+    lapMetres: Int,
+    onLapOn: (Boolean) -> Unit,
+    onLapMetres: (Int) -> Unit,
     appMode: AppMode,
     timerSeconds: Int,
     savedPreset: Int,
@@ -1041,16 +1046,49 @@ private fun SettingsGrid(
                     "Stop clears it. Choose a pool length and it counts metres as well.",
                 colour,
             )
-        Row(
-            modifier = Modifier.padding(top = gap),
-            horizontalArrangement = Arrangement.spacedBy(gap),
-        ) {
-            val quarter = (gridWidth - gap * 3) / 4
-            LapCell("off", LapMode.OFF, lapMode, colour, quarter, onLapMode)
-            LapCell("3", LapMode.COUNT, lapMode, colour, quarter, onLapMode)
-            LapCell("3 (75 m)", LapMode.M25, lapMode, colour, quarter, onLapMode)
-            LapCell("3 (150 m)", LapMode.M50, lapMode, colour, quarter, onLapMode)
-        }
+            Row(
+                modifier = Modifier.padding(top = gap, bottom = gap),
+                horizontalArrangement = Arrangement.spacedBy(gap),
+            ) {
+                val half = (gridWidth - gap) / 2
+                LapCell("off", LapMode.OFF, if (lapOn) LapMode.COUNT else LapMode.OFF,
+                    colour, half) { onLapOn(false) }
+                LapCell("on", LapMode.OFF, if (lapOn) LapMode.OFF else LapMode.COUNT,
+                    colour, half) { onLapOn(true) }
+            }
+
+            // THE POOL LENGTH, SET RATHER THAN CHOSEN. No presets: pools are 25 and 50 in most of
+            // the world, 20 in older municipal baths, 33 and a third in some and 25 yards in
+            // others, and a list of two guesses is a list that is wrong for the person who needed
+            // the setting. It is typed once and never again.
+            RowLabel("POOL LENGTH", colour)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = gap),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                Nudge("\u2212", colour) { onLapMetres(lapNudge(lapMetres, up = false)) }
+                Text(
+                    // ZERO IS COUNT ONLY, which is why one control does both. Nudging below one
+                    // metre gives a counter that counts lengths and says nothing about distance.
+                    text = if (lapMetres <= 0) "count only" else "$lapMetres m",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(colour),
+                        fontSize = if (lapMetres <= 0) 18.sp else 34.sp,
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier.padding(horizontal = 18.dp),
+                )
+                Nudge("+", colour) { onLapMetres(lapNudge(lapMetres, up = true)) }
+            }
+            Help(
+                "A metre at a time, because a pool is whatever length it is. " +
+                    "Take it below one and it counts lengths only.",
+                colour,
+            )
             return@Column
         }
 

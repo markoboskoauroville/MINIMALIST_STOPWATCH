@@ -972,19 +972,24 @@ class StopwatchTest {
      */
     @Test
     fun theLapLabelCountsLengthsAndDistance() {
-        assertNull("off means nothing above the digits", lapLabel(3, LapMode.OFF))
-        assertEquals("0", lapLabel(0, LapMode.COUNT))
-        assertEquals("7", lapLabel(7, LapMode.COUNT))
+        assertNull("off means nothing above the digits", lapLabel(3, on = false, metres = 25))
+        assertEquals("0", lapLabel(0, on = true, metres = 0))
+        assertEquals("7", lapLabel(7, on = true, metres = 0))
 
-        assertEquals("0  (0 m)", lapLabel(0, LapMode.M25))
-        assertEquals("1  (25 m)", lapLabel(1, LapMode.M25))
-        assertEquals("3  (75 m)", lapLabel(3, LapMode.M25))
-        assertEquals("40  (1000 m)", lapLabel(40, LapMode.M25))
-        assertEquals("3  (150 m)", lapLabel(3, LapMode.M50))
+        assertEquals("0  (0 m)", lapLabel(0, on = true, metres = 25))
+        assertEquals("1  (25 m)", lapLabel(1, on = true, metres = 25))
+        assertEquals("3  (75 m)", lapLabel(3, on = true, metres = 25))
+        assertEquals("40  (1000 m)", lapLabel(40, on = true, metres = 25))
+        assertEquals("3  (150 m)", lapLabel(3, on = true, metres = 50))
+
+        // ANY POOL, not two guesses. A stepped control that cannot express thirty-three is wrong
+        // for the person standing in a thirty-three metre pool.
+        assertEquals("3  (99 m)", lapLabel(3, on = true, metres = 33))
+        assertEquals("4  (80 m)", lapLabel(4, on = true, metres = 20))
 
         // Cannot arise from the interface, and if it ever did it must read as zero rather than
         // as a negative distance.
-        assertEquals("0  (0 m)", lapLabel(-2, LapMode.M25))
+        assertEquals("0  (0 m)", lapLabel(-2, on = true, metres = 25))
     }
 
     /**
@@ -1182,6 +1187,24 @@ class StopwatchTest {
         assertEquals(30, timerNudge(45, up = false))
         assertEquals(150, timerNudge(120, up = true))
         assertEquals(660, timerNudge(600, up = true))
+    }
+
+    /**
+     * A metre at a time, because a pool length is set once to whatever the pool is. Every value
+     * has to be reachable; a stepped control is a list of presets wearing different clothes.
+     */
+    @Test
+    fun thePoolLengthIsSetAMetreAtATimeAndCannotLeaveItsRange() {
+        assertEquals(26, lapNudge(25, up = true))
+        assertEquals(24, lapNudge(25, up = false))
+        assertEquals(33, lapNudge(32, up = true))
+
+        // ZERO IS COUNT ONLY, which is why the two settings are one control.
+        assertEquals(0, lapNudge(1, up = false))
+        assertEquals(LAP_MIN_METRES, lapNudge(LAP_MIN_METRES, up = false))
+        assertEquals(LAP_MAX_METRES, lapNudge(LAP_MAX_METRES, up = true))
+        assertNull("count only shows no distance", null.takeIf { false })
+        assertEquals("2", lapLabel(2, on = true, metres = lapNudge(1, up = false)))
     }
 
     /** Bounded at both ends: a timer of zero is not a timer and one of six hours is a calendar. */

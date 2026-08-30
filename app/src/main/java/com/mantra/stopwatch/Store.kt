@@ -111,13 +111,14 @@ class Store(private val context: Context) {
         get() = if (p.getBoolean(Keys.K_PREROLL, false)) PrerollMode.TEN else PrerollMode.OFF
         set(v) = p.edit().putBoolean(Keys.K_PREROLL, v == PrerollMode.TEN).apply()
 
-    var lapMode: LapMode
-        get() = try {
-            LapMode.valueOf(p.getString(Keys.K_LAP, LapMode.OFF.name) ?: LapMode.OFF.name)
-        } catch (e: IllegalArgumentException) {
-            LapMode.OFF
-        }
-        set(v) = p.edit().putString(Keys.K_LAP, v.name).apply()
+    var lapOn: Boolean
+        get() = p.getBoolean(Keys.K_LAP_ON, false)
+        set(v) = p.edit().putBoolean(Keys.K_LAP_ON, v).apply()
+
+    /** Zero means count lengths and say nothing about distance. */
+    var lapMetres: Int
+        get() = p.getInt(Keys.K_LAP_M, 25).coerceIn(LAP_MIN_METRES, LAP_MAX_METRES)
+        set(v) = p.edit().putInt(Keys.K_LAP_M, v.coerceIn(LAP_MIN_METRES, LAP_MAX_METRES)).apply()
 
     var display: Display
         get() = if (p.getBoolean(Keys.K_SINGLE, false)) Display.SINGLE else Display.MULTI
@@ -236,7 +237,8 @@ class Store(private val context: Context) {
         const val K_COLOUR = "colour"
         const val K_BOLD = "bold"
         const val K_SINGLE = "single"
-        const val K_LAP = "lapMode"
+        const val K_LAP_ON = "lapOn"
+        const val K_LAP_M = "lapMetres"
         const val K_PREROLL = "preroll"
         const val K_NAME = "name_"
         const val K_TIMER = "timerMode"
