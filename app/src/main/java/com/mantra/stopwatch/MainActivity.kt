@@ -16,6 +16,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -63,7 +66,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -71,6 +78,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
@@ -170,6 +178,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var weight by remember { mutableStateOf(store.weight) }
     var display by remember { mutableStateOf(store.display) }
     var lapMode by remember { mutableStateOf(store.lapMode) }
+    var names by remember { mutableStateOf(store.names) }
     var preroll by remember { mutableStateOf(store.preroll) }
 
     // Read once, up here, because the countdown effect below needs it and effects belong
@@ -606,6 +615,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 onDisplay = { display = it; store.display = it },
                 lapMode = lapMode,
                 onLapMode = { lapMode = it; store.lapMode = it },
+                names = names,
+                onNames = { names = it; store.names = it; VoiceHub.reloadTemplates(context) },
                 preroll = preroll,
                 onPreroll = { preroll = it; store.preroll = it },
                 context = context,
@@ -727,6 +738,8 @@ private fun SettingsGrid(
     onDisplay: (Display) -> Unit,
     lapMode: LapMode,
     onLapMode: (LapMode) -> Unit,
+    names: Map<Control, String>,
+    onNames: (Map<Control, String>) -> Unit,
     preroll: PrerollMode,
     onPreroll: (PrerollMode) -> Unit,
     context: android.content.Context,
@@ -770,6 +783,7 @@ private fun SettingsGrid(
     // waits for the word, records while it lasts, and ends on the silence after it. When nothing
     // is capturing the app is testing, which is the only other thing it could be doing.
     var samplerMode by remember { mutableStateOf(SamplerMode.RECORD) }
+    var editing by remember { mutableStateOf<Control?>(null) }
     var confirming by remember { mutableStateOf<Pair<Control, Int>?>(null) }
 
     fun beginRecording(control: Control, slot: Int) {
@@ -805,7 +819,7 @@ private fun SettingsGrid(
             is SamplerPress.StartRecording -> beginRecording(d.control, d.slot)
             is SamplerPress.Play -> store.loadSample(control, slot)?.let {
                 GoSound.playSamples(it, Dsp.SAMPLE_RATE)
-                note = "playing " + Heard.primary(control) + " " + (slot + 1)
+                note = "playing " + Vocabulary.display(control, names) + " " + (slot + 1)
             }
             is SamplerPress.ConfirmOverwrite ->
                 // A second press on the same line confirms. Recording over a take destroys
@@ -882,6 +896,11 @@ private fun SettingsGrid(
             VoicePads(
                 samplerMode = samplerMode,
                 onSamplerMode = { samplerMode = it; confirming = null },
+                names = names,
+                onNames = onNames,
+                editing = editing,
+                onEditing = { editing = it },
+                onNote = { note = it },
                 width = gridWidth,
                 height = maxHeight - header - gap * 3,
                 colour = colour,
@@ -1079,6 +1098,11 @@ private fun Tab(label: String, selected: Boolean, colour: Long, onPress: () -> U
 private fun VoicePads(
     samplerMode: SamplerMode,
     onSamplerMode: (SamplerMode) -> Unit,
+    names: Map<Control, String>,
+    onNames: (Map<Control, String>) -> Unit,
+    editing: Control?,
+    onEditing: (Control?) -> Unit,
+    onNote: (String) -> Unit,
     width: Dp,
     height: Dp,
     colour: Long,
@@ -1155,11 +1179,31 @@ private fun VoicePads(
                     modifier = Modifier.fillMaxWidth().padding(bottom = gap),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        // The command on its first line only. Repeating it three times is three
-                        // times the reading for the same fact, and the grouping is visible from
-                        // the indentation without it.
-                        text = if (slot == 0) Heard.primary(control).uppercase() else "",
+                    // THE NAME IS THE RENAME CONTROL. Tap it and type the word you would rather
+                    // say. It sits on the first of the control's three lines only — repeating it
+                    // three times is three times the reading for the same fact.
+                    //
+                    // The whole tab then reads as a cheat sheet of the words that actually work,
+                    // which is the point: a list of commands you cannot edit is a list you have to
+                    // remember, and a list you edit somewhere else is a list that goes out of date.
+                    if (slot == 0 && editing == control) {
+                        NameField(
+                            initial = Vocabulary.display(control, names),
+                            colour = colour,
+                            onDone = { word ->
+                                val why = Vocabulary.validate(control, word, names - control)
+                                if (why != null) {
+                                    onNote(why)
+                                } else {
+                                    onNames(names + (control to word.trim().lowercase()))
+                                    onNote("say \"" + word.trim().lowercase() + "\"")
+                                }
+                                onEditing(null)
+                            },
+                            onCancel = { onEditing(null) },
+                        )
+                    } else Text(
+                        text = if (slot == 0) Vocabulary.display(control, names).uppercase() else "",
                         style = TextStyle(
                             fontFamily = FontFamily.Monospace,
                             color = if (on) Color(colour) else GLYPH_SECOND,
@@ -1167,7 +1211,9 @@ private fun VoicePads(
                         ),
                         maxLines = 1,
                         softWrap = false,
-                        modifier = Modifier.width(58.dp),
+                        modifier = Modifier
+                            .width(58.dp)
+                            .clickable(enabled = slot == 0) { onEditing(control) },
                     )
                     Pad(
                         samples = store.loadSample(control, slot),
@@ -1213,6 +1259,46 @@ private fun VoicePads(
             modifier = Modifier.height(footer),
         )
     }
+}
+
+/**
+ * The one place this app has a keyboard, and it is here reluctantly.
+ *
+ * Everything else is chosen from what is on the screen, because a keyboard on a phone is the
+ * slowest control there is and this app is read across a room. A command name cannot be chosen
+ * from a list, though — the whole point is that it is YOUR word — so text entry is the only
+ * honest answer.
+ *
+ * It commits on Done and abandons on anything else, and the field disappears either way. A field
+ * that stays open after you have finished with it is a field you have to dismiss.
+ */
+@Composable
+private fun NameField(
+    initial: String,
+    colour: Long,
+    onDone: (String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    var text by remember { mutableStateOf(initial) }
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    BasicTextField(
+        value = text,
+        onValueChange = { text = it },
+        singleLine = true,
+        textStyle = TextStyle(
+            fontFamily = FontFamily.Monospace,
+            color = Color(colour),
+            fontSize = 12.sp,
+        ),
+        cursorBrush = SolidColor(Color(colour)),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone(text) }),
+        modifier = Modifier
+            .width(58.dp)
+            .focusRequester(focus)
+            .onFocusChanged { if (!it.isFocused) onCancel() },
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)

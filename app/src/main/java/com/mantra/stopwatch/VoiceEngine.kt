@@ -37,6 +37,16 @@ class VoiceEngine(
     private val gate = SpeechGate()
     private val matcher = TemplateMatcher()
 
+    /**
+     * The chosen names. Held here because the matcher is here, and read through Vocabulary so a
+     * rename cannot become a second list of sayable things sitting beside the enum.
+     */
+    private var names: Map<Control, String> = emptyMap()
+
+    fun setNames(value: Map<Control, String>) {
+        names = value
+    }
+
     private var probe: MicProbe? = null
     private var running = false
     private var armed = false

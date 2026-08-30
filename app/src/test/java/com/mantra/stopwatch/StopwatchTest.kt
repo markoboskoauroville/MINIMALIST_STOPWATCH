@@ -1086,6 +1086,52 @@ class StopwatchTest {
     }
 
     /**
+     * A rename must not create a second vocabulary. One function answers what a control is called,
+     * one answers what it responds to, and the matcher reads the second — the override is an input
+     * to all three rather than a path around them.
+     */
+    @Test
+    fun renamingACommandChangesWhatItIsCalledAndWhatItAnswersTo() {
+        val none = emptyMap<Control, String>()
+        assertEquals("start", Vocabulary.display(Control.PLAY, none))
+
+        val renamed = mapOf(Control.PLAY to "go")
+        assertEquals("go", Vocabulary.display(Control.PLAY, renamed))
+        assertEquals(Control.PLAY, Vocabulary.match("go", renamed))
+
+        // THE OLD WORD KEEPS WORKING. A rename that silently breaks the word you have been saying
+        // for a month is a rename that feels like a fault.
+        assertEquals(Control.PLAY, Vocabulary.match("start", renamed))
+
+        // And a rename cannot reach into another command.
+        assertEquals(Control.PAUSE, Vocabulary.match("pause", renamed))
+    }
+
+    /** Every refusal has to say what is wrong in words somebody can act on. */
+    @Test
+    fun aRenameIsRefusedWithAReason() {
+        val none = emptyMap<Control, String>()
+        assertEquals("needs a word", Vocabulary.validate(Control.PLAY, "   ", none))
+        assertEquals("one word only", Vocabulary.validate(Control.PLAY, "off we go", none))
+        assertEquals("too short to hear", Vocabulary.validate(Control.PLAY, "a", none))
+
+        // The one that matters: two commands answering to the same word would make the matcher
+        // ambiguous, and ambiguity does nothing, so the command would simply stop working.
+        val clash = Vocabulary.validate(Control.PLAY, "reset", none)
+        assertTrue("must name the command it clashes with: $clash", clash!!.contains("reset"))
+
+        assertNull("an ordinary new word is fine", Vocabulary.validate(Control.PLAY, "go", none))
+    }
+
+    /** Ambiguity still does nothing, whatever anything has been renamed to. */
+    @Test
+    fun aRenamedVocabularyStillRefusesAmbiguity() {
+        val names = mapOf(Control.PLAY to "go")
+        assertNull("two commands in one phrase run neither", Vocabulary.match("go and reset", names))
+        assertNull("and an unknown word is still nothing", Vocabulary.match("banana", names))
+    }
+
+    /**
      * No word may belong to two controls. If one ever did, [Heard.match] would refuse it and the
      * command would silently stop working with nothing to show why.
      */

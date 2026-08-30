@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 97
+TEST_FLOOR = 100
 
 
 def code_only(text):
@@ -287,7 +287,10 @@ check("the settings panel carries its own way out",
 # call site again, the tip and the button can drift apart and only the spoken command breaks.
 spoken = dict(re.findall(r'(PLAY|PAUSE|STOP)\("(\w+)"\)', src))
 literal_labels = re.findall(r'Transport\(Icons\.Default\.\w+, "', ui)
-tip_is_generated = "Heard.primary(control)" in ui and "Control.entries.forEach" in ui
+# The name a control shows now comes from Vocabulary.display, which folds the chosen word into
+# the built-in one. That is the point: a rename is an INPUT to the one vocabulary rather than a
+# second list beside it, and this check exists to keep it that way.
+tip_is_generated = "Vocabulary.display(control, names)" in ui and "Control.entries.forEach" in ui
 check("the spoken vocabulary has exactly one home",
       set(spoken.values()) == {"Start", "Pause", "Reset"}
       and not literal_labels
@@ -309,8 +312,9 @@ voice = VOICE.read_text()
 # The three words in the tester are the matcher's own first entries, so a word can never be shown
 # that the matcher would refuse. Typing them here would be a second vocabulary.
 check("the reminder prints one bare word per control, from the matcher's own list",
-      "Heard.primary(control)" in ui and "Control.entries.forEach" in ui,
-      "one Text per control, its text taken from the matcher rather than written beside it")
+      "Vocabulary.display(control, names)" in ui and "Control.entries.forEach" in ui
+      and "fun display(" in voice,
+      "one Text per control, its text taken from the vocabulary rather than written beside it")
 
 # ── 8i ───────────────────────────────────────────────────────────────────────────────────────
 # No word may belong to two controls, or match() refuses it and the command silently stops
@@ -669,6 +673,27 @@ check("what a press means is decided in pure code",
 check("recording over a take asks first",
       "SamplerPress.ConfirmOverwrite" in voice and "press again to record over it" in ui,
       "the confirmation is in the table, so it cannot be skipped by the interface")
+
+# A RENAME MUST NOT BECOME A SECOND VOCABULARY. That is the whole risk in this feature, and this
+# repository has already had that exact fault twice. Everything that asks what a control is called
+# or what it answers to must go through Vocabulary.
+check("a renamed command is an input to the vocabulary, not a list beside it",
+      "object Vocabulary" in voice
+      and "fun wordsFor(" in voice
+      and "Heard.VOCABULARY.getValue(control)" in voice,
+      "one function for the name, one for the words, one matcher; the override feeds all three")
+
+# The chosen word is ADDED, not substituted: a rename that silently breaks the word you have been
+# saying for a month is a rename that feels like a fault.
+check("renaming a command does not stop the old word working",
+      "built + custom" in voice,
+      "the built-in words stay, and the chosen one joins them")
+
+# A refusal has to say what is wrong. "Invalid" is a red light; naming the command it clashes
+# with is a thing a person can fix in one press.
+check("a refused rename says why in words",
+      '"one word only"' in voice and "already answers to that" in voice,
+      "every refusal names the problem rather than reporting a state")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

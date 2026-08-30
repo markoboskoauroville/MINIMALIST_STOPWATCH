@@ -65,6 +65,26 @@ class Store(private val context: Context) {
         get() = p.getBoolean(Keys.K_LISTENING, false)
         set(v) = p.edit().putBoolean(Keys.K_LISTENING, v).apply()
 
+    /**
+     * The words Baba chose, per control. Absent means the built-in name.
+     *
+     * Stored one key per control rather than as one encoded string, so a control added later
+     * cannot corrupt the others' names by shifting a delimiter.
+     */
+    var names: Map<Control, String>
+        get() = Control.entries.mapNotNull { c ->
+            p.getString(Keys.K_NAME + c.name, null)?.takeIf { it.isNotBlank() }?.let { c to it }
+        }.toMap()
+        set(v) {
+            val e = p.edit()
+            for (c in Control.entries) {
+                val word = v[c]?.trim()
+                if (word.isNullOrBlank()) e.remove(Keys.K_NAME + c.name)
+                else e.putString(Keys.K_NAME + c.name, word)
+            }
+            e.apply()
+        }
+
     var preroll: PrerollMode
         get() = if (p.getBoolean(Keys.K_PREROLL, false)) PrerollMode.TEN else PrerollMode.OFF
         set(v) = p.edit().putBoolean(Keys.K_PREROLL, v == PrerollMode.TEN).apply()
@@ -196,6 +216,7 @@ class Store(private val context: Context) {
         const val K_SINGLE = "single"
         const val K_LAP = "lapMode"
         const val K_PREROLL = "preroll"
+        const val K_NAME = "name_"
         const val K_LISTENING = "listening"
     }
 }

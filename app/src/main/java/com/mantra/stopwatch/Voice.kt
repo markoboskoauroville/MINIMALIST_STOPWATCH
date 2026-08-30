@@ -550,3 +550,65 @@ object MicMute {
         until = 0L
     }
 }
+
+/**
+ * RENAMING A COMMAND, WITHOUT CREATING A SECOND VOCABULARY.
+ *
+ * Baba wants to say "go" instead of "start" and have the settings read as a cheat sheet of the
+ * words that actually work. The danger in that is not the text entry, it is that a renamed command
+ * is a second list of sayable things sitting beside the enum — and a second list of the same kind
+ * of thing is how one of them quietly stops being updated. This repository has already had that
+ * fault twice.
+ *
+ * So there is one function that answers "what does this control answer to", one that answers "what
+ * is it called", and one matcher. The override is an input to all three rather than a parallel
+ * path around them.
+ *
+ * THE CUSTOM WORD IS ADDED, NOT SUBSTITUTED. Renaming start to "go" does not stop "start" working.
+ * A person who renames a command still has the old word in their mouth for a week, and a rename
+ * that silently breaks the thing you have been saying for a month is a rename that feels like a
+ * fault. The cheat sheet shows the new name because that is what was chosen; the old ones keep
+ * working because nothing is gained by refusing them.
+ */
+object Vocabulary {
+
+    /** What the settings and the tester show for a control. */
+    fun display(control: Control, names: Map<Control, String>): String =
+        names[control]?.takeIf { it.isNotBlank() } ?: Heard.primary(control)
+
+    /** Everything the control answers to: the built-in words, plus the chosen one. */
+    fun wordsFor(control: Control, names: Map<Control, String>): Set<String> {
+        val custom = names[control]?.trim()?.lowercase()
+        val built = Heard.VOCABULARY.getValue(control)
+        return if (custom.isNullOrBlank()) built else built + custom
+    }
+
+    /**
+     * The command in this phrase, or null. Same two rules as before, because they are the rules
+     * that stop a room full of conversation working the stopwatch: WHOLE WORDS ONLY, and
+     * AMBIGUITY DOES NOTHING.
+     */
+    fun match(heard: String, names: Map<Control, String>): Control? {
+        val said = Heard.normalise(heard).toSet()
+        val hits = Control.entries.filter { c -> wordsFor(c, names).any { it in said } }
+        return if (hits.size == 1) hits.first() else null
+    }
+
+    /**
+     * Whether a chosen word may be used, and if not, why in words a person can act on.
+     *
+     * A REFUSAL HAS TO SAY WHAT IS WRONG. "Invalid" is a red light; "pause already answers to
+     * that" is a thing you can fix in one press.
+     */
+    fun validate(control: Control, word: String, names: Map<Control, String>): String? {
+        val w = word.trim().lowercase()
+        if (w.isEmpty()) return "needs a word"
+        if (Heard.normalise(w).size != 1) return "one word only"
+        if (w.length < 2) return "too short to hear"
+        for (other in Control.entries) {
+            if (other == control) continue
+            if (w in wordsFor(other, names)) return display(other, names) + " already answers to that"
+        }
+        return null
+    }
+}

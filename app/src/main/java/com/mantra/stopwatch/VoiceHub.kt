@@ -77,6 +77,10 @@ object VoiceHub {
      */
     fun reloadTemplates(context: Context) {
         val store = Store(context)
+        // The names travel with the templates, because both are read from the store and both must
+        // survive the screen going away. Loading them anywhere else would mean a renamed command
+        // stopped answering the moment the phone went in a pocket.
+        engine?.setNames(store.names)
         engine?.setTemplates(
             Control.entries.flatMap { c ->
                 (0 until Store.SAMPLES).mapNotNull { slot ->
