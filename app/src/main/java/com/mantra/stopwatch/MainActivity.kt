@@ -304,7 +304,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // only when the level says a word was actually spoken. The meter therefore runs whether
     // voice is armed or not, which is what Baba asked for and was impossible before.
     //
-    // The engine is created once and lives as long as the screen. Arming is a separate call, so
+    // The engine lives as long as the PROCESS now, not this screen. Arming is a separate call, so
     // switching voice on and off does not tear the microphone down and build it again.
     // ─────────────────────────────────────────────────────────────────────────────────────────
     var scores by remember { mutableStateOf<List<Pair<Control, Double>>>(emptyList()) }
@@ -612,7 +612,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 listening = listening,
                 level = level,
                 scores = scores,
-                engine = engine,
                 store = store,
                 onRecorded = { templatesReady++ },
                 tab = tab,
@@ -734,7 +733,6 @@ private fun SettingsGrid(
     listening: Boolean,
     level: Float,
     scores: List<Pair<Control, Double>>,
-    engine: VoiceEngine,
     store: Store,
     onRecorded: () -> Unit,
     tab: SettingsTab,
