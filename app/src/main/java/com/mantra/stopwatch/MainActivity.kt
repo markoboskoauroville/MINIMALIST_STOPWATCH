@@ -892,7 +892,7 @@ private fun SettingsGrid(
                 recordingFor = recordingFor,
                 note = note,
                 store = store,
-                onRecord = ::onRecord,
+                onPress = ::onPress,
                 onClear = { c, s -> store.clearSample(c, s); onRecorded() },
             )
             return@Column
@@ -1089,7 +1089,7 @@ private fun VoicePads(
     recordingFor: Pair<Control, Int>?,
     note: String,
     store: Store,
-    onRecord: (Control, Int) -> Unit,
+    onPress: (Control, Int) -> Unit,
     onClear: (Control, Int) -> Unit,
 ) {
     val gap = 4.dp

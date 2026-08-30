@@ -56,6 +56,11 @@ object VoiceHub {
 
     fun recent(ms: Int): ShortArray = engine?.recent(ms) ?: ShortArray(0)
 
+    /** The second press. The hub forwards it; the engine decides what was recorded. */
+    fun finishCapture() {
+        engine?.finishCapture()
+    }
+
     fun startCapture(done: (ShortArray?) -> Unit) {
         val e = engine
         if (e == null) {
