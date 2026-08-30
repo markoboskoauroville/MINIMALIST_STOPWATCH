@@ -219,9 +219,16 @@ clickables = len(re.findall(r"\.clickable\(", ui))
 # row was added: a word you press to record it is a clickable, and it is meant to be. What must
 # stay true is that the BACKGROUND carries none, which is the thing that would destroy a running
 # measurement by accident.
-check("nothing on the background is tappable",
-      background_click is None,
-      f"{clickables} clickable modifiers in the screen, none of them on the background")
+# THE RULE MOVED AT v37 AND THE CHECK MOVES WITH IT. v1 removed tap-anywhere because its second
+# state was DESTRUCTIVE — tap to start, tap again to reset, with the whole screen as the target.
+# The numbers are a control again, but a tap now toggles running and paused, and reset is behind
+# a long press. What must stay true is the thing that was actually wrong: NO DESTRUCTIVE ACTION
+# ON A SINGLE TAP.
+digits_tap = re.search(r"combinedClickable\(\s*onClick = \{(.*?)\},\s*onLongClick", code_only(ui), re.S)
+tap_body = digits_tap.group(1) if digits_tap else ""
+check("no destructive action sits on a single tap",
+      digits_tap is not None and "state.stop()" not in tap_body and "onLongClick" in code_only(ui),
+      "a tap toggles running and paused; reset needs a long press, which a pocket cannot make")
 
 # ── 8 ────────────────────────────────────────────────────────────────────────────────────────
 # Never hide a control that is temporarily unavailable. A disabled button is dimmed; a button
@@ -801,7 +808,19 @@ check("the preset row is laid out from the list, not from a count",
 
 # AN APP THAT CAN INSTALL SOFTWARE WITHOUT BEING ASKED AGAIN is a serious thing for a stopwatch
 # to be. The download URL goes to Android, whose own installer takes over with its own dialogue.
-manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text()
+def xml_code_only(text):
+    """
+    XML with its comments removed.
+
+    THE FOURTH TIME A COMMENT HAS BROKEN A CHECK HERE. code_only() strips Kotlin comments and was
+    used everywhere it was needed; this check reads the manifest, where comments are <!-- --> and
+    the stripper did not reach. A comment saying REQUEST_INSTALL_PACKAGES is deliberately absent
+    failed a check asserting it was absent.
+    """
+    return re.sub(r"<!--.*?-->", "", text, flags=re.S)
+
+
+manifest = xml_code_only((ROOT / "app/src/main/AndroidManifest.xml").read_text())
 check("the updater cannot install anything by itself",
       "REQUEST_INSTALL_PACKAGES" not in manifest
       and "android.permission.INTERNET" in manifest

@@ -530,7 +530,14 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         val button = if (landscape) 56.dp else 72.dp
         val strip = if (landscape) 72.dp else 108.dp
 
-        Column(Modifier.fillMaxSize()) {
+        // THE TOP ROW'S CLEARANCE IS RESERVED HERE, and until now it was not. The digit sizing
+        // subtracted LOCK_ZONE from the height it had to fill, so it BELIEVED the row above was
+        // set aside — but nothing had actually set it aside, so the column began at the very top
+        // of the screen and the lap count was drawn straight through the orientation, mode,
+        // microphone, power and settings controls.
+        //
+        // The arithmetic and the layout disagreed, and the arithmetic was right.
+        Column(Modifier.fillMaxSize().padding(top = LOCK_ZONE)) {
             // ABOVE THE DIGITS, and only when the counter is on. It is a control as well as a
             // readout: tapping it is the other way to count a length, and at the end of a length
             // in a pool a thumb finds a wide target above the numbers more easily than a small
@@ -560,13 +567,43 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 )
             }
 
+            // ─────────────────────────────────────────────────────────────────────────────────
+            // THE NUMBERS ARE A CONTROL AGAIN, AND THIS REVERSES v1 — BUT NOT ITS REASONING.
+            //
+            // v1 deleted tap-anywhere, and the argument was never that a large target is bad. It
+            // was that the gesture's SECOND STATE WAS DESTRUCTIVE: tap to start, tap again to
+            // reset, so one stray touch during a real measurement destroyed it with the whole
+            // screen as the target.
+            //
+            // That objection is answered rather than ignored. A tap now toggles between running
+            // and paused, which is recoverable and visible — the worst a stray touch can do is
+            // pause a clock you can see is paused, and press again. RESET IS BEHIND A LONG PRESS,
+            // which is the one gesture a pocket, a sleeve or a wet hand does not produce.
+            //
+            // What it buys back is what v1 knowingly gave up: starting without aiming, with the
+            // whole screen as the target. That matters more for Baba than for most people.
+            // ─────────────────────────────────────────────────────────────────────────────────
             Digits(
                 text = countdown ?: text,
                 colour = Color(if (flashing) Palette.flashOf(colour) else colour),
                 weight = weight,
                 width = screenW - EDGE * 2,
                 height = screenH - strip - LOCK_ZONE,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        onClick = {
+                            if (prerollEndsAt > 0L) cancelPreroll()
+                            else if (!(state.phase != Phase.RUNNING && beginPreroll())) {
+                                commit(state.press(Control.PLAY, SystemClock.elapsedRealtime()))
+                            }
+                        },
+                        onLongClick = {
+                            cancelPreroll()
+                            commit(state.stop())
+                        },
+                    ),
             )
             Row(
                 modifier = Modifier.fillMaxWidth().height(strip),
