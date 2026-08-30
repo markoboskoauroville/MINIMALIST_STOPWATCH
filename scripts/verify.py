@@ -701,6 +701,14 @@ check("there is a way out of the full screen",
       "Icons.Outlined.PowerSettingsNew" in code_only(ui) and "activity.finish()" in code_only(ui),
       "the power mark, top of the screen, not a cross")
 
+# The centre belongs to the microphone, which is a state checked constantly, not to the exit,
+# which is used once. v28 had these the wrong way round.
+check("the microphone keeps the centre and the exit sits beside it",
+      "modifier = Modifier.align(Alignment.TopCenter).padding(EDGE)," in code_only(ui)
+      and "offset(x = screenW / 4 - 16.dp)" in code_only(ui),
+      "the exit is offset by a quarter of the width, so it stays halfway to the settings in "
+      "either orientation rather than at a fixed distance that suits only one")
+
 # A recorder that shows nothing until it stops asks you to talk into a hole and find out
 # afterwards. The meter says audio is arriving; only the shape says what arrived.
 check("the waveform is drawn while it is being recorded",

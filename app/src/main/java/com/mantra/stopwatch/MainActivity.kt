@@ -596,13 +596,25 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         // and this control is the one that turns everything off.
         //
         // Dim, because it is used once a day and the digits are used constantly.
+        //
+        // BETWEEN THE MICROPHONE AND THE SETTINGS, not in the middle. v28 took the centre for
+        // this and pushed the microphone aside, which had the priority backwards: the microphone
+        // is a state you check constantly and the exit is a control you use once. The middle
+        // belongs to the thing that is looked at, not to the thing that is looked for.
+        //
+        // The offset is a quarter of the width rather than a fixed distance, so it stays halfway
+        // between the two on a phone held either way up. A fixed number would sit beside the
+        // microphone in portrait and be lost in the middle of nowhere in landscape.
         // ─────────────────────────────────────────────────────────────────────────────────────
         Glyph(
             icon = Icons.Outlined.PowerSettingsNew,
             label = "Close the stopwatch",
             tone = Tone.SECONDARY,
             size = 40.dp,
-            modifier = Modifier.align(Alignment.TopCenter).padding(EDGE),
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(EDGE)
+                .offset(x = screenW / 4 - 16.dp),
         ) { activity.finish() }
 
         Glyph(
@@ -636,14 +648,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             label = if (listening) "Voice on" else "Voice off",
             tone = if (listening) Tone.PRIMARY else Tone.SECONDARY,
             size = 40.dp,
-            // OFF EXACT CENTRE NOW, and this is a real loss worth naming. It was put in the
-            // middle at v10 because a row has two ends and a middle and the ends were taken. The
-            // exit needs the middle more: it is the control somebody reaches for when they cannot
-            // find one, and the microphone is a control they already know where to find.
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(EDGE)
-                .offset(x = (-56).dp),
+            // THE MIDDLE, AND IT KEEPS IT. v28 moved this aside for the exit and that was the
+            // wrong way round: this is a STATE, checked at a glance and often, and the exit is a
+            // control used once at the end. The centre belongs to what is looked at.
+            modifier = Modifier.align(Alignment.TopCenter).padding(EDGE),
         ) {
             if (!listening && !granted) {
                 askForMicrophone.launch(Manifest.permission.RECORD_AUDIO)
