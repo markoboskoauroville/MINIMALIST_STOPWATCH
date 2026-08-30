@@ -71,6 +71,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -168,6 +169,12 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var colour by remember { mutableLongStateOf(store.colour) }
     var weight by remember { mutableStateOf(store.weight) }
     var display by remember { mutableStateOf(store.display) }
+    var lapMode by remember { mutableStateOf(store.lapMode) }
+
+    // THE LAP COUNT LIVES HERE, NOT IN THE STOPWATCH. It counts lengths of a pool; the stopwatch
+    // measures time, and the one thing that model has never done in twenty versions is let
+    // anything but a transition touch startedAt and accumulated.
+    var laps by remember { mutableIntStateOf(0) }
     var settingsOpen by remember { mutableStateOf(false) }
 
     // VOICE. The switch is a preference; the microphone follows it and the app's own lifecycle.
@@ -200,6 +207,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     }
 
     fun commit(next: Stopwatch) {
+        // Stop clears the laps with everything else. A lap count left over from the last swim,
+        // sitting above a stopwatch reading zero, is a number that will be believed.
+        if (next.phase == Phase.STOPPED && state.phase != Phase.STOPPED) laps = 0
         if (next != state) flashes++
         state = next
         now = SystemClock.elapsedRealtime()
@@ -263,6 +273,14 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 if (hit != null) lit = Lit.of(hit, SystemClock.elapsedRealtime())
             },
             onCommand = { control ->
+                // Lap is a command but not a transport control, so it is routed here rather than
+                // pressed into the model. It counts whether or not the panel is open, because
+                // unlike the transport there is nothing destructive about counting one too many
+                // while testing — and a lap you have swum is a lap whatever screen is showing.
+                if (control == Control.LAP) {
+                    laps++
+                    flashes++
+                }
                 // DETECTION ONLY WHILE THE PANEL IS OPEN. The word lights, the clock does not
                 // move. It is the only way to tell "it did not hear me" from "it heard me and
                 // did the wrong thing", and Baba asked for exactly this test.
@@ -391,6 +409,29 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         val strip = if (landscape) 72.dp else 108.dp
 
         Column(Modifier.fillMaxSize()) {
+            // ABOVE THE DIGITS, and only when the counter is on. It is a control as well as a
+            // readout: tapping it is the other way to count a length, and at the end of a length
+            // in a pool a thumb finds a wide target above the numbers more easily than a small
+            // one anywhere else.
+            lapLabel(laps, lapMode)?.let { label ->
+                Text(
+                    text = label,
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = if (weight == Weight.BOLD) FontWeight.Bold else FontWeight.Normal,
+                        color = Color(colour),
+                        fontSize = 28.sp,
+                    ),
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { laps++; flashes++ }
+                        .padding(top = LOCK_ZONE, bottom = 4.dp),
+                    textAlign = TextAlign.Center,
+                )
+            }
+
             Digits(
                 text = text,
                 colour = Color(if (flashing) Palette.flashOf(colour) else colour),
@@ -497,6 +538,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 weight = weight,
                 display = display,
                 onDisplay = { display = it; store.display = it },
+                lapMode = lapMode,
+                onLapMode = { lapMode = it; store.lapMode = it },
                 listening = listening,
                 level = level,
                 scores = scores,
@@ -614,6 +657,8 @@ private fun SettingsGrid(
     weight: Weight,
     display: Display,
     onDisplay: (Display) -> Unit,
+    lapMode: LapMode,
+    onLapMode: (LapMode) -> Unit,
     listening: Boolean,
     level: Float,
     scores: List<Pair<Control, Double>>,
@@ -797,6 +842,20 @@ private fun SettingsGrid(
             val half = (gridWidth - gap) / 2
             DisplayCell("88:88:88", Display.MULTI, display, colour, weight, half, onDisplay)
             DisplayCell("88", Display.SINGLE, display, colour, weight, half, onDisplay)
+        }
+
+        // THE LAP COUNTER, shown the way everything else in this tab is shown: in the thing it
+        // describes. A cell reading "25 m" tells you a word; a cell reading 3 (75 m) is what will
+        // actually sit above the digits after three lengths.
+        Row(
+            modifier = Modifier.padding(top = gap),
+            horizontalArrangement = Arrangement.spacedBy(gap),
+        ) {
+            val quarter = (gridWidth - gap * 3) / 4
+            LapCell("off", LapMode.OFF, lapMode, colour, quarter, onLapMode)
+            LapCell("3", LapMode.COUNT, lapMode, colour, quarter, onLapMode)
+            LapCell("3 (75 m)", LapMode.M25, lapMode, colour, quarter, onLapMode)
+            LapCell("3 (150 m)", LapMode.M50, lapMode, colour, quarter, onLapMode)
         }
 
         // ─────────────────────────────────────────────────────────────────────────────────────
@@ -1067,6 +1126,41 @@ private fun Pad(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun LapCell(
+    sample: String,
+    represents: LapMode,
+    current: LapMode,
+    colour: Long,
+    width: Dp,
+    onLapMode: (LapMode) -> Unit,
+) {
+    val chosen = represents == current
+    Box(
+        Modifier
+            .size(width = width, height = 44.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (chosen) PANEL_CHOSEN else PANEL_IDLE),
+        contentAlignment = Alignment.Center,
+    ) {
+        IconButton(
+            onClick = { onLapMode(represents) },
+            modifier = Modifier.size(width = width, height = 44.dp),
+        ) {
+            Text(
+                text = sample,
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    color = if (chosen) Color(colour) else GLYPH,
+                    fontSize = 11.sp,
+                ),
+                maxLines = 1,
+                softWrap = false,
+            )
         }
     }
 }

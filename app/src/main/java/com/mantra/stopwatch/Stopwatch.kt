@@ -51,6 +51,18 @@ enum class Control(val spoken: String) {
     PLAY("Start"),
     PAUSE("Pause"),
     STOP("Reset"),
+
+    /**
+     * The lap counter, which is a command but NOT a transport control.
+     *
+     * It is in this enum because everything a spoken word can do lives here: the vocabulary, the
+     * sample rows in the recorder, and the matcher's per-command scoring all walk Control.entries.
+     * Leaving lap out would have meant a second parallel list of things that can be said, and two
+     * lists of the same kind of thing is how one of them quietly stops being updated.
+     *
+     * It is not drawn in the transport row, and it never changes the clock — see press().
+     */
+    LAP("Lap"),
 }
 
 /**
@@ -88,6 +100,38 @@ enum class Orientation { PORTRAIT, LANDSCAPE }
  * made once in the source and becomes a switch.
  */
 enum class Display { MULTI, SINGLE }
+
+/**
+ * The lap counter, off or counting, and if counting then optionally in metres.
+ *
+ * The metres exist for swimming. A pool has a known length, so a lap count IS a distance, and
+ * the arithmetic is one multiplication that a person should not have to do in their head while
+ * out of breath at the end of a length.
+ *
+ * The lengths offered are the two that almost every pool is. A free-text field would be a
+ * keyboard on a screen whose whole design is that it has no keyboard, for a number that changes
+ * about once a year.
+ */
+enum class LapMode(val metres: Int?) {
+    OFF(null),
+    COUNT(null),
+    M25(25),
+    M50(50),
+}
+
+/**
+ * What sits above the digits, or null when there is nothing to show.
+ *
+ * Pure and separate from the screen because it is the one piece of arithmetic in this feature and
+ * arithmetic is the thing worth testing: a lap counter that shows the wrong distance at length
+ * forty is worse than one that shows nothing, because it will be believed.
+ */
+fun lapLabel(laps: Int, mode: LapMode): String? {
+    if (mode == LapMode.OFF) return null
+    val n = if (laps < 0) 0 else laps
+    val metres = mode.metres ?: return "$n"
+    return "$n  (${n * metres} m)"
+}
 
 data class Stopwatch(
     val phase: Phase = Phase.STOPPED,
@@ -162,6 +206,11 @@ data class Stopwatch(
             Phase.STOPPED -> this
         }
         Control.STOP -> stop()
+        // THE LAP COUNTER IS NOT PART OF THE TIMING MODEL AND MUST NOT BE. It counts lengths of
+        // a pool; the stopwatch measures time. Putting it in here would mean a lap press could
+        // touch startedAt or accumulated, and the one thing this model has never done in twenty
+        // versions is let anything but a transition touch those two fields.
+        Control.LAP -> this
     }
 
     /**
@@ -192,6 +241,9 @@ data class Stopwatch(
         // Stop is never the suggested next action. There is no state of a stopwatch in which
         // throwing the measurement away is what you probably meant to do next.
         Control.STOP -> if (phase == Phase.STOPPED) Tone.DEAD else Tone.SECONDARY
+        // Never drawn in the transport, so its tone is only ever asked for by the tester, where
+        // every row is drawn the same way.
+        Control.LAP -> Tone.SECONDARY
     }
 
     companion object {

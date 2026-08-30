@@ -48,6 +48,14 @@ object Heard {
             "clear", "zero", "zeros", "cancel",
             "resetiraj", "nula", "obrisi", "obriši", "ponisti", "poništi",
         ),
+        // Lap is the same word in both languages, which is luck rather than design. "krug" is
+        // the Croatian, and it is what somebody out of breath at the end of a length is as
+        // likely to say as the English.
+        Control.LAP to setOf(
+            "lap", "laps", "lapse", "lab",                   // the usual mishearings of one syllable
+            "next", "round",
+            "krug", "krugovi", "duzina", "dužina",
+        ),
     )
 
     /**

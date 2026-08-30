@@ -65,6 +65,14 @@ class Store(private val context: Context) {
         get() = p.getBoolean(Keys.K_LISTENING, false)
         set(v) = p.edit().putBoolean(Keys.K_LISTENING, v).apply()
 
+    var lapMode: LapMode
+        get() = try {
+            LapMode.valueOf(p.getString(Keys.K_LAP, LapMode.OFF.name) ?: LapMode.OFF.name)
+        } catch (e: IllegalArgumentException) {
+            LapMode.OFF
+        }
+        set(v) = p.edit().putString(Keys.K_LAP, v.name).apply()
+
     var display: Display
         get() = if (p.getBoolean(Keys.K_SINGLE, false)) Display.SINGLE else Display.MULTI
         set(v) = p.edit().putBoolean(Keys.K_SINGLE, v == Display.SINGLE).apply()
@@ -182,6 +190,7 @@ class Store(private val context: Context) {
         const val K_COLOUR = "colour"
         const val K_BOLD = "bold"
         const val K_SINGLE = "single"
+        const val K_LAP = "lapMode"
         const val K_LISTENING = "listening"
     }
 }

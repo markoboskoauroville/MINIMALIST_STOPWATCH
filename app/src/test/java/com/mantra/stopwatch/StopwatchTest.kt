@@ -944,7 +944,7 @@ class StopwatchTest {
                 assertNull("'" + w + "' belongs to both " + other + " and " + control, other)
             }
         }
-        assertEquals(3, Heard.VOCABULARY.size)
+        assertEquals("every control must have a vocabulary", Control.entries.size, Heard.VOCABULARY.size)
     }
 
     /** Every accepted word must survive normalisation, or it can never be matched. */
@@ -1055,25 +1055,28 @@ class StopwatchTest {
      * passes, and the only thing that breaks is a spoken word that stops being heard.
      */
     @Test
-    fun theVocabularyIsThreeDistinctWordsAndTheTipCanOnlyComeFromIt() {
+    fun theVocabularyIsOneDistinctWordPerControlAndTheTipCanOnlyComeFromIt() {
         assertEquals("Start", Control.PLAY.spoken)
         assertEquals("Pause", Control.PAUSE.spoken)
         assertEquals("Reset", Control.STOP.spoken)
+        assertEquals("Lap", Control.LAP.spoken)
 
         val words = Control.entries.map { it.spoken }
         assertEquals("no two controls may answer to the same word", words.size, words.toSet().size)
-        assertEquals("one word per control, no more and no fewer", 3, words.size)
+        assertEquals("one word per control, no more and no fewer", 4, words.size)
         for (w in words) {
             assertTrue("a spoken command cannot be blank", w.isNotBlank())
             assertTrue("a spoken command must be one word", !w.contains(" "))
         }
 
-        // The reminder in the settings panel is built by joining exactly this list. Composing it
-        // here as well proves the tip has no vocabulary of its own to drift with.
-        assertEquals(
-            "\"tap start\"  \"tap pause\"  \"tap reset\"",
-            Control.entries.joinToString("  ") { "\"tap " + it.spoken.lowercase() + "\"" },
-        )
+        // A LEFTOVER FROM THE VOICE ACCESS ERA LIVED HERE and asserted the tip read
+        // "tap start"  "tap pause"  "tap reset". That tip was deleted at v13 when the app stopped
+        // depending on Voice Access, and the assertion survived it — passing for six versions
+        // because the expression it built happened to match a string nothing displayed any more.
+        // What actually matters is that the words shown in the tester are the matcher's own.
+        for (control in Control.entries) {
+            assertEquals(control.spoken.lowercase(), Heard.primary(control))
+        }
     }
 
     /**
@@ -1110,8 +1113,15 @@ class StopwatchTest {
 
         // Every one of the nine was named above. If a phase or a control is ever added, this
         // count fails before anybody notices the table is short.
+        // LAP is a command but not a transport control: it is never drawn in the transport row
+        // and it never changes the clock, so its tone is the same in every phase.
+        for (phase in listOf(stopped, running, paused)) {
+            assertEquals(Tone.SECONDARY, phase.tone(Control.LAP))
+            assertEquals("lap must never touch the clock", phase, phase.press(Control.LAP, 9_999))
+        }
+
         val cases = Phase.entries.size * Control.entries.size
-        assertEquals(9, cases)
+        assertEquals(12, cases)
     }
 
     /**

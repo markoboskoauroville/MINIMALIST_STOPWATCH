@@ -120,7 +120,12 @@ tones = enum_members("Tone")
 has_press = re.search(r"fun press\(control: Control, now: Long\)", src) is not None
 has_tone = re.search(r"fun tone\(control: Control\)", src) is not None
 check("both button tables are total for every control and phase",
-      has_press and has_tone and len(phases) == 3 and len(controls) == 3 and len(tones) >= 3,
+      # The control count is no longer three — LAP joined at v21 — and hardcoding it here would
+      # be encoding today's feature list as a law, which is the fault that made the tone check
+      # fail the last time the design was right to change. What must hold is that both tables
+      # are total: Kotlin's exhaustive `when` over an enum enforces the rows, this asserts the
+      # tables exist and that the enums are the size they claim.
+      has_press and has_tone and len(phases) == 3 and len(controls) >= 3 and len(tones) >= 3,
       f"{len(controls)} controls x {len(phases)} phases = {len(controls) * len(phases)} cases, "
       f"two tables (press, tone), {len(tones)} tones: {', '.join(tones)}")
 
@@ -533,6 +538,18 @@ check("both display modes have a width that only changes at a field boundary",
       'display == Display.MULTI) return "%02d:%02d:%02d"' in src
       and "m > 0L ->" in src and "else ->" in src,
       "MULTI is one branch and one width; SINGLE is three branches and three widths")
+
+# The lap count must never reach the timing model. It counts lengths of a pool; the stopwatch
+# measures time, and nothing but a transition may touch startedAt or accumulated.
+check("the lap counter never touches the clock",
+      "Control.LAP -> this" in src and "var laps by remember" in code_only(ui),
+      "press(LAP) returns the same state; the count lives in the screen")
+
+# A lap count left over from the last swim, sitting above a stopwatch reading zero, is a number
+# that will be believed.
+check("stop clears the lap count with everything else",
+      "if (next.phase == Phase.STOPPED && state.phase != Phase.STOPPED) laps = 0" in code_only(ui),
+      "the reset that clears the digits clears the lengths too")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
