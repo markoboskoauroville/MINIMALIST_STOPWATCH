@@ -1239,6 +1239,64 @@ class StopwatchTest {
     }
 
     /**
+     * The bird is generated, so it can be checked. A recording could only be listened to.
+     */
+    @Test
+    fun theBirdsongIsThreeNotesWithSilenceBetweenThem() {
+        val s = Birdsong.samples()
+        assertEquals(Birdsong.lengthMs(), s.size * 1000 / Dsp.SAMPLE_RATE)
+
+        // Three bursts of energy separated by two gaps. Measured rather than assumed, because a
+        // generator that produced one long note would still be the right LENGTH.
+        val frame = Dsp.SAMPLE_RATE / 100
+        val loud = (0 until s.size / frame).map { i ->
+            (0 until frame).maxOf { Math.abs(s[i * frame + it].toInt()) } > 2_000
+        }
+        var bursts = 0
+        for (i in loud.indices) if (loud[i] && (i == 0 || !loud[i - 1])) bursts++
+        assertEquals("three notes, not one long one", 3, bursts)
+    }
+
+    /** Nothing about this needs to be loud, and a clipped chirp is a click. */
+    @Test
+    fun theBirdsongNeverClips() {
+        for (v in Birdsong.samples()) {
+            assertTrue("sample $v is at the rail", Math.abs(v.toInt()) < 32_000)
+        }
+    }
+
+    /**
+     * IT MUST ACTUALLY BE IN THE BIRD RANGE. A generator with the sweep arithmetic wrong still
+     * produces three notes of the right length that sound nothing like a bird, so the frequency
+     * is measured with the app's own transform rather than trusted from the constants.
+     */
+    @Test
+    fun theBirdsongSitsWhereBirdsDo() {
+        val s = Birdsong.samples()
+        val n = 1024
+        val re = DoubleArray(n)
+        val im = DoubleArray(n)
+        // The middle of the first note, which is the top of its sweep.
+        val start = Dsp.SAMPLE_RATE * 55 / 1000
+        for (i in 0 until n) re[i] = s[start + i] / 32768.0
+        Dsp.fft(re, im)
+
+        val mag = DoubleArray(n / 2) { Math.sqrt(re[it] * re[it] + im[it] * im[it]) }
+        val peak = mag.indices.maxByOrNull { mag[it] }!!
+        val hz = peak.toDouble() * Dsp.SAMPLE_RATE / n
+        assertTrue("peak at ${hz.toInt()}Hz is not birdsong", hz in 1_500.0..5_500.0)
+    }
+
+    /** Same sound every time: a chime that varies is a fault somebody will chase. */
+    @Test
+    fun theBirdsongIsTheSameEveryTime() {
+        val a = Birdsong.samples()
+        val b = Birdsong.samples()
+        assertEquals(a.size, b.size)
+        for (i in a.indices) assertEquals("sample $i differs", a[i].toInt(), b[i].toInt())
+    }
+
+    /**
      * No word may belong to two controls. If one ever did, [Heard.match] would refuse it and the
      * command would silently stop working with nothing to show why.
      */

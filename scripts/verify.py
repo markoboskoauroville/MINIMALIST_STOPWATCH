@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 107
+TEST_FLOOR = 111
 
 
 def code_only(text):
@@ -777,6 +777,20 @@ check("each clock has its own count-in",
 check("the lap count is sized to fill its band",
       "Digits(\n                    text = label," in code_only(ui),
       "the same binary search the clock uses, so it is as large as the space allows")
+
+# The bird is GENERATED, not shipped: no asset, no licence, nothing to go missing from a build,
+# and — the part that matters — it can be checked rather than only listened to.
+bird = (MAIN / "Birdsong.kt").read_text()
+check("the end-of-timer sound is generated rather than shipped",
+      "fun samples(" in bird and "phase += 2.0 * PI * hz / rate" in bird,
+      "a swept chirp, accumulated phase, no file in the APK")
+
+# The bird marks the END and the recorded word marks the START. One sound for both would make the
+# two moments indistinguishable from across a room, which is the only place either is heard from.
+check("the timer ending sounds different from a measurement starting",
+      "GoSound.playSamples(Birdsong.samples()" in code_only(ui)
+      and "GoSound.play(context)" in code_only(ui),
+      "the bird at zero, the recorded word at the start of a count-in")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

@@ -272,7 +272,14 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         if (appMode != AppMode.TIMER || state.phase != Phase.RUNNING) return@LaunchedEffect
         if (timerFinished(timerSeconds * 1000L, elapsed)) {
             commit(state.pause(SystemClock.elapsedRealtime()))
-            GoSound.play(context)
+            // THE BIRD MARKS THE END; THE RECORDED WORD MARKS THE START. Using the same sound for
+            // both would make the two moments indistinguishable from across a room, which is the
+            // only place either of them is heard from.
+            //
+            // It goes through the same path as everything else this app plays, so the microphone
+            // is deaf for its length plus the ring — the app cannot hear its own bird and stop
+            // the clock it just finished.
+            GoSound.playSamples(Birdsong.samples(), Dsp.SAMPLE_RATE)
         }
     }
 
