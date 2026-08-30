@@ -172,6 +172,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var lapMode by remember { mutableStateOf(store.lapMode) }
     var preroll by remember { mutableStateOf(store.preroll) }
 
+    // Read once, up here, because the countdown effect below needs it and effects belong
+    // beside the state they drive rather than below the values they happen to use.
+    val context = LocalContext.current
+
     // THE COUNTDOWN. Zero means no countdown is running; otherwise it is the instant it ends,
     // on the same monotonic clock as everything else in this app, because a countdown that used
     // the wall clock would jump when a time server corrected it.
@@ -271,7 +275,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // A recognised command goes through exactly the same press() the button does, so a spoken
     // "start" and a tapped play cannot behave differently.
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    val context = LocalContext.current
     val granted = remember(listening) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             PackageManager.PERMISSION_GRANTED
