@@ -391,6 +391,44 @@ class StopwatchTest {
         )
     }
 
+    /**
+     * THE CASE THE OLD DENOISER REFUSED, and the reason this one was built.
+     *
+     * v20 learned the noise from the quiet frames of the window, so it needed the window to
+     * contain quiet frames — and carried a guard that declined to clean anything without a gap in
+     * it. Traffic and a club are precisely the places with no gap. Minimum statistics asks what
+     * the smallest each band has been, which a band still has an answer for when nobody stopped
+     * talking, so this must now help where the old one did nothing at all.
+     */
+    @Test
+    fun cleaningHelpsEvenWhenThereIsNoQuietPartToLearnFrom() {
+        val template = Dsp.features(utterance(300.0, 500))
+        // Noise across the WHOLE window and a word filling almost all of it: no gap anywhere.
+        val relentless = noisy(utterance(300.0, 900, roomMs = 40, amplitude = 0.25), amount = 0.05)
+
+        val withCleaning = Dsp.dtw(Dsp.features(relentless, clean = true), template)
+        val without = Dsp.dtw(Dsp.features(relentless, clean = false), template)
+        assertTrue(
+            "with no gap to learn from it must still help: with $withCleaning, without $without",
+            withCleaning < without,
+        )
+    }
+
+    /**
+     * The gain is floored rather than allowed to reach zero. A band closed completely is a hole,
+     * the log turns a hole into a cliff, and the matcher then compares cliffs instead of voices.
+     */
+    @Test
+    fun noBandIsEverClosedCompletely() {
+        val quiet = noisy(ShortArray(24_000), amount = 0.03)
+        val frames = Dsp.features(quiet, clean = true)
+        for (f in frames) {
+            for (v in f) {
+                assertTrue("a band went to negative infinity: $v", v.isFinite())
+            }
+        }
+    }
+
     /** And it must not damage audio that was already clean. */
     @Test
     fun noiseReductionLeavesACleanRecordingRecognisable() {

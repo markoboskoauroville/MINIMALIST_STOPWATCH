@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 92
+TEST_FLOOR = 94
 
 
 def code_only(text):
@@ -506,6 +506,20 @@ check("the matcher needs a margin as well as a threshold",
 
 # Loudness must not change the answer, and the normalisation that guarantees it is per frame.
 # The per-utterance version collapsed every frame of a steady sound to zero.
+# THE ESTIMATOR MUST NOT NEED A QUIET PART. v20's needed one and carried a guard that declined to
+# clean anything without a gap in it, which is exactly traffic and exactly a club. If a guard like
+# that reappears, the feature has silently stopped working in the only places it was built for.
+check("the noise estimate works without a gap in the audio",
+      "MINIMUM_BIAS" in dsp and "FLAT_ENOUGH_TO_REFUSE" not in dsp
+      and "QUIET_QUANTILE" not in dsp,
+      "minimum statistics per band, with no window that it refuses to touch")
+
+# A gain that jumps between frames is what musical noise IS. The decision-directed smoothing is
+# the single thing that stops it, so it is the single thing worth holding here.
+check("the suppression gain is smoothed between frames",
+      "SMOOTHING * priorSnr[b]" in dsp and "priorSnr[b] = (gain * gain * posterior)" in dsp,
+      "decision-directed: this frame's decision informs the next, so the gain cannot jump")
+
 check("loudness is removed per frame, not per utterance",
       "f[b] - mean }" in dsp and "mean /= BANDS" in dsp,
       "each frame minus its own mean across the bands, which keeps the shape and drops the gain")

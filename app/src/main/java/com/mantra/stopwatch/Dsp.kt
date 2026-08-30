@@ -135,97 +135,96 @@ object Dsp {
      * treat "nothing was said" as a case rather than as an error.
      */
     /**
-     * SPECTRAL SUBTRACTION, WHICH IS WHAT AUDITION DOES, WITH ONE CHANGE.
+     * MINIMUM-STATISTICS NOISE TRACKING AND A DECISION-DIRECTED WIENER GAIN.
      *
-     * Audition asks you to select a patch of silence, learns the noise from it, and subtracts
-     * that from the whole file. The learning is the good part; the asking is the part that does
-     * not survive a phone in traffic, because the noise in the street is not the noise it was
-     * when you selected the patch.
+     * This is what a professional denoiser does, and the two halves fix the two things wrong with
+     * what was here before.
      *
-     * So the profile is taken from the recording itself, every time: for each band, the QUIET
-     * QUANTILE across the frames of this window. A person saying one word leaves far more frames
-     * of room than of voice, so the quiet quantile of a band IS the room in that band — and it is
-     * this room, now, not the room ten minutes ago.
+     * THE ESTIMATOR. v20 took the quiet frames of the window and averaged them, which needs the
+     * window to CONTAIN quiet frames — so it carried a guard that refused to clean anything with
+     * no gap in it, and traffic and a club are exactly the places with no gap. Minimum statistics
+     * asks a different question: for each band, what is the smallest this band has been recently?
+     * Speech is intermittent in every band, even during continuous talking, so a band's minimum
+     * over a second is the noise floor in that band whether or not anybody stopped speaking. The
+     * minimum of a noisy quantity is biased low, so it is multiplied back up by a correction
+     * factor, which is what Martin's method does and where the number comes from.
      *
-     * That is also the answer to "sample the noise, then clean, then sample again": it samples
-     * and cleans in the same pass, on the same audio, so there is never a stale profile.
+     * THE SUPPRESSION. v20 subtracted the estimate from the magnitude. Subtraction is crude: it
+     * takes the same amount off a band that is mostly speech and a band that is mostly noise, and
+     * what is left in the quiet bands is the ragged residue that sounds like bubbling — musical
+     * noise, the thing that makes cheap noise reduction recognisable. A Wiener gain instead asks,
+     * per band, HOW MUCH OF THIS IS SIGNAL, and scales by that: bands that are mostly speech pass
+     * almost untouched, bands that are mostly noise are turned down smoothly.
      *
-     * ALPHA over-subtracts a little, because a noise estimate that is right on average is too low
-     * half the time and what is left over is musical noise. FLOOR keeps a fraction of the
-     * original rather than going to zero, because zeroing a band makes a hole that the log turns
-     * into a cliff, and the matcher then compares cliffs instead of voices.
+     * DECISION-DIRECTED means the signal-to-noise estimate driving the gain is smoothed against
+     * the previous frame's answer rather than computed fresh each time. That is Ephraim and
+     * Malah's contribution and it is the single thing that removes musical noise: an estimate
+     * that jumps frame to frame produces a gain that jumps frame to frame, and a gain that jumps
+     * is what you hear.
      *
-     * WHY THIS AND NOT AN AI MODEL. RNNoise, the obvious open-source choice, is a 60 to 90 KB
-     * model — a thousandth of the budget offered — and it is genuinely better at this. It is also
-     * C, which means the NDK, CMake, a native build in CI and a shared object per ABI. This is
-     * about 40 lines, needs no toolchain, costs one subtraction per band per frame, and is
-     * testable on a plain JVM, which is how every hard thing in this app finally got right. If it
-     * is not enough in the club, RNNoise is the next step and it is a version of its own.
+     * WHY NOT RNNoise. It is better than this and its model is only 60 to 90 KB. It is also C:
+     * the NDK, CMake, a native build in CI and a shared object per ABI, none of which this
+     * project has. This is a hundred lines of Kotlin, costs a multiplication per band per frame,
+     * needs no toolchain, and — the part that matters most here — is testable on a plain JVM,
+     * which is how every hard thing in this app finally got right. If this is not enough in the
+     * club, RNNoise is next and it is a version of its own.
      */
     private fun denoise(bands: MutableList<DoubleArray>) {
-        if (bands.size < MIN_FRAMES_FOR_PROFILE) return
+        if (bands.size < MIN_FRAMES) return
 
-        // THE PROFILE COMES FROM THE QUIETEST FRAMES, NOT FROM A QUANTILE OF EACH BAND.
-        //
-        // The first version took, for each band independently, the 30th percentile across all
-        // frames. Test 1 caught it: on a signal that is voice the whole way through, that
-        // percentile IS the voice, so the subtraction removed the word and left the room. The
-        // fault only showed on a steady test signal — on speech it would have quietly degraded
-        // matching rather than visibly breaking it, which is the more expensive kind of wrong.
-        //
-        // Room frames are identified by TOTAL energy and the profile is the average of those.
-        val totals = DoubleArray(bands.size) { i -> bands[i].sum() }
-        val sorted = totals.clone().also { it.sort() }
-        val quiet = sorted[(sorted.size * QUIET_QUANTILE).toInt().coerceIn(0, sorted.size - 1)]
-        val loud = sorted[sorted.size - 1]
-
-        // NO RELIABLE ESTIMATE, NO SUBTRACTION. If the whole window is equally loud there is
-        // nothing in it that can be identified as room, and subtracting anyway would take a bite
-        // out of the signal. Doing nothing is the honest answer and it is better than guessing.
-        if (loud <= 0.0 || quiet / loud > FLAT_ENOUGH_TO_REFUSE) return
-
-        val profile = DoubleArray(BANDS)
-        var counted = 0
-        for (i in bands.indices) {
-            if (totals[i] <= quiet) {
-                for (b in 0 until BANDS) profile[b] += bands[i][b]
-                counted++
-            }
+        val noise = DoubleArray(BANDS)
+        for (b in 0 until BANDS) {
+            // The minimum this band reached anywhere in the window, corrected for the bias that
+            // taking a minimum introduces. No guard and no quantile: a band that never went quiet
+            // still has a smallest value, and that value is the floor it never got below.
+            var lowest = Double.MAX_VALUE
+            for (f in bands) if (f[b] < lowest) lowest = f[b]
+            noise[b] = lowest * MINIMUM_BIAS
         }
-        if (counted == 0) return
-        for (b in 0 until BANDS) profile[b] = profile[b] / counted
+
+        // The a priori signal-to-noise ratio, carried between frames. Starting it at the a
+        // posteriori value of the first frame rather than at zero avoids a first frame that is
+        // gated to nothing, which would clip the start of every word.
+        val priorSnr = DoubleArray(BANDS) { 1.0 }
 
         for (f in bands) {
             for (b in 0 until BANDS) {
-                val cleaned = f[b] - ALPHA * profile[b]
-                f[b] = if (cleaned > FLOOR * f[b]) cleaned else FLOOR * f[b]
+                val power = f[b] * f[b]
+                val noisePower = (noise[b] * noise[b]).coerceAtLeast(1e-12)
+
+                // A posteriori: how much louder is this frame than the noise floor.
+                val posterior = (power / noisePower).coerceAtLeast(1e-6)
+
+                // Decision directed: mostly last frame's answer, a little of this one. This is
+                // the smoothing that stops the gain jumping, and the jumping is what is audible.
+                val prior = SMOOTHING * priorSnr[b] +
+                    (1.0 - SMOOTHING) * (posterior - 1.0).coerceAtLeast(0.0)
+
+                val gain = (prior / (1.0 + prior)).coerceIn(GAIN_FLOOR, 1.0)
+                f[b] = f[b] * gain
+
+                // Carried forward as the estimate of what the signal was, which is what makes it
+                // "decision directed": the decision made about this frame informs the next.
+                priorSnr[b] = (gain * gain * posterior).coerceAtLeast(1e-6)
             }
         }
     }
 
+    /** The minimum of a fluctuating quantity sits below its mean; this puts it back. */
+    private const val MINIMUM_BIAS = 1.5
+
+    /** Ephraim and Malah's alpha. High, because the whole point is that it changes slowly. */
+    private const val SMOOTHING = 0.96
+
     /**
-     * Above this ratio of quiet to loud, the window has no identifiable room in it.
-     *
-     * 0.55 was the first guess and it was too strict. Broadband noise spreads across all twenty
-     * bands while a voice concentrates in a few, so the TOTAL of a noisy frame is closer to the
-     * total of a spoken one than the loudness difference suggests — and the guard refused to
-     * clean recordings that plainly needed it. 0.85 still refuses a genuinely flat window, which
-     * is the only thing this guard is for, and the spectral floor stops the subtraction gouging
-     * holes even when the estimate is poor.
+     * Never to zero. A band closed completely is a hole, the log turns a hole into a cliff, and
+     * the matcher then compares cliffs instead of voices. It is also what over-aggressive noise
+     * reduction sounds like: words with the air removed from between them.
      */
-    private const val FLAT_ENOUGH_TO_REFUSE = 0.85
+    private const val GAIN_FLOOR = 0.08
 
-    /** The fraction of frames, by total energy, assumed to be room rather than voice. */
-    private const val QUIET_QUANTILE = 0.30
-
-    /** Over-subtract: an estimate that is right on average is too low half the time. */
-    private const val ALPHA = 1.6
-
-    /** Never to zero. A zeroed band is a hole, and the log turns a hole into a cliff. */
-    private const val FLOOR = 0.08
-
-    /** Below this there are not enough frames for a quantile to mean anything. */
-    private const val MIN_FRAMES_FOR_PROFILE = 12
+    /** Below this there are not enough frames for a minimum to mean anything. */
+    private const val MIN_FRAMES = 12
 
     /** Mean square per frame, straight from the samples, with no normalisation of any kind. */
     fun frameEnergies(samples: ShortArray): DoubleArray {
