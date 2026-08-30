@@ -371,7 +371,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             level = value
             // Read at call time, so this sees the current recording rather than the one that was
             // in progress when these callbacks were installed.
-            if (recordingFor != null) {
+            if (VoiceHub.capturing) {
                 val next = live + value
                 live = if (next.size <= LIVE_MAX) next
                 else FloatArray(next.size / 2) { next[it * 2] }
@@ -676,6 +676,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 onLapMode = { lapMode = it; store.lapMode = it },
                 names = names,
                 onNames = { names = it; store.names = it; VoiceHub.reloadTemplates(context) },
+                live = live,
+                onLive = { live = it },
                 preroll = preroll,
                 onPreroll = { preroll = it; store.preroll = it },
                 context = context,

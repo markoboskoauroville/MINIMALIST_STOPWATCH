@@ -34,6 +34,9 @@ object VoiceHub {
 
     val running: Boolean get() = engine != null
 
+    /** Whether a capture is open. The screen asks this rather than the panel's own state. */
+    val capturing: Boolean get() = engine?.capturing == true
+
     fun start(context: Context) {
         if (engine != null) return
         engine = VoiceEngine(
