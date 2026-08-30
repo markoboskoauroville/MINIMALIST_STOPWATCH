@@ -174,6 +174,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Screen(store: Store, activity: ComponentActivity) {
 
