@@ -264,9 +264,16 @@ check("the transport is written once, not once per orientation",
 # ── 8d ───────────────────────────────────────────────────────────────────────────────────────
 # The colour and the weight are judged against the digits, so the panel may never be drawn over
 # them. It is aligned to the bottom of the screen, over the black below the numbers.
-check("the settings panel sits at the bottom and not over the digits",
-      "Alignment.BottomCenter" in ui and "SettingsGrid" in ui,
-      "the grid is aligned BottomCenter, and every press applies live")
+# REVERSED AT v38, deliberately and at Baba's word. The panel sat at the bottom so the digits
+# showed above it while a colour was being chosen — design-language.md 11. But it was also
+# exactly as tall as its content, so every tab put the tab row at a different height and
+# switching tabs moved the control you had just pressed. A row that moves cannot be learned.
+#
+# Full screen, top aligned. The cost is that a colour is now judged by closing the panel; the
+# gain is a tab row that is always in the same place.
+check("the settings panel starts at the top and stays there",
+      "Alignment.TopCenter" in code_only(ui) and "SettingsGrid" in ui,
+      "top aligned and full height, so the tab row never moves between tabs")
 
 # ── 8e ───────────────────────────────────────────────────────────────────────────────────────
 # v5's panel was sized by WIDTH ALONE. On a landscape phone that made each cell about 130dp and
@@ -274,7 +281,7 @@ check("the settings panel sits at the bottom and not over the digits",
 # own way out. A panel that can grow past the display is a trap, and the fix is measuring
 # against both edges, not picking a smaller number.
 sized_by_both = re.search(r"minOf\(\(width - gap \* \(columns - 1\)\) / columns,\s*forGrid / rows", ui)
-has_budget = "maxHeight" in ui and re.search(r"maxHeight\s*=\s*screenH\s*\*", ui)
+has_budget = "maxHeight" in ui and re.search(r"maxHeight\s*=\s*screenH\s*-", ui)
 check("the settings panel cannot grow taller than the screen",
       sized_by_both is not None and has_budget is not None,
       "the cell is the smaller of what the width allows and what the height allows, capped at 64dp")

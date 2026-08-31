@@ -786,7 +786,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         if (settingsOpen) {
             SettingsGrid(
                 width = screenW - EDGE * 2,
-                maxHeight = screenH * 0.62f,
+                maxHeight = screenH - EDGE * 2,
                 landscape = landscape,
                 colour = colour,
                 weight = weight,
@@ -831,8 +831,24 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     }
                 },
                 onClose = { settingsOpen = false },
+                // ─────────────────────────────────────────────────────────────────────────────
+                // TOP ALIGNED, FULL SCREEN, AND THE VOID BELOW IS THE POINT.
+                //
+                // It used to sit at the bottom and be exactly as tall as its content, so every
+                // tab put the tab row at a different height. Switching tabs moved the very
+                // control you had just pressed — up, down, up — and you had to chase it. That is
+                // a worse fault than it sounds: a row that moves cannot be learned, and muscle
+                // memory is the whole reason a fixed layout is worth having.
+                //
+                // WHAT THIS COSTS, and it was a real rule rather than an oversight:
+                // design-language.md 11 says a thing being adjusted while it runs must stay
+                // visible, and the panel sat low so the digits showed above it while a colour was
+                // being chosen. Full screen takes that away — you now close the panel to see the
+                // colour you picked. That is one tap, and it buys a tab row that never moves.
+                // ─────────────────────────────────────────────────────────────────────────────
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
+                    .align(Alignment.TopCenter)
+                    .fillMaxSize()
                     .background(BACKGROUND)
                     .padding(EDGE),
             )
@@ -1530,7 +1546,18 @@ private fun Tab(label: String, selected: Boolean, colour: Long, onPress: () -> U
         text = label,
         style = TextStyle(
             fontFamily = FontFamily.Monospace,
-            color = if (selected) Color(colour) else GLYPH_OFF,
+            // WHITE WHEN NOT CHOSEN, COLOURED WHEN CHOSEN — and that is the opposite of the rest
+            // of this app, deliberately.
+            //
+            // Everywhere else, dim means "not the thing you want" and the eye is steered towards
+            // one control. A tab row is not that: every tab is somewhere you might be going, and
+            // a name you cannot read is not a choice you can make. At 12% these were invisible on
+            // a screen at low brightness, which is most of the time on a display designed to be
+            // black.
+            //
+            // So the tabs are all legible and the CHOSEN one is marked by colour rather than by
+            // the others being hidden.
+            color = if (selected) Color(colour) else Color.White,
             fontSize = 12.sp,
         ),
         maxLines = 1,
