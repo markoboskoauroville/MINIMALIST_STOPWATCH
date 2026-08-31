@@ -334,7 +334,15 @@ data class Stopwatch(
             // by pressing PAUSE is a surprise rather than a convenience.
             Phase.STOPPED -> this
         }
-        Control.STOP -> stop()
+        // TWO STEPS, THE WAY A STOPWATCH HAS ALWAYS WORKED. From running it FREEZES, keeping
+        // the figure so it can be read; pressed again it clears to zeros. The measurement is
+        // never thrown away by the press that ends it, which is the whole reason for the second
+        // step: the moment you stop is the moment you want to read the number.
+        Control.STOP -> when (phase) {
+            Phase.RUNNING -> pause(now)
+            Phase.PAUSED -> stop()
+            Phase.STOPPED -> this
+        }
         // THE LAP COUNTER IS NOT PART OF THE TIMING MODEL AND MUST NOT BE. It counts lengths of
         // a pool; the stopwatch measures time. Putting it in here would mean a lap press could
         // touch startedAt or accumulated, and the one thing this model has never done in twenty
@@ -369,6 +377,8 @@ data class Stopwatch(
         }
         // Stop is never the suggested next action. There is no state of a stopwatch in which
         // throwing the measurement away is what you probably meant to do next.
+        // Live while there is anything to stop or clear, dead at zeros. The two steps look the
+        // same because they are the same control; what tells them apart is the number above it.
         Control.STOP -> if (phase == Phase.STOPPED) Tone.DEAD else Tone.SECONDARY
         // Never drawn in the transport, so its tone is only ever asked for by the tester, where
         // every row is drawn the same way.

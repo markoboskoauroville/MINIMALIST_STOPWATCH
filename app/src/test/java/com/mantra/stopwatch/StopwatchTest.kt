@@ -1618,10 +1618,13 @@ class StopwatchTest {
         assertEquals(Phase.PAUSED, running.press(Control.PAUSE, 1_000).phase)
         assertEquals(Phase.RUNNING, paused.press(Control.PAUSE, 2_000).phase)
 
-        // STOP always means zeros
-        assertEquals(Phase.STOPPED, stopped.press(Control.STOP, 0).phase)
-        assertEquals(Phase.STOPPED, running.press(Control.STOP, 1_000).phase)
+        // STOP IS TWO STEPS: freeze, then clear. The measurement is never thrown away by the
+        // press that ends it, because the moment you stop is the moment you want to read it.
+        assertEquals(Phase.PAUSED, running.press(Control.STOP, 1_000).phase)
+        assertEquals(30_000L, running.press(Control.STOP, 30_000).elapsed(99_000))
         assertEquals(Phase.STOPPED, paused.press(Control.STOP, 2_000).phase)
+        assertEquals(0L, paused.press(Control.STOP, 2_000).elapsed(9_000))
+        assertEquals("and from zeros it does nothing", stopped, stopped.press(Control.STOP, 0))
     }
 
     /**

@@ -904,16 +904,35 @@ private fun Glyph(
     // enabled = false on a DEAD control does two things at once and both are wanted: it takes
     // the colour to the disabled tint and it stops the press being delivered. A SECONDARY
     // control stays enabled — that is the whole point of the third tone.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE OUTLINE IS THE LANGUAGE. Outlined means it can be pressed; bare means nothing will
+    // happen.
+    //
+    // v3 removed the circles because on glass they read as three more shapes on a screen whose
+    // whole design is what is absent. That was right about a circle drawn round every glyph all
+    // the time. This is a different thing: the outline is CONDITIONAL, so it is not decoration —
+    // it is the only mark on the screen carrying the answer to "will this do anything".
+    //
+    // Reset the stopwatch and the square loses its ring: press it again and nothing happens, and
+    // now you can see that before you press rather than after.
     IconButton(
         onClick = onPress,
         enabled = tone != Tone.DEAD,
-        modifier = modifier.size(size),
+        modifier = modifier
+            .size(size)
+            .then(
+                if (tone != Tone.DEAD) {
+                    Modifier.border(1.dp, GLYPH_SECOND, CircleShape)
+                } else {
+                    Modifier
+                }
+            ),
         colors = IconButtonDefaults.iconButtonColors(
-            contentColor = tint ?: when (tone) {
-                Tone.PRIMARY -> GLYPH_PRIMARY
-                Tone.HIGHLIGHT -> GLYPH
-                else -> GLYPH_SECOND
-            },
+            // ONE GREY FOR EVERY GLYPH. The tone no longer decides the colour, because the
+            // outline decides everything now — see below. A glyph that is both dimmer AND
+            // un-outlined is saying one thing twice, and the second saying is the one that gets
+            // read as a different meaning.
+            contentColor = tint ?: GLYPH,
             disabledContentColor = GLYPH_OFF,
         ),
     ) {

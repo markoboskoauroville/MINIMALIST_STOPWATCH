@@ -144,9 +144,10 @@ colour_body = colours.group(1) if colours else ""
 tones_used = {t for t in ("GLYPH_PRIMARY", "GLYPH", "GLYPH_SECOND", "GLYPH_OFF") if t in colour_body}
 enabled_expr = re.search(r"enabled\s*=\s*(tone[^,\n]*)", ui)
 enabled_text = enabled_expr.group(1).strip() if enabled_expr else ""
+# ONE GREY NOW, and the outline carries the state instead. A glyph that is both dimmer AND
+# un-outlined says one thing twice, and the second saying gets read as a different meaning.
 check("every tone reaches the drawn colour, and only DEAD is inert",
-      tones_used == {"GLYPH_PRIMARY", "GLYPH", "GLYPH_SECOND", "GLYPH_OFF"}
-      and enabled_text == "tone != Tone.DEAD",
+      tones_used == {"GLYPH", "GLYPH_OFF"} and enabled_text == "tone != Tone.DEAD",
       f"{len(tones_used)} of 4 tones reach the drawn colour: `enabled = {enabled_text}`")
 
 # ── 4c ───────────────────────────────────────────────────────────────────────────────────────
@@ -248,9 +249,13 @@ check("no button is hidden when it cannot act",
 # the transport, this goes red.
 glyph_body = re.search(r"private fun Glyph\((.*?)\n\}", code_only(ui), re.S)
 borders = re.findall(r"\.border\(", glyph_body.group(1) if glyph_body else "")
-check("nothing is drawn around the transport glyphs",
-      not borders,
-      f"{len(borders)} border modifiers in the screen, and the touch target is IconButton's own size")
+# REVERSED AT v39, and the reversal is not a return. v3 removed a circle drawn round every glyph
+# ALL THE TIME, which was decoration. This outline is CONDITIONAL: present exactly when the
+# control can be pressed, so it is the only mark on the screen carrying "will this do anything".
+# If it ever becomes unconditional again it is decoration once more, and this goes red.
+check("the outline round a glyph is conditional, never decoration",
+      len(borders) == 1 and "if (tone != Tone.DEAD)" in code_only(ui),
+      f"{len(borders)} border in Glyph, drawn only while the control is live")
 
 # ── 8c ───────────────────────────────────────────────────────────────────────────────────────
 # One transport row, not one per orientation. v2 had a landscape branch putting the buttons down
