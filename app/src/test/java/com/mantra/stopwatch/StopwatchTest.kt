@@ -1260,7 +1260,7 @@ class StopwatchTest {
     @Test
     fun theBirdsongIsThreeNotesWithSilenceBetweenThem() {
         val s = Birdsong.samples()
-        assertEquals(Birdsong.lengthMs(), s.size * 1000 / Dsp.SAMPLE_RATE)
+        assertEquals(Birdsong.lengthMs(Bird.CHAFFINCH), s.size * 1000 / Dsp.SAMPLE_RATE)
 
         // Three bursts of energy separated by two gaps. Measured rather than assumed, because a
         // generator that produced one long note would still be the right LENGTH.
@@ -1301,6 +1301,78 @@ class StopwatchTest {
         val peak = mag.indices.maxByOrNull { mag[it] }!!
         val hz = peak.toDouble() * Dsp.SAMPLE_RATE / n
         assertTrue("peak at ${hz.toInt()}Hz is not birdsong", hz in 1_500.0..5_500.0)
+    }
+
+    /**
+     * TWO SPECIES, TOLD APART BY SHAPE. The count-in ending and the timer ending are different
+     * events, and a person who has to work out which sound that was has been given a puzzle
+     * instead of an answer. Pitch alone would not survive a noisy room; rhythm does.
+     */
+    @Test
+    fun theTwoBirdsAreDifferentSounds() {
+        fun bursts(s: ShortArray): Int {
+            val frame = Dsp.SAMPLE_RATE / 100
+            val loud = (0 until s.size / frame).map { i ->
+                (0 until frame).maxOf { Math.abs(s[i * frame + it].toInt()) } > 2_000
+            }
+            var n = 0
+            for (i in loud.indices) if (loud[i] && (i == 0 || !loud[i - 1])) n++
+            return n
+        }
+        assertEquals("the timer's bird is three chirps", 3, bursts(Birdsong.samples(Bird.CHAFFINCH)))
+        assertEquals("the count-in's is two whistles", 2, bursts(Birdsong.samples(Bird.CHICKADEE)))
+
+        // Different lengths as well, so they differ before the first note has even finished.
+        assertTrue(
+            "the two must not be the same length",
+            Birdsong.lengthMs(Bird.CHAFFINCH) != Birdsong.lengthMs(Bird.CHICKADEE),
+        )
+    }
+
+    /** Both must be real birdsong, not just two different noises. */
+    @Test
+    fun bothBirdsSitWhereBirdsDo() {
+        for (bird in Bird.entries) {
+            val s = Birdsong.samples(bird)
+            for (v in s) assertTrue("$bird clips", Math.abs(v.toInt()) < 32_000)
+
+            val n = 1024
+            val re = DoubleArray(n)
+            val im = DoubleArray(n)
+            val start = s.size / 4
+            for (i in 0 until n) re[i] = s[start + i] / 32768.0
+            Dsp.fft(re, im)
+            val mag = DoubleArray(n / 2) { Math.sqrt(re[it] * re[it] + im[it] * im[it]) }
+            val hz = mag.indices.maxByOrNull { mag[it] }!!.toDouble() * Dsp.SAMPLE_RATE / n
+            assertTrue("$bird peaks at ${hz.toInt()}Hz", hz in 1_500.0..5_500.0)
+        }
+    }
+
+    /**
+     * TWO SPECIES, TOLD APART BY SHAPE RATHER THAN PITCH — which is what survives a noisy room
+     * and a phone on a bench. Three chirps against two whistles is a difference you hear through
+     * a wall; two similar calls at different pitches is a puzzle handed to somebody mid-plank.
+     */
+    @Test
+    fun theTwoBirdsAreDifferentBirds() {
+        val a = Birdsong.samples(Bird.CHAFFINCH)
+        val b = Birdsong.samples(Bird.CHICKADEE)
+
+        fun bursts(s: ShortArray): Int {
+            val frame = Dsp.SAMPLE_RATE / 100
+            val loud = (0 until s.size / frame).map { i ->
+                (0 until frame).maxOf { Math.abs(s[i * frame + it].toInt()) } > 2_000
+            }
+            var n = 0
+            for (i in loud.indices) if (loud[i] && (i == 0 || !loud[i - 1])) n++
+            return n
+        }
+        assertEquals("the timer's bird is three chirps", 3, bursts(a))
+        assertEquals("the count-in's bird is two whistles", 2, bursts(b))
+        assertTrue("and they are not the same length", Math.abs(a.size - b.size) > 1_000)
+
+        for (v in b) assertTrue("the second bird clips", Math.abs(v.toInt()) < 32_000)
+        assertEquals(Birdsong.lengthMs(Bird.CHICKADEE), b.size * 1000 / Dsp.SAMPLE_RATE)
     }
 
     /** Same sound every time: a chime that varies is a fault somebody will chase. */

@@ -95,6 +95,16 @@ class Store(private val context: Context) {
         set(v) = p.edit().putInt(Keys.K_SECONDS, v.coerceIn(TIMER_MIN, TIMER_MAX)).apply()
 
     /** One saved custom duration, or 0. Beside the presets rather than among them. */
+    /**
+     * Whether the two moments use the built-in birds or the word you recorded.
+     *
+     * One switch for both, because "which sound does this app make" is one question. Having a
+     * setting per moment would be two settings to keep in step for one preference.
+     */
+    var useRecorded: Boolean
+        get() = p.getBoolean(Keys.K_RECORDED_SOUND, false)
+        set(v) = p.edit().putBoolean(Keys.K_RECORDED_SOUND, v).apply()
+
     var savedPreset: Int
         get() = p.getInt(Keys.K_SAVED, 0)
         set(v) = p.edit().putInt(Keys.K_SAVED, v).apply()
@@ -249,6 +259,7 @@ class Store(private val context: Context) {
         const val K_LENGTH = "timerLength"
         const val K_SECONDS = "timerSeconds"
         const val K_SAVED = "savedPreset"
+        const val K_RECORDED_SOUND = "useRecorded"
         const val K_LISTENING = "listening"
     }
 }

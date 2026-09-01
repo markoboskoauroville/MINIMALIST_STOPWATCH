@@ -806,10 +806,27 @@ check("the end-of-timer sound is generated rather than shipped",
 
 # The bird marks the END and the recorded word marks the START. One sound for both would make the
 # two moments indistinguishable from across a room, which is the only place either is heard from.
-check("the timer ending sounds different from a measurement starting",
-      "GoSound.playSamples(Birdsong.samples()" in code_only(ui)
-      and "GoSound.play(context)" in code_only(ui),
-      "the bird at zero, the recorded word at the start of a count-in")
+# TWO MOMENTS, TWO SOUNDS, told apart by SHAPE rather than pitch — three chirps against two
+# whistles, which is a difference you hear through a wall. A person who has to work out which
+# sound that was has been handed a puzzle instead of an answer.
+check("the two moments never sound the same",
+      "sound(Bird.CHAFFINCH)" in code_only(ui) and "sound(Bird.CHICKADEE)" in code_only(ui),
+      "the timer ends on one species and the count-in on another")
+
+# FALLING BACK RATHER THAN GOING SILENT. If the recorded word is chosen and none exists, a silent
+# count-in looks exactly like a broken one, and somebody is left at the end of a lane waiting.
+check("choosing the recorded word cannot make the app silent",
+      "if (useRecorded && GoSound.exists(context)) GoSound.play(context)" in code_only(ui)
+      and "else GoSound.playSamples(Birdsong.samples(bird)" in code_only(ui),
+      "the switch is honoured when it can be, and falls back to the bird when it cannot")
+
+# THE DEAD END AT ZERO. A finished timer sits PAUSED past its length, so a press resumed it, the
+# remaining figure stayed clamped at zero, and nothing appeared to happen however often you
+# pressed. One route into starting means that state cannot be handled in one place and forgotten
+# in another.
+check("starting has one route, and it knows a finished timer",
+      code_only(ui).count("onPlay()") == 2 and "timerFinished(timerSeconds * 1000L, elapsed)" in code_only(ui),
+      "the digits and the play glyph both go through it; the first press at zero resets")
 
 # The preset row was laid out on a hardcoded five, which was a fact about the list rather than
 # about the row. Deriving the width from the list means adding a preset can never push one off

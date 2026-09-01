@@ -189,6 +189,19 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var appMode by remember { mutableStateOf(store.appMode) }
     var timerSeconds by remember { mutableIntStateOf(store.timerSeconds) }
     var savedPreset by remember { mutableIntStateOf(store.savedPreset) }
+    var useRecorded by remember { mutableStateOf(store.useRecorded) }
+
+    /**
+     * The sound for a moment, honouring the switch and falling back when it cannot be honoured.
+     *
+     * FALLING BACK RATHER THAN GOING SILENT. If the recorded word is chosen and there is no
+     * recording, a silent count-in would look exactly like a broken one — and the person would
+     * be standing at the end of a lane waiting for a sound that was never coming.
+     */
+    fun sound(bird: Bird) {
+        if (useRecorded && GoSound.exists(context)) GoSound.play(context)
+        else GoSound.playSamples(Birdsong.samples(bird), Dsp.SAMPLE_RATE)
+    }
     var names by remember { mutableStateOf(store.names) }
     var prerollStopwatch by remember { mutableIntStateOf(store.preroll(AppMode.STOPWATCH)) }
     var prerollTimer by remember { mutableIntStateOf(store.preroll(AppMode.TIMER)) }
@@ -243,6 +256,33 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // the countdown, and the clock starts when that ends. Everything else — resuming a pause,
     // pausing, stopping — is immediate, because a start ceremony in front of those would be a
     // delay with no purpose.
+    /**
+     * THE ONE ROUTE INTO STARTING, whether it came from a thumb on the digits, the play glyph or
+     * a spoken word.
+     *
+     * A TIMER AT ZERO USED TO BE A DEAD END. It finishes PAUSED with the elapsed figure past the
+     * length, so a press resumed it — the clock ran on, the remaining figure stayed clamped at
+     * zero, and nothing appeared to happen however many times you pressed. The fault was not the
+     * clamp, it was that "finished" is a state the timer has and the transport did not know
+     * about.
+     *
+     * So the first press at zero RESETS to the full duration, and the next one starts it, with
+     * the count-in if there is one. Two presses to go again, and the first of them visibly
+     * changes the number, which is what was missing.
+     */
+    fun onPlay() {
+        if (prerollEndsAt > 0L) {
+            cancelPreroll()
+            return
+        }
+        if (appMode == AppMode.TIMER && timerFinished(timerSeconds * 1000L, elapsed)) {
+            commit(state.stop())
+            return
+        }
+        val next = state.press(Control.PLAY, SystemClock.elapsedRealtime())
+        if (!(next.phase == Phase.RUNNING && beginPreroll())) commit(next)
+    }
+
     fun beginPreroll(): Boolean {
         if (preroll <= 0) return false
         if (state.phase != Phase.STOPPED) return false
@@ -281,7 +321,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             // It goes through the same path as everything else this app plays, so the microphone
             // is deaf for its length plus the ring — the app cannot hear its own bird and stop
             // the clock it just finished.
-            GoSound.playSamples(Birdsong.samples(), Dsp.SAMPLE_RATE)
+            sound(Bird.CHAFFINCH)
         }
     }
 
@@ -298,7 +338,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 // The word plays as the clock starts, not before it: the sound marks the start
                 // rather than announcing that one is coming.
                 commit(state.play(SystemClock.elapsedRealtime()))
-                GoSound.play(context)
+                // A DIFFERENT BIRD FROM THE TIMER'S. Both are heard from across a room while
+                // doing something else, and a person who has to work out WHICH sound that was
+                // has been handed a puzzle instead of an answer.
+                sound(Bird.CHICKADEE)
                 return@LaunchedEffect
             }
             delay(100L)
@@ -595,12 +638,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     .weight(1f)
                     .fillMaxWidth()
                     .combinedClickable(
-                        onClick = {
-                            if (prerollEndsAt > 0L) cancelPreroll()
-                            else if (!(state.phase != Phase.RUNNING && beginPreroll())) {
-                                commit(state.press(Control.PLAY, SystemClock.elapsedRealtime()))
-                            }
-                        },
+                        onClick = { onPlay() },
                         onLongClick = {
                             cancelPreroll()
                             commit(state.stop())
@@ -621,10 +659,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 // PLAY goes through the countdown; the other two cancel it. A countdown running
                 // while somebody presses stop is a countdown that is no longer wanted, and
                 // leaving it to finish would start a measurement nobody asked for.
-                Transport(Icons.Default.PlayArrow, Control.PLAY, state, button) { next ->
-                    if (prerollEndsAt > 0L) cancelPreroll()
-                    else if (!(next.phase == Phase.RUNNING && beginPreroll())) commit(next)
-                }
+                Transport(Icons.Default.PlayArrow, Control.PLAY, state, button) { _ -> onPlay() }
                 Transport(Icons.Default.Pause, Control.PAUSE, state, button) { next ->
                     cancelPreroll(); commit(next)
                 }
