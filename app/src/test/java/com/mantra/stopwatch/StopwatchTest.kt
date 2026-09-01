@@ -1372,6 +1372,26 @@ class StopwatchTest {
         assertTrue("and they are not the same length", Math.abs(a.size - b.size) > 1_000)
 
         for (v in b) assertTrue("the second bird clips", Math.abs(v.toInt()) < 32_000)
+
+        // THE COUNT-IN'S CALL MUST RISE. It marks the moment a measurement BEGINS, and a falling
+        // call there says "finished" to somebody about to start swimming. Measured with the
+        // app's own transform, because the constants can read as rising while the arithmetic
+        // falls — which is the mistake this replaced.
+        fun peakHz(from: Int): Double {
+            val n = 1024
+            val re = DoubleArray(n)
+            val im = DoubleArray(n)
+            for (i in 0 until n) re[i] = b[from + i] / 32768.0
+            Dsp.fft(re, im)
+            val mag = DoubleArray(n / 2) { Math.sqrt(re[it] * re[it] + im[it] * im[it]) }
+            return mag.indices.maxByOrNull { mag[it] }!!.toDouble() * Dsp.SAMPLE_RATE / n
+        }
+        val firstNote = peakHz(Dsp.SAMPLE_RATE * 115 / 1000)
+        val secondNote = peakHz(Dsp.SAMPLE_RATE * 435 / 1000)
+        assertTrue(
+            "the second note must be higher: ${firstNote.toInt()} then ${secondNote.toInt()}",
+            secondNote > firstNote * 1.1,
+        )
         assertEquals(Birdsong.lengthMs(Bird.CHICKADEE), b.size * 1000 / Dsp.SAMPLE_RATE)
     }
 

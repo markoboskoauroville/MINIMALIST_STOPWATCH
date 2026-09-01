@@ -59,9 +59,10 @@ object Birdsong {
     private const val C_NOTE_MS = 230
     private const val C_GAP_MS = 90
     private const val C_NOTES = 2
-    private const val C_TOP_HZ = 3_900.0
-    private const val C_BOTTOM_HZ = 2_500.0
-    private const val C_SECOND_NOTE = 0.78
+    private const val C_TOP_HZ = 3_400.0
+    private const val C_BOTTOM_HZ = 2_300.0
+    /** The second note is HIGHER. See chickadee() for why that is the whole point. */
+    private const val C_SECOND_NOTE = 1.30
 
     /** Well below full scale. Nothing about this needs to be loud to be heard across a room. */
     private const val AMPLITUDE = 0.32
@@ -74,8 +75,19 @@ object Birdsong {
         else NOTES * NOTE_MS + (NOTES - 1) * GAP_MS
 
     /**
-     * Two falling whistles, the second lower. Where the chaffinch bends up and back within each
-     * note, this one only descends — and a fall is heard as an ending, which is what it marks.
+     * TWO RISING WHISTLES, THE SECOND HIGHER — and I had this backwards.
+     *
+     * It was written as a fall, on the reasoning that a fall is heard as an ending. That is true
+     * of the timer, which is genuinely over. But the end of a count-in is not an ending at all:
+     * it is the moment the measurement BEGINS, and a descending call there says "finished" to
+     * somebody who is about to start swimming.
+     *
+     * A rise is heard as a question, an invitation, a go. It is why every countdown in the world
+     * ends on the highest note it has. So each note glides up, and the second note sits above the
+     * first: low, then high, then move.
+     *
+     * The timer's bird is unchanged. It bends up and back within each note and marks something
+     * that is actually over.
      */
     private fun chickadee(rate: Int): ShortArray {
         val noteLen = rate * C_NOTE_MS / 1000
@@ -87,7 +99,8 @@ object Birdsong {
             var phase = 0.0
             for (i in 0 until noteLen) {
                 val t = i.toDouble() / noteLen
-                val hz = (C_TOP_HZ - (C_TOP_HZ - C_BOTTOM_HZ) * t) * drop
+                // Upward within the note as well as between them: the whole call rises.
+                val hz = (C_BOTTOM_HZ + (C_TOP_HZ - C_BOTTOM_HZ) * t) * drop
                 phase += 2.0 * PI * hz / rate
                 val envelope = sin(PI * t)
                 val v = sin(phase) * 0.86 + sin(phase * 2.0) * 0.14
