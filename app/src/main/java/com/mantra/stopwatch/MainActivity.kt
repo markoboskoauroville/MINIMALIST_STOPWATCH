@@ -695,19 +695,20 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         // before you look at the number, and a control that only says what it would become
         // leaves that question unanswered.
         // ─────────────────────────────────────────────────────────────────────────────────────
-        Text(
-            text = if (appMode == AppMode.TIMER) "T" else "S",
-            style = TextStyle(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = if (appMode == AppMode.TIMER) Color(colour) else GLYPH,
-                fontSize = 18.sp,
-            ),
-            maxLines = 1,
+        // THE RING BELONGS HERE TOO. A circle means a press will do something, and this control
+        // is always pressable — so it always has one. Leaving it bare made it the only control on
+        // the screen that could be pressed and did not say so, which is worse than having no
+        // language at all: an exception teaches you not to trust the rule.
+        //
+        // It is a letter rather than a glyph, so the ring is drawn here rather than by Glyph, and
+        // it is unconditional because the control is.
+        Box(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(EDGE)
                 .offset(x = -(screenW / 4 - 16.dp))
+                .size(40.dp)
+                .border(1.dp, GLYPH_SECOND, CircleShape)
                 .clickable {
                     // Changing which way the clock runs mid-measurement would leave a figure on
                     // screen that means something different from the one that was there a moment
@@ -715,9 +716,20 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     appMode = if (appMode == AppMode.TIMER) AppMode.STOPWATCH else AppMode.TIMER
                     store.appMode = appMode
                     commit(state.stop())
-                }
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-        )
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = if (appMode == AppMode.TIMER) "T" else "S",
+                style = TextStyle(
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    color = if (appMode == AppMode.TIMER) Color(colour) else GLYPH,
+                    fontSize = 18.sp,
+                ),
+                maxLines = 1,
+            )
+        }
 
         Glyph(
             icon = Icons.Outlined.PowerSettingsNew,

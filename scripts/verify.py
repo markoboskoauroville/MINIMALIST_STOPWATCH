@@ -852,6 +852,14 @@ check("the update check cannot hang",
       and "readTimeout = 8_000" in (MAIN / "UpdateCheck.kt").read_text(),
       "both timeouts bounded, and every failure reports a reason rather than a shrug")
 
+# EVERY PRESSABLE CONTROL WEARS THE RING. The S/T toggle was a letter rather than a glyph, so it
+# missed the ring Glyph draws and became the only control on the screen that could be pressed and
+# did not say so. An exception to a visual language teaches you not to trust the language.
+check("the mode toggle wears the ring like everything else",
+      'text = if (appMode == AppMode.TIMER) "T" else "S"' in code_only(ui)
+      and code_only(ui).count("border(1.dp, GLYPH_SECOND, CircleShape)") == 2,
+      "two rings drawn from the same constant: the glyphs conditionally, the mode toggle always")
+
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
 if failures:
