@@ -191,17 +191,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var savedPreset by remember { mutableIntStateOf(store.savedPreset) }
     var useRecorded by remember { mutableStateOf(store.useRecorded) }
 
-    /**
-     * The sound for a moment, honouring the switch and falling back when it cannot be honoured.
-     *
-     * FALLING BACK RATHER THAN GOING SILENT. If the recorded word is chosen and there is no
-     * recording, a silent count-in would look exactly like a broken one — and the person would
-     * be standing at the end of a lane waiting for a sound that was never coming.
-     */
-    fun sound(bird: Bird) {
-        if (useRecorded && GoSound.exists(context)) GoSound.play(context)
-        else GoSound.playSamples(Birdsong.samples(bird), Dsp.SAMPLE_RATE)
-    }
     var names by remember { mutableStateOf(store.names) }
     var prerollStopwatch by remember { mutableIntStateOf(store.preroll(AppMode.STOPWATCH)) }
     var prerollTimer by remember { mutableIntStateOf(store.preroll(AppMode.TIMER)) }
@@ -252,6 +241,43 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         flashing = false
     }
 
+
+    fun beginPreroll(): Boolean {
+        if (preroll <= 0) return false
+        if (state.phase != Phase.STOPPED) return false
+        prerollEndsAt = SystemClock.elapsedRealtime() + preroll * 1000L
+        prerollNow = SystemClock.elapsedRealtime()
+        return true
+    }
+
+    fun cancelPreroll() {
+        prerollEndsAt = 0L
+    }
+
+    fun commit(next: Stopwatch) {
+        // Stop clears the laps with everything else. A lap count left over from the last swim,
+        // sitting above a stopwatch reading zero, is a number that will be believed.
+        if (next.phase == Phase.STOPPED && state.phase != Phase.STOPPED) laps = 0
+        if (next != state) flashes++
+        state = next
+        now = SystemClock.elapsedRealtime()
+        store.save(next)
+    }
+
+    val elapsed = state.elapsed(now)
+
+    /**
+     * The sound for a moment, honouring the switch and falling back when it cannot be honoured.
+     *
+     * FALLING BACK RATHER THAN GOING SILENT. If the recorded word is chosen and there is no
+     * recording, a silent count-in would look exactly like a broken one — and the person would
+     * be standing at the end of a lane waiting for a sound that was never coming.
+     */
+    fun sound(bird: Bird) {
+        if (useRecorded && GoSound.exists(context)) GoSound.play(context)
+        else GoSound.playSamples(Birdsong.samples(bird), Dsp.SAMPLE_RATE)
+    }
+
     // Starting a measurement from zero with the countdown on does not start the clock: it starts
     // the countdown, and the clock starts when that ends. Everything else — resuming a pause,
     // pausing, stopping — is immediate, because a start ceremony in front of those would be a
@@ -282,30 +308,6 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         val next = state.press(Control.PLAY, SystemClock.elapsedRealtime())
         if (!(next.phase == Phase.RUNNING && beginPreroll())) commit(next)
     }
-
-    fun beginPreroll(): Boolean {
-        if (preroll <= 0) return false
-        if (state.phase != Phase.STOPPED) return false
-        prerollEndsAt = SystemClock.elapsedRealtime() + preroll * 1000L
-        prerollNow = SystemClock.elapsedRealtime()
-        return true
-    }
-
-    fun cancelPreroll() {
-        prerollEndsAt = 0L
-    }
-
-    fun commit(next: Stopwatch) {
-        // Stop clears the laps with everything else. A lap count left over from the last swim,
-        // sitting above a stopwatch reading zero, is a number that will be believed.
-        if (next.phase == Phase.STOPPED && state.phase != Phase.STOPPED) laps = 0
-        if (next != state) flashes++
-        state = next
-        now = SystemClock.elapsedRealtime()
-        store.save(next)
-    }
-
-    val elapsed = state.elapsed(now)
 
     // THE TIMER ENDS ITSELF, and says so with the same word that starts a measurement. A timer
     // that reaches zero and carries on running is a timer that has to be watched, which is the
