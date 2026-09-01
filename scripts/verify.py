@@ -825,7 +825,9 @@ check("choosing the recorded word cannot make the app silent",
 # pressed. One route into starting means that state cannot be handled in one place and forgotten
 # in another.
 check("starting has one route, and it knows a finished timer",
-      code_only(ui).count("onPlay()") == 2 and "timerFinished(timerSeconds * 1000L, elapsed)" in code_only(ui),
+      code_only(ui).count("{ onPlay() }") == 1
+      and code_only(ui).count("-> onPlay() }") == 1
+      and "timerFinished(timerSeconds * 1000L, elapsed)" in code_only(ui),
       "the digits and the play glyph both go through it; the first press at zero resets")
 
 # The preset row was laid out on a hardcoded five, which was a fact about the list rather than
