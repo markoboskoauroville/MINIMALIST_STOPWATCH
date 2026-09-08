@@ -488,20 +488,30 @@ object Face {
         // screen allows. "00:00:09" spends six glyphs saying nothing so that the one glyph that
         // matters can be a sixth of the size it could have been.
         //
-        // Inner fields keep their padding, because 1:5 is not five past one — the zero in "1:05"
-        // is carrying information about position, which is a different thing from a placeholder.
+        // NO PADDING ANYWHERE, INCLUDING THE INNER FIELDS. v43 kept them padded on the argument
+        // that the zero in "1:05" carries position rather than being a placeholder. Baba's answer
+        // is that the colon already carries the position — it is the only thing between the two
+        // numbers and it says which is which — so the zero is carrying it a second time.
+        //
+        // He is right about the cost, which is the one this display exists to avoid: "1:05" is
+        // four glyphs where "1:5" is three, and on a screen sized to its content that is a
+        // quarter off every digit for a mark that says nothing new.
+        //
+        // WORTH KNOWING, and it is his call rather than a fault: at a glance "1:5" can be read as
+        // one minute fifty by somebody expecting the last field to be two digits wide. The colon
+        // is what settles it.
         if (display == Display.MULTI) return when {
-            h > 0L -> "%d:%02d:%02d".format(h, m, s)
-            m > 0L -> "%d:%02d".format(m, s)
-            else -> "%d".format(s)
+            h > 0L -> "$h:$m:$s"
+            m > 0L -> "$m:$s"
+            else -> "$s"
         }
         // SINGLE drops the fields that are still empty. Two glyphs for the first minute, five for
         // the first hour, eight after that — and NOTHING between those three, so the size steps
         // twice in a whole hour rather than drifting.
         return when {
-            h > 0L -> "%d:%02d:%02d".format(h, m, s)
-            m > 0L -> "%d:%02d".format(m, s)
-            else -> "%d".format(s)
+            h > 0L -> "$h:$m:$s"
+            m > 0L -> "$m:$s"
+            else -> "$s"
         }
     }
 

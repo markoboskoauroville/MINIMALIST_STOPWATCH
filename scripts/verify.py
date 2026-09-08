@@ -627,10 +627,13 @@ check("the digits are measured on the string the setting actually draws",
 #
 # Inner fields keep their padding: the zero in "1:05" carries position, which is information
 # rather than a placeholder.
-check("the face never writes a leading zero",
-      '"%d:%02d:%02d"' in src and '"%d:%02d"' in src and '"%d".format(s)' in src
-      and '"%02d:%02d:%02d"' not in src,
-      "the leading field is bare and the inner ones are padded")
+# NO PADDING ANYWHERE, INCLUDING THE INNER FIELDS. The colon already says which number is which
+# — it is the only thing between them — so a zero saying it again is a glyph that costs a quarter
+# of every digit's size and adds nothing.
+check("the face never writes a padded field",
+      '"$h:$m:$s"' in src and '"$m:$s"' in src
+      and "%02d" not in src.split("object Face")[1],
+      "every field is written bare; the colon carries the position")
 
 # The lap count must never reach the timing model. It counts lengths of a pool; the stopwatch
 # measures time, and nothing but a transition may touch startedAt or accumulated.

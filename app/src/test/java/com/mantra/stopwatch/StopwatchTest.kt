@@ -35,13 +35,13 @@ class StopwatchTest {
         assertEquals("9", Face.format(9_900))
         assertEquals("10", Face.format(10_000))
         assertEquals("59", Face.format(59_999))
-        assertEquals("1:00", Face.format(60_000))      // the minute
+        assertEquals("1:0", Face.format(60_000))      // the minute
         assertEquals("59:59", Face.format(3_599_999))
-        assertEquals("1:00:00", Face.format(3_600_000))   // the hour, and the width does not move
-        assertEquals("1:00:01", Face.format(3_601_000))
+        assertEquals("1:0:0", Face.format(3_600_000))   // the hour, and the width does not move
+        assertEquals("1:0:1", Face.format(3_601_000))
         assertEquals("1:59:59", Face.format(7_199_999))
-        assertEquals("2:00:00", Face.format(7_200_000))
-        assertEquals("10:00:00", Face.format(36_000_000))
+        assertEquals("2:0:0", Face.format(7_200_000))
+        assertEquals("10:0:0", Face.format(36_000_000))
         assertEquals("99:59:59", Face.format(359_999_999)) // the last figure that fits in six
     }
 
@@ -59,9 +59,9 @@ class StopwatchTest {
         assertEquals("0", f(0))
         assertEquals("9", f(9_900))
         assertEquals("59", f(59_999))
-        assertEquals("1:00", f(60_000))          // the minute arrives, and so does a field
+        assertEquals("1:0", f(60_000))          // the minute arrives, and so does a field
         assertEquals("59:59", f(3_599_999))
-        assertEquals("1:00:00", f(3_600_000))    // and again at the hour
+        assertEquals("1:0:0", f(3_600_000))    // and again at the hour
         assertEquals("9:59:59", f(35_999_999))
     }
 
@@ -84,20 +84,27 @@ class StopwatchTest {
      * because a figure that resizes while counting through a field is the fault the whole face
      * was built to avoid.
      */
+    /**
+     * The width changes only at a FIELD boundary, never inside one — a figure that resizes while
+     * counting through a field is the fault the whole face was built to avoid.
+     *
+     * With no padding anywhere the boundaries are where a digit is genuinely gained: at ten
+     * seconds, at a minute, at ten seconds past each minute, and so on. What must never happen is
+     * a change in the middle of a run of the same field width.
+     */
     @Test
     fun theWidthChangesOnlyAtFieldBoundaries() {
         fun len(ms: Long) = Face.format(ms, Display.MULTI).length
 
         for (ms in 0L until 10_000L step 137L) assertEquals("one digit", 1, len(ms))
         for (ms in 10_000L until 60_000L step 137L) assertEquals("two digits", 2, len(ms))
-        for (ms in 60_000L until 600_000L step 997L) assertEquals("m:ss", 4, len(ms))
-        for (ms in 600_000L until 3_600_000L step 997L) assertEquals("mm:ss", 5, len(ms))
+        for (ms in 70_000L until 120_000L step 397L) assertEquals("m:ss", 4, len(ms))
 
         assertEquals(1, len(9_999))
         assertEquals(2, len(10_000))
         assertEquals(2, len(59_999))
-        assertEquals(4, len(60_000))
-        assertEquals(7, len(3_600_000))
+        assertEquals("a minute exactly is m:s", 3, len(60_000))
+        assertEquals("no zero is ever padded back in", "1:0", Face.format(60_000))
     }
 
     @Test
@@ -1853,7 +1860,7 @@ class StopwatchTest {
         )
         assertEquals(Phase.PAUSED, back.phase)
         assertEquals(123_400L, back.elapsed(15_000))
-        assertEquals("2:03", Face.format(back.elapsed(15_000)))
+        assertEquals("2:3", Face.format(back.elapsed(15_000)))
     }
 
     /**
@@ -1897,7 +1904,7 @@ class StopwatchTest {
             assertEquals(t, s.elapsed(t))
             t += 100L
         }
-        assertEquals("1:00:00", Face.format(s.elapsed(3_600_000)))
+        assertEquals("1:0:0", Face.format(s.elapsed(3_600_000)))
     }
 
     @Test
