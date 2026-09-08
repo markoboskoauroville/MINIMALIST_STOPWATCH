@@ -408,7 +408,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // ─────────────────────────────────────────────────────────────────────────────────────────
     var scores by remember { mutableStateOf<List<Pair<Control, Double>>>(emptyList()) }
     var templatesReady by remember { mutableStateOf(0) }
-    var tab by remember { mutableStateOf(SettingsTab.LOOK) }
+    var tab by remember { mutableStateOf(SettingsTab.TIMER) }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // THE SCREEN SUBSCRIBES; IT DOES NOT OWN.
@@ -1201,11 +1201,10 @@ private fun SettingsGrid(
             modifier = Modifier.fillMaxWidth().padding(bottom = gap),
             horizontalArrangement = Arrangement.Center,
         ) {
-            Tab("LOOK", tab == SettingsTab.LOOK, colour) { onTab(SettingsTab.LOOK) }
-            Tab("VOICE", tab == SettingsTab.VOICE, colour) { onTab(SettingsTab.VOICE) }
-            Tab("WATCH", tab == SettingsTab.WATCH, colour) { onTab(SettingsTab.WATCH) }
-            Tab("TIMER", tab == SettingsTab.TIMER, colour) { onTab(SettingsTab.TIMER) }
-            Tab("LAP", tab == SettingsTab.LAP, colour) { onTab(SettingsTab.LAP) }
+            SettingsTab.entries.forEach { t ->
+                // From the enum, so the row can never disagree with the order.
+                Tab(t.name, tab == t, colour) { onTab(t) }
+            }
         }
 
         if (tab == SettingsTab.LAP) {
@@ -1541,7 +1540,17 @@ private fun SettingsGrid(
  * — and, the thing Baba actually hit, they put two rows of identical-looking cells next to each
  * other with nothing on screen to say which was which.
  */
-enum class SettingsTab { LOOK, VOICE, WATCH, TIMER, LAP }
+/**
+ * ORDERED BY HOW OFTEN THEY ARE OPENED, not by when they were built.
+ *
+ * TIMER is set most days and often several times in one session. WATCH holds the other clock's
+ * count-in. LAP is per swim. VOICE is nine recordings made once and rarely touched again. LOOK is
+ * a colour chosen once and then lived with for months.
+ *
+ * The order was LOOK first purely because the colour grid was the first thing this panel ever
+ * held, which is a fact about the repository's history and not about anybody's day.
+ */
+enum class SettingsTab { TIMER, WATCH, LAP, VOICE, LOOK }
 
 /**
  * The caption above a row of cells.

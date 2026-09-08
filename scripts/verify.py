@@ -621,10 +621,16 @@ check("the digits are measured on the string the setting actually draws",
 
 # MULTI must keep its promise: one width for the life of the app. SINGLE steps twice, at known
 # moments, and never inside a field.
-check("both display modes have a width that only changes at a field boundary",
-      'display == Display.MULTI) return "%02d:%02d:%02d"' in src
-      and "m > 0L ->" in src and "else ->" in src,
-      "MULTI is one branch and one width; SINGLE is three branches and three widths")
+# NO LEADING ZEROS. A zero in front of a number is a placeholder for a digit that is not there,
+# and this display exists to make the digits that ARE there as large as the screen allows.
+# "00:00:09" spends six glyphs saying nothing so the one that matters can be a sixth of its size.
+#
+# Inner fields keep their padding: the zero in "1:05" carries position, which is information
+# rather than a placeholder.
+check("the face never writes a leading zero",
+      '"%d:%02d:%02d"' in src and '"%d:%02d"' in src and '"%d".format(s)' in src
+      and '"%02d:%02d:%02d"' not in src,
+      "the leading field is bare and the inner ones are padded")
 
 # The lap count must never reach the timing model. It counts lengths of a pool; the stopwatch
 # measures time, and nothing but a transition may touch startedAt or accumulated.
@@ -755,7 +761,11 @@ check("the timer has no clock of its own",
 # two rows of near-identical cells with nothing on screen saying which was which.
 check("the settings are separated into their own tabs",
       code_only(ui).count("SettingsTab.") >= 10
-      and "enum class SettingsTab { LOOK, VOICE, WATCH, TIMER, LAP }" in code_only(ui),
+      # ORDERED BY HOW OFTEN EACH IS OPENED. Colour is chosen once and lived with for months;
+      # the timer is set several times in a session. The old order was a fact about which part
+      # of the panel was built first, not about anybody's day.
+      and "enum class SettingsTab { TIMER, WATCH, LAP, VOICE, LOOK }" in code_only(ui)
+      and "SettingsTab.entries.forEach" in code_only(ui),
       "look, voice, timer and lap; a setting for a mode you are not in is a row to read past")
 
 # A caption is the one word that turns four identical boxes into two questions.

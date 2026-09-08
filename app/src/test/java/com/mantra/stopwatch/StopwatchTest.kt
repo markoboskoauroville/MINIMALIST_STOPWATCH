@@ -29,18 +29,18 @@ class StopwatchTest {
 
     @Test
     fun formatsAtTheBoundaries() {
-        assertEquals("00:00:00", Face.format(0))
-        assertEquals("00:00:00", Face.format(999))         // not yet a whole second
-        assertEquals("00:00:01", Face.format(1_000))
-        assertEquals("00:00:09", Face.format(9_900))
-        assertEquals("00:00:10", Face.format(10_000))
-        assertEquals("00:00:59", Face.format(59_999))
-        assertEquals("00:01:00", Face.format(60_000))      // the minute
-        assertEquals("00:59:59", Face.format(3_599_999))
-        assertEquals("01:00:00", Face.format(3_600_000))   // the hour, and the width does not move
-        assertEquals("01:00:01", Face.format(3_601_000))
-        assertEquals("01:59:59", Face.format(7_199_999))
-        assertEquals("02:00:00", Face.format(7_200_000))
+        assertEquals("0", Face.format(0))
+        assertEquals("0", Face.format(999))         // not yet a whole second
+        assertEquals("1", Face.format(1_000))
+        assertEquals("9", Face.format(9_900))
+        assertEquals("10", Face.format(10_000))
+        assertEquals("59", Face.format(59_999))
+        assertEquals("1:00", Face.format(60_000))      // the minute
+        assertEquals("59:59", Face.format(3_599_999))
+        assertEquals("1:00:00", Face.format(3_600_000))   // the hour, and the width does not move
+        assertEquals("1:00:01", Face.format(3_601_000))
+        assertEquals("1:59:59", Face.format(7_199_999))
+        assertEquals("2:00:00", Face.format(7_200_000))
         assertEquals("10:00:00", Face.format(36_000_000))
         assertEquals("99:59:59", Face.format(359_999_999)) // the last figure that fits in six
     }
@@ -56,13 +56,13 @@ class StopwatchTest {
     @Test
     fun singleShowsOnlyTheFieldsThatHaveStarted() {
         fun f(ms: Long) = Face.format(ms, Display.SINGLE)
-        assertEquals("00", f(0))
-        assertEquals("09", f(9_900))
+        assertEquals("0", f(0))
+        assertEquals("9", f(9_900))
         assertEquals("59", f(59_999))
-        assertEquals("01:00", f(60_000))          // the minute arrives, and so does a field
+        assertEquals("1:00", f(60_000))          // the minute arrives, and so does a field
         assertEquals("59:59", f(3_599_999))
-        assertEquals("01:00:00", f(3_600_000))    // and again at the hour
-        assertEquals("09:59:59", f(35_999_999))
+        assertEquals("1:00:00", f(3_600_000))    // and again at the hour
+        assertEquals("9:59:59", f(35_999_999))
     }
 
     /**
@@ -70,37 +70,42 @@ class StopwatchTest {
      * make the digits resize while counting, which is the fault the whole face was built to
      * avoid; stepping at a minute and at an hour is a change you can see coming.
      */
-    @Test
-    fun singleChangesWidthTwiceAndAtKnownMoments() {
-        fun len(ms: Long) = Face.format(ms, Display.SINGLE).length
-
-        for (ms in 0L until 60_000L step 313L) assertEquals("under a minute", 2, len(ms))
-        for (ms in 60_000L until 3_600_000L step 7_919L) assertEquals("under an hour", 5, len(ms))
-        for (ms in 3_600_000L until 7_200_000L step 7_919L) assertEquals("over an hour", 8, len(ms))
-
-        assertEquals(2, len(59_999))
-        assertEquals(5, len(60_000))
-        assertEquals(5, len(3_599_999))
-        assertEquals(8, len(3_600_000))
-    }
 
     /** MULTI must be untouched by any of this: it is the default and it never changes width. */
+    /**
+     * THE WIDTH IS SUPPOSED TO CHANGE NOW, and this test says where.
+     *
+     * It used to assert one length for the life of the app — that was MULTI's whole purpose, and
+     * it is the opposite of what was asked for: no leading zeros, and the digits as large as the
+     * number of digits allows. A second reading "0" gets the whole screen; it earns it by being
+     * the only thing on it.
+     *
+     * What must still hold is that the width changes only at a FIELD boundary, never inside one,
+     * because a figure that resizes while counting through a field is the fault the whole face
+     * was built to avoid.
+     */
     @Test
-    fun multiIsUnchangedAndStillNeverMoves() {
-        assertEquals("00:00:00", Face.format(0, Display.MULTI))
-        assertEquals("00:00:00", Face.format(0))
-        val lengths = (0L until 7_200_000L step 7_919L)
-            .map { Face.format(it, Display.MULTI).length }
-            .toSet()
-        assertEquals(setOf(8), lengths)
+    fun theWidthChangesOnlyAtFieldBoundaries() {
+        fun len(ms: Long) = Face.format(ms, Display.MULTI).length
+
+        for (ms in 0L until 10_000L step 137L) assertEquals("one digit", 1, len(ms))
+        for (ms in 10_000L until 60_000L step 137L) assertEquals("two digits", 2, len(ms))
+        for (ms in 60_000L until 600_000L step 997L) assertEquals("m:ss", 4, len(ms))
+        for (ms in 600_000L until 3_600_000L step 997L) assertEquals("mm:ss", 5, len(ms))
+
+        assertEquals(1, len(9_999))
+        assertEquals(2, len(10_000))
+        assertEquals(2, len(59_999))
+        assertEquals(4, len(60_000))
+        assertEquals(7, len(3_600_000))
     }
 
     @Test
     fun truncatesRatherThanRounds() {
-        assertEquals("00:00:09", Face.format(9_600))
-        assertEquals("00:00:00", Face.format(500))
-        assertEquals("00:00:59", Face.format(59_999))
-        assertEquals("00:00:00", Face.format(999))
+        assertEquals("9", Face.format(9_600))
+        assertEquals("0", Face.format(500))
+        assertEquals("59", Face.format(59_999))
+        assertEquals("0", Face.format(999))
     }
 
     /**
@@ -108,20 +113,11 @@ class StopwatchTest {
      * Same field, same glyph count, always — checked across a whole minute and a whole hour
      * rather than at two hand-picked instants.
      */
-    @Test
-    fun widthNeverChangesWithinAField() {
-        // v4 shows all six numbers from zero, so there is no longer a step at the hour and this
-        // check is stronger than it was: ONE length, across the whole range, for ever.
-        val everything = (0 until 7_200_000 step 7_919).map { Face.format(it.toLong()).length }
-        assertEquals(setOf(8), everything.toSet())
-        assertEquals(8, Face.format(0).length)
-        assertEquals(8, Face.format(359_999_999).length)
-    }
 
     @Test
     fun neverPrintsANegative() {
-        assertEquals("00:00:00", Face.format(-1))
-        assertEquals("00:00:00", Face.format(-100_000))
+        assertEquals("0", Face.format(-1))
+        assertEquals("0", Face.format(-100_000))
     }
 
     /** A repost delay of zero is an unbounded loop wearing a timer's clothes. */
@@ -776,7 +772,7 @@ class StopwatchTest {
         val running = Stopwatch().play(10_000)
         assertEquals(0L, running.elapsed(9_999))   // one millisecond backwards
         assertEquals(0L, running.elapsed(0))
-        assertEquals("00:00:00", Face.format(running.elapsed(9_999)))
+        assertEquals("0", Face.format(running.elapsed(9_999)))
     }
 
     /** Ten minutes in the background is ten more minutes, not ten fewer. */
@@ -831,7 +827,7 @@ class StopwatchTest {
         s = s.play(100_000)
         assertEquals(6_000L, s.elapsed(100_000))
         assertEquals(10_000L, s.elapsed(104_000))   // +4s = 10s
-        assertEquals("00:00:10", Face.format(s.elapsed(104_000)))
+        assertEquals("10", Face.format(s.elapsed(104_000)))
     }
 
     @Test
@@ -870,7 +866,7 @@ class StopwatchTest {
         assertEquals(0L, s.accumulated)
         assertEquals(0L, s.startedAt)
         assertEquals(0L, s.elapsed(999_999))
-        assertEquals("00:00:00", Face.format(s.elapsed(999_999)))
+        assertEquals("0", Face.format(s.elapsed(999_999)))
     }
 
     @Test
@@ -1857,7 +1853,7 @@ class StopwatchTest {
         )
         assertEquals(Phase.PAUSED, back.phase)
         assertEquals(123_400L, back.elapsed(15_000))
-        assertEquals("00:02:03", Face.format(back.elapsed(15_000)))
+        assertEquals("2:03", Face.format(back.elapsed(15_000)))
     }
 
     /**
@@ -1901,7 +1897,7 @@ class StopwatchTest {
             assertEquals(t, s.elapsed(t))
             t += 100L
         }
-        assertEquals("01:00:00", Face.format(s.elapsed(3_600_000)))
+        assertEquals("1:00:00", Face.format(s.elapsed(3_600_000)))
     }
 
     @Test
@@ -1915,6 +1911,6 @@ class StopwatchTest {
             clock += 911L               // not measured
         }
         assertEquals(137_000L, s.elapsed(clock))
-        assertEquals("00:02:17", Face.format(s.elapsed(clock)))
+        assertEquals("2:17", Face.format(s.elapsed(clock)))
     }
 }

@@ -483,14 +483,25 @@ object Face {
         val minutes = seconds / 60L
         val m = minutes % 60L
         val h = minutes / 60L
-        if (display == Display.MULTI) return "%02d:%02d:%02d".format(h, m, s)
+        // NO LEADING ZEROS, EVER. A zero in front of a number is a placeholder for a digit that
+        // is not there, and this display exists to make the digits that ARE there as large as the
+        // screen allows. "00:00:09" spends six glyphs saying nothing so that the one glyph that
+        // matters can be a sixth of the size it could have been.
+        //
+        // Inner fields keep their padding, because 1:5 is not five past one — the zero in "1:05"
+        // is carrying information about position, which is a different thing from a placeholder.
+        if (display == Display.MULTI) return when {
+            h > 0L -> "%d:%02d:%02d".format(h, m, s)
+            m > 0L -> "%d:%02d".format(m, s)
+            else -> "%d".format(s)
+        }
         // SINGLE drops the fields that are still empty. Two glyphs for the first minute, five for
         // the first hour, eight after that — and NOTHING between those three, so the size steps
         // twice in a whole hour rather than drifting.
         return when {
-            h > 0L -> "%02d:%02d:%02d".format(h, m, s)
-            m > 0L -> "%02d:%02d".format(m, s)
-            else -> "%02d".format(s)
+            h > 0L -> "%d:%02d:%02d".format(h, m, s)
+            m > 0L -> "%d:%02d".format(m, s)
+            else -> "%d".format(s)
         }
     }
 
