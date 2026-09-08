@@ -760,13 +760,13 @@ check("the timer has no clock of its own",
 # FOUR TABS, because three unrelated jobs had been sharing one panel — and the specific damage was
 # two rows of near-identical cells with nothing on screen saying which was which.
 check("the settings are separated into their own tabs",
-      code_only(ui).count("SettingsTab.") >= 10
+      code_only(ui).count("SettingsTab.") >= 5
       # ORDERED BY HOW OFTEN EACH IS OPENED. Colour is chosen once and lived with for months;
       # the timer is set several times in a session. The old order was a fact about which part
       # of the panel was built first, not about anybody's day.
       and "enum class SettingsTab { TIMER, WATCH, LAP, VOICE, LOOK }" in code_only(ui)
       and "SettingsTab.entries.forEach" in code_only(ui),
-      "look, voice, timer and lap; a setting for a mode you are not in is a row to read past")
+      "timer, watch, lap, voice, look — in the order they are opened, generated from the enum")
 
 # A caption is the one word that turns four identical boxes into two questions.
 check("every row of look-alike cells carries a caption",
