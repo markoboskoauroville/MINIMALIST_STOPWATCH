@@ -1,3 +1,5 @@
+### [Download the latest build](https://github.com/markoboskoauroville/MINIMALIST_STOPWATCH/releases/latest)
+
 # Minimalist Stopwatch
 
 A stopwatch. Black screen, enormous digits, three transport buttons, an orientation lock and a
