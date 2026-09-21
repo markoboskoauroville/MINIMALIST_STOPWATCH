@@ -12,12 +12,11 @@ actually wrote.
 
 ---
 
-    ARTEFACT   45-stopwatch-v45.apk, to be built by GitHub Actions from the commit tagged v45
+    ARTEFACT   45-stopwatch-v45.apk, built by GitHub Actions run 65 from commit 20163b9
     VERSION    new: 45   previous: 44, still downloadable at the releases page
     SIGNED BY  the permanent repository key, SHA-256 D9:3E:6B:00:...:D9:62
-    SIZE       1,036,847 bytes measured locally, UNSIGNED. The signed figure from the runner is
-               not yet known and this line must be corrected from the run, not left as an
-               estimate wearing the look of a measurement
+    SIZE       1,045,039 bytes, signed, read back from the published release. The local unsigned
+               build was 1,036,847; the difference is the signature block and nothing else
 
 ## What v45 is
 
@@ -56,7 +55,9 @@ Four changes asked for in one sentence by Baba on 21.9.2026, and a fifth nobody 
 
     G7  BUDGETS      v44 -> v45
                             source 5,941 lines across 15 files
-                            APK: not comparable yet, the v45 figure above is unsigned and local
+                            APK 1,045,039 bytes signed. The v44 figure was not recorded, so
+                              there is no comparison to make and inventing one would be worse
+                              than this sentence
                             cold start, frame time, memory, battery: NEVER MEASURED, no device
 
     G8  UPGRADE      NOT RUN by hand. v44 and v45 share the signing key, so it is testable
@@ -115,8 +116,9 @@ than the one the v22 record described.
     THE v44 MIGRATION           a phone holding a v44 savedPreset has never been updated to v45.
                                 The inheritance is written and tested as a pure function; the
                                 actual preferences file on an actual phone has not been read
-    THE ARTEFACT UPLOAD         the new upload-artifact step has never run. It is pinned to a SHA
-                                resolved on 21.9.2026 and will be proven or not by the push
+    THE ARTEFACT UPLOAD         RUN AND PROVEN on run 65: `stopwatch-v45-build65`, 909,098 bytes
+                                zipped, alongside the release. This one line of the block is
+                                answered; every line above it is not
 
 Everything in the v22 NOT TESTED block below that has not been superseded still stands. No device
 has been used for any of this.
