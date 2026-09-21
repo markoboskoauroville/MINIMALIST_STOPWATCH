@@ -117,11 +117,27 @@ its assertion eight versions earlier and a guard in brand-new code that could no
 **Run it before believing a green `verify.py`.** Its own header is the first place to look if it
 does anything other than print mutations: a crash there looks nothing like a failed mutation.
 
-## Seven mutations point at anchors that have moved
+## A SKIP in the sweep is not a pass, and it reads like one
 
-Named in `HANDOFF.md` under *The mutation sweep*. They report `SKIP` rather than `SURVIVED`, and
-a SKIP in a long list reads almost like a catch. Until each is re-pointed, seven rules this
-repository claims to guard are unwatched.
+Seven mutations had anchors that no longer matched. The sweep printed `SKIP  anchor found 0
+times` for each, which in a list of thirty is almost invisible next to `caught`. **Seven rules
+this repository claims to guard were not being guarded at all**, and not one of them had stopped
+being true — every one was an anchor that had stopped matching, which is the more dangerous
+shape, because the rule looks watched.
+
+Re-pointed on 21.9.2026. If the sweep ever prints SKIP again, fix it in the same session: an
+anchor that does not match is a check that does not run.
+
+**`anchor found N times` where N > 1 is the same problem.** `while (isActive)` matched three
+loops, so the mutation refused to run rather than picking one. Anchor on something unique to the
+loop you mean.
+
+## Every file a mutation touches must be in MUTABLE
+
+`sabotage.py` stashes and restores only the files in that list. A mutation aimed at a file
+outside it edits the working tree and leaves the edit behind if the run is interrupted — the one
+thing this script must never do. MaMeter.kt was added on 21.9.2026 when the meter mutation was
+re-pointed into it.
 
 ## Rings have been removed twice and the argument for them is always good
 
@@ -149,7 +165,20 @@ times only `sabotage.py` noticed.
 
 ## Assert that a thing is USED, never that it EXISTS
 
-Three times in this repository: a colour constant asserted to exist rather than to be read, a
-check searching for a function that had been deleted, and `var fired` asserted to be declared
-while the condition that reads it was broken. A declaration nobody reads compiles perfectly well.
-Read the actual expression.
+**This is the most productive fault to look for in this repository.** Six instances so far, and
+every one read as a healthy PASS:
+
+    a colour constant asserted to exist rather than to be read
+    a check searching for a function that had already been deleted
+    `var fired` asserted to be declared, while the condition reading it was broken
+    "coerceIn(0f, 1f)" searched for anywhere in MaMeter.kt — it is there three times, and only
+      the one inside maNorm keeps the meter inside its track
+    "Alignment.TopCenter" searched for anywhere in the screen — the microphone, the power mark
+      and the mode letter all use it, so the settings panel could be moved to the bottom freely
+    "Vocabulary.display" searched for anywhere — three call sites, so hardcoding the name in the
+      field somebody actually reads changed nothing
+
+A declaration nobody reads compiles perfectly well, and a string that appears three times cannot
+tell you which one matters. **Extract the specific line and read it** — the function's own
+definition, that modifier chain, those call sites by name. Every one of these was found by
+`sabotage.py` and by nothing else.

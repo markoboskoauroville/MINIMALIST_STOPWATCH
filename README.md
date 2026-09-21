@@ -140,6 +140,14 @@ that had been *caught* the version before and quietly stopped working because th
 modifier chain longer than the 200-character window it was searching. A character count was never
 the right question; it now reads the whole chain.
 
+Then the seven mutations whose anchors had drifted were re-pointed, and **that found three more
+checks passing while watching nothing** — each of them searching for a string that appears
+several times in a file and finding one of the copies that did not matter. The sweep now catches
+**83 of 83** — 49 logic and 34 shape — nothing surviving and nothing skipped, for the first time
+in this repository's life. It also turned up an open question about the FIELDS setting, written
+up in [`HANDOFF.md`](HANDOFF.md). What it keeps proving is that the code is rarely the problem; the thing
+watching the code is.
+
 Every build is made by GitHub Actions on push, never on a desk. The workflow keeps the APK on the
 run itself as well as publishing a release, so a push that forgets to bump the version still
 leaves something installable behind.

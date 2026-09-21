@@ -288,6 +288,7 @@ doors go through one `enterFullscreen()` so neither can forget.
     python3 scripts/verify.py                       93 structural checks, one second
     ./gradlew :app:testReleaseUnitTest              Test 1, 133 cases
     python3 scripts/sabotage.py                     83 mutations, 49 logic and 34 shape
+                                                    all 83 caught as of 21.9.2026
 
 The sweep edits source in place and **will** be interrupted; it stashes every file it can touch
 before starting and restores on the next run. Use `SABOTAGE_SLICE=0:12` to run it in pieces. With
@@ -369,22 +370,85 @@ rather than that it is USED.** The first version of the pinch check asked whethe
 declared. A flag nobody reads is declared perfectly well, so breaking the condition that reads it
 left the check green.
 
-**Seven of its mutations still point at anchors that have moved**, and they are the next job.
-They are SKIPs rather than survivors — the anchor is not found, so the mutation never runs — and
-a SKIP in a long list reads almost like a catch, which is why they are written down here instead
-of left in the output:
+### The seven stale anchors, re-pointed — and what re-pointing them found
 
-    a control label is typed at the call site again        Transport() signature changed
-    the reminder is typed by hand instead of generated     the tip moved
-    the meter is fed a raw level                           MaMeter was extracted
-    the microphone is left running when the screen goes    the DisposableEffect moved
-    the settings panel is moved over the digits            the panel went full-screen at v38
-    the tick loop becomes unbounded                        anchor now matches three times
-    accumulated is not persisted                           Store was rewritten
+They were SKIPs rather than survivors: the anchor was not found, so the mutation never ran, and
+a SKIP in a long list reads almost like a catch. Seven rules this repository claimed to guard
+were unguarded. All seven now run:
 
-None of them is a rule that stopped being true; every one is an anchor that stopped matching. But
-until each is re-pointed, seven rules this repository claims to guard are unguarded, and the same
-`SURVIVED` that was found this time could be sitting behind any of them.
+    a control label is typed at the call site        Transport() had lost its ::commit tail
+    the name shown for a control is typed by hand    the reminder row became the tip row
+    the meter is fed a raw level                     moved into MaMeter.kt when it was extracted
+    the microphone is left running                   v.stop() belonged to the deleted recogniser
+    the settings panel is moved off the top          the panel went full-screen at v38
+    the tick loop becomes unbounded                  three loops wear it now; anchored on the clock's
+    accumulated is not persisted                     the constants moved into a Keys object
+
+**None of them was a rule that had stopped being true.** Every one was an anchor that had stopped
+matching — which is the more dangerous shape, because the rule looks guarded.
+
+**Re-pointing them exposed three checks that were passing while watching nothing**, and all three
+are the same mistake:
+
+    the meter's clamp        asked whether "coerceIn(0f, 1f)" appeared ANYWHERE in MaMeter.kt.
+                             It appears three times. Deleting the one in maNorm — the clamp that
+                             actually keeps the bar inside its track — left the check green.
+    the panel's position     asked whether "Alignment.TopCenter" appeared anywhere in the screen.
+                             The microphone, the power mark and the mode letter all use it.
+                             Moving the panel to the bottom left the check green.
+    the control's name       asked whether Vocabulary.display appeared at all. It appears three
+                             times. Hardcoding the name in the field somebody reads left it green.
+
+**ASSERTING THAT A THING EXISTS RATHER THAN THAT IT IS USED.** That is now four in this
+repository — those three plus `var fired` at v46 — and before them a colour constant asserted to
+exist rather than be read, and a check searching for a function that had been deleted. It is the
+single most productive fault to look for here. All three now read the specific line.
+
+**MaMeter.kt was also added to `MUTABLE`.** A file that is mutated but not in that list is never
+stashed and never restored, so a crash mid-sweep would leave the edit behind — the one thing this
+script must never do.
+
+Two more stale anchors were in the LOGIC half and are fixed the same way. One of them could not
+simply be re-pointed, and what it turned up is the open question below.
+
+**The sweep is clean for the first time: 83 of 83 — 49 logic and 34 shape — 0 survived, 0
+skipped.** It has never been in that state before.
+
+### OPEN, FOR BABA: MULTI and SINGLE now do exactly the same thing
+
+The mutation *"the hour field is dropped below an hour, so the width moves again"* guarded the
+original bargain of the FIELDS setting: **MULTI** showed `HH:MM:SS` from zero so the width never
+changed, **SINGLE** showed only the fields with something in them so the digits were larger. Two
+answers to one real question, which is what made it a setting rather than a decision.
+
+At v43/v44 the padding was removed at Baba's word — *"the colon already carries the position"* —
+and that is a good change. But it was applied to **both** branches, and the two are now textually
+identical:
+
+    if (display == Display.MULTI) return when {
+        h > 0L -> "$h:$m:$s"
+        m > 0L -> "$m:$s"
+        else   -> "$s"
+    }
+    return when {            // SINGLE — the same three lines
+        h > 0L -> "$h:$m:$s"
+        m > 0L -> "$m:$s"
+        else   -> "$s"
+    }
+
+So **the FIELDS row in the LOOK tab is a dead control**: two cells, a tick that moves between
+them, and no difference on the screen either way. That is precisely the fault this app has
+refused everywhere else — a control that cannot do anything, looking like it can.
+
+Nothing was changed here, because which way it should go is a design decision and not mine:
+
+  1. **Remove the FIELDS setting.** Honest, and one less thing in the panel. MULTI was the
+     default and the no-padding face is now the only face.
+  2. **Give MULTI its fixed width back**, padded, so the setting means something again —
+     reversing part of v43 for the MULTI branch only.
+
+Until one is chosen, `verify.py` has no check on this: a check asserting they differ would go red
+today, and a check asserting they are the same would enshrine a dead control.
 
 ## What has never been run on a phone by the machine that built it
 

@@ -363,9 +363,19 @@ check("the transport is written once, not once per orientation",
 #
 # Full screen, top aligned. The cost is that a colour is now judged by closing the panel; the
 # gain is a tab row that is always in the same place.
+# STRENGTHENED 21.9.2026, for the same reason as the meter above: it asked whether
+# "Alignment.TopCenter" appeared anywhere in the screen, and the microphone, the power mark and
+# the mode letter all use it. Moving the PANEL to the bottom left the check green.
+#
+# The panel's own modifier is read instead: the alignment and the full height together, which is
+# what makes the tab row stay put.
+panel = re.search(r"modifier = Modifier\n\s+\.align\(Alignment\.(\w+)\)\n\s+\.fillMaxSize\(\)\n\s+\.background\(BACKGROUND\)",
+                  code_only(ui))
+panel_align = panel.group(1) if panel else "not found"
 check("the settings panel starts at the top and stays there",
-      "Alignment.TopCenter" in code_only(ui) and "SettingsGrid" in ui,
-      "top aligned and full height, so the tab row never moves between tabs")
+      panel is not None and panel_align == "TopCenter" and "SettingsGrid" in ui,
+      f"the panel's own modifier says {panel_align}, full height, "
+      "so the tab row never moves between tabs")
 
 # ── 8e ───────────────────────────────────────────────────────────────────────────────────────
 # v5's panel was sized by WIDTH ALONE. On a landscape phone that made each cell about 130dp and
@@ -396,14 +406,32 @@ literal_labels = re.findall(r'Transport\(Icons\.Default\.\w+, "', ui)
 # The name a control shows now comes from Vocabulary.display, which folds the chosen word into
 # the built-in one. That is the point: a rename is an INPUT to the one vocabulary rather than a
 # second list beside it, and this check exists to keep it that way.
-tip_is_generated = "Vocabulary.display(control, names)" in ui and "Control.entries.forEach" in ui
+# THE FOURTH TIME THIS EXACT MISTAKE HAS BEEN MADE HERE, and it is worth the paragraph because
+# it keeps coming back wearing different clothes: asserting that a call EXISTS SOMEWHERE in the
+# file rather than that each place which needs it uses it.
+#
+# `Vocabulary.display(control, names)` appears three times. This asked whether it appeared at
+# all, so hardcoding the name in the field somebody actually reads left the check green, and the
+# sweep said SURVIVED. The previous three were a colour constant asserted to exist rather than
+# be read, a `var fired` asserted to be declared while the line reading it was broken, and a
+# string searched for anywhere in MaMeter.kt when only one of its three occurrences mattered.
+#
+# Both places that DISPLAY a control's name are named here. The third use builds a status
+# message and is not a label, so it is deliberately not required.
+name_sites = [
+    "initial = Vocabulary.display(control, names),",
+    'text = if (slot == 0) Vocabulary.display(control, names).uppercase() else "",',
+]
+missing_sites = [s for s in name_sites if s not in code_only(ui)]
+tip_is_generated = not missing_sites and "Control.entries.forEach" in ui
 check("the spoken vocabulary has exactly one home",
       set(spoken.values()) == {"Start", "Pause", "Reset"}
       and not literal_labels
       and "control.spoken" in ui
       and tip_is_generated,
       f"{len(spoken)} words on the enum ({', '.join(spoken.values())}), "
-      f"{len(literal_labels)} typed at the call site, the lit words come from Heard.primary")
+      f"{len(literal_labels)} typed at the call site, "
+      f"{len(name_sites) - len(missing_sites)} of {len(name_sites)} display sites generated")
 
 # ── 8h ───────────────────────────────────────────────────────────────────────────────────────
 # The reminder must say what actually works. Voice Access needs the verb; the app does not
@@ -475,10 +503,22 @@ check("the listening notification says what it is and how to stop it",
 # The bar is drawn as a fraction of a width. A level above 1 runs it off the panel, and the curve
 # is only clamped inside Vu — if the drawing ever trusts the number it is handed, one loud room
 # breaks the layout.
+# STRENGTHENED 21.9.2026, because the mutation sweep walked through it. It asked whether the
+# string "coerceIn(0f, 1f)" appeared ANYWHERE in MaMeter.kt — and it appears three times, twice
+# inside the smoothing. So deleting the clamp from maNorm, which is the one that keeps the bar
+# inside its track, left the check perfectly green.
+#
+# This is the same fault as the `var fired` one at v46 and the colour constant before it:
+# asserting that a thing EXISTS somewhere rather than that THIS line does its job. The clamp is
+# now read off maNorm's own definition.
+manorm = re.search(r"fun maNorm\(db: Float\): Float = ([^\n]+)", meter)
+manorm_body = manorm.group(1) if manorm else ""
 check("the meter cannot draw past the end of its track",
-      "maNorm(smoothed)" in meter and "coerceIn(0f, 1f)" in meter
+      "maNorm(smoothed)" in meter
+      and manorm is not None and "coerceIn(0f, 1f)" in manorm_body
       and "coerceIn(0f, full - 2f)" in meter,
-      "maNorm clamps the fill and the peak marker is clamped to stay inside the track")
+      f"maNorm clamps its own return (`{manorm_body.strip()}`) and the peak marker "
+      "is clamped to stay inside the track")
 
 # ── 8k ───────────────────────────────────────────────────────────────────────────────────────
 # Restarting the recogniser from inside its own callback with no delay is a tight loop that

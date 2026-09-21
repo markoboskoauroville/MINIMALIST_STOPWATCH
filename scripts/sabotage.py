@@ -33,6 +33,10 @@ UI = ROOT / "app/src/main/java/com/mantra/stopwatch/MainActivity.kt"
 STORE = ROOT / "app/src/main/java/com/mantra/stopwatch/Store.kt"
 PALETTE = ROOT / "app/src/main/java/com/mantra/stopwatch/Palette.kt"
 VOICE = ROOT / "app/src/main/java/com/mantra/stopwatch/Voice.kt"
+# ADDED 21.9.2026 with the meter mutation that now points into it. A file that is mutated but
+# not in MUTABLE is not stashed and not restored — the sweep would edit it and leave the edit
+# behind on a crash, which is the one thing this script must never do.
+METER = ROOT / "app/src/main/java/com/mantra/stopwatch/MaMeter.kt"
 PROPS = ROOT / "gradle.properties"
 # VoiceListener.kt WAS IN THIS LIST AND HAS NOT EXISTED FOR SEVERAL VERSIONS. SpeechRecognizer
 # was taken out and the file went with it; this script kept naming it, kept it in MUTABLE, and
@@ -45,7 +49,7 @@ PROPS = ROOT / "gradle.properties"
 # how a stale one survives a read-through — the eye finds the second and assumes the first was
 # the mistake. And a crash here looks nothing like a caught mutation, so the one run that would
 # have shown it up was the one nobody did.
-MUTABLE = [LOGIC, UI, STORE, PALETTE, VOICE, PROPS]
+MUTABLE = [LOGIC, UI, STORE, PALETTE, VOICE, METER, PROPS]
 
 TEST_CMD = os.environ.get("SABOTAGE_RUN", "./gradlew :app:testReleaseUnitTest -q --no-daemon")
 CHECK_CMD = "python3 scripts/verify.py"
@@ -145,12 +149,24 @@ LOGIC_MUTATIONS = [
     (LOGIC, "play stops being a toggle and only ever starts",
      "        Control.PLAY -> if (phase == Phase.RUNNING) pause(now) else play(now)",
      "        Control.PLAY -> play(now)"),
+    # RE-ANCHORED 21.9.2026. STOP became a three-way `when` several versions ago, so the old
+    # anchor's tail could not match. `Phase.STOPPED -> this` now appears twice — once under PAUSE
+    # and once under STOP — so the comment above it is what makes this one unique.
     (LOGIC, "pause on a stopwatch showing zeros starts a measurement",
-     "            Phase.STOPPED -> this\n        }\n        Control.STOP -> stop()",
-     "            Phase.STOPPED -> play(now)\n        }\n        Control.STOP -> stop()"),
-    (LOGIC, "the hour field is dropped below an hour, so the width moves again",
-     '        return "%02d:%02d:%02d".format(h, m, s)',
-     '        return if (h > 0L) "%02d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)'),
+     "            // by pressing PAUSE is a surprise rather than a convenience.\n            Phase.STOPPED -> this",
+     "            // by pressing PAUSE is a surprise rather than a convenience.\n            Phase.STOPPED -> play(now)"),
+    # REPLACED 21.9.2026, AND NOT RE-ANCHORED, BECAUSE THE RULE IT GUARDED WAS DELIBERATELY
+    # REVERSED. It watched MULTI keeping "%02d:%02d:%02d" from zero so the width never moved. At
+    # v43/v44 Baba took the padding out — "the colon already carries the position" — so the hour
+    # field IS dropped below an hour now, on purpose, and a mutation restoring the old rule would
+    # assert something the app stopped believing.
+    #
+    # What IS true, and what this watches instead: NO FIELD IS EVER PADDED. The anchor names the
+    # MULTI branch specifically because the two branches are textually identical, so a bare
+    # anchor would match twice and skip. On that identity, see HANDOFF.md.
+    (LOGIC, "a field is padded back to two digits, so a glyph is spent saying nothing",
+     '        if (display == Display.MULTI) return when {\n            h > 0L -> "$h:$m:$s"\n            m > 0L -> "$m:$s"',
+     '        if (display == Display.MULTI) return when {\n            h > 0L -> "$h:$m:$s"\n            m > 0L -> "%d:%02d".format(m, s)'),
     (LOGIC, "the redraw delay can reach zero (an unbounded loop wearing a timer's clothes)",
      "        return if (r <= 0L) 1000L else r",
      "        return r - 1L"),
@@ -242,30 +258,47 @@ SHAPE_MUTATIONS = [
     (UI, "the panel loses its own way out, leaving only the corner it can cover",
      '            Glyph(Icons.Default.Close, "Close settings", Tone.HIGHLIGHT, 32.dp, onPress = onClose)',
      "            Box(Modifier.size(32.dp))"),
+    # RE-ANCHORED 21.9.2026. Still said `::commit`, which the call stopped using long ago.
     (UI, "a control label is typed at the call site again, so it can drift from the tip",
-     "                Transport(Icons.Default.Stop, Control.STOP, state, button, ::commit)",
-     '                Transport(Icons.Default.Stop, "Stop", Control.STOP, state, button, ::commit)'),
-    (UI, "the reminder is typed by hand instead of generated, so it can become a believed lie",
-     '                    Control.entries.joinToString("  ") { Heard.primary(it) }',
-     '                    "start  pause  reset"'),
-    (UI, "the meter is fed a raw level, so a loud room runs the bar off the panel",
-     "                            .fillMaxWidth(level.coerceIn(0f, 1f))",
-     "                            .fillMaxWidth(level)"),
+     "                Transport(Icons.Default.Stop, Control.STOP, state, button) { next ->",
+     '                Transport(Icons.Default.Stop, "Stop", Control.STOP, state, button) { next ->'),
+    # RE-ANCHORED 21.9.2026. The reminder row was replaced by the tip row, so the old anchor
+    # could not match. The RULE did not move: the word shown for a control still has to come from
+    # the vocabulary rather than be typed beside it, or the two drift and the label lies about
+    # what the matcher will accept. That is now Vocabulary.display, and this breaks it there.
+    (UI, "the name shown for a control is typed by hand instead of generated, so it can drift",
+     "                            initial = Vocabulary.display(control, names),",
+     '                            initial = "Start",'),
+    # RE-ANCHORED 21.9.2026, into MaMeter.kt, where the meter went when it was extracted. The
+    # clamp that keeps the bar inside its track is maNorm's, and nothing else clamps for it.
+    (METER, "the meter is fed a raw level, so a loud room runs the bar off the panel",
+     "fun maNorm(db: Float): Float = ((db - FLOOR_DB) / (0f - FLOOR_DB)).coerceIn(0f, 1f)",
+     "fun maNorm(db: Float): Float = ((db - FLOOR_DB) / (0f - FLOOR_DB))"),
+    # RE-ANCHORED 21.9.2026. `v.stop()` belonged to a recogniser that was deleted. The
+    # microphone's lifetime is the foreground service's now, and this is the line that ends it.
     (UI, "the microphone is left running when the screen goes away",
-     "            onDispose { v.stop() }",
-     "            onDispose { }"),
-    (UI, "the settings panel is moved over the digits, so colour is judged blind",
-     "                    .align(Alignment.BottomCenter)",
-     "                    .align(Alignment.Center)"),
+     "        onDispose { if (!listening) ListeningService.stop(context) }",
+     "        onDispose { }"),
+    # RE-ANCHORED 21.9.2026, AND THE RULE IT GUARDS WAS REVERSED AT v38. The panel used to sit
+    # at the bottom so the digits showed above it; it is now top-aligned and full height, so the
+    # tab row never moves between tabs. What must stay true is that it is where it is ON PURPOSE
+    # and in one known place — the anchor is the panel's own modifier, not any TopCenter in the
+    # file, because the microphone, the power mark and the mode letter all use that too.
+    (UI, "the settings panel is moved off the top, so the tab row walks between tabs",
+     "                modifier = Modifier\n                    .align(Alignment.TopCenter)\n                    .fillMaxSize()",
+     "                modifier = Modifier\n                    .align(Alignment.BottomCenter)\n                    .fillMaxSize()"),
     (UI, "the disabled tint is removed, so a dead button looks live",
      "            disabledContentColor = GLYPH_OFF,",
      "            disabledContentColor = GLYPH,"),
     (UI, "a secondary control is made inert, so the toggle only works one way on screen",
      "        enabled = tone != Tone.DEAD,",
      "        enabled = tone == Tone.HIGHLIGHT,"),
+    # RE-ANCHORED 21.9.2026. There are three `while (isActive)` loops now — the count-in, the
+    # clock and the panel's own tick — so the bare anchor matched three times and SKIPPED. The
+    # clock's is the one worth breaking, and `sinceWrite` names it uniquely.
     (UI, "the tick loop becomes unbounded",
-     "        while (isActive) {",
-     "        while (true) {"),
+     "        var sinceWrite = 0L\n        while (isActive) {",
+     "        var sinceWrite = 0L\n        while (true) {"),
     # ── v45's own rules, broken on purpose ───────────────────────────────────────────────
     (UI, "the ring comes back round the mode letter, the one place it hid last time",
      "                    .size(40.dp)\n                    .clickable {",
@@ -318,8 +351,9 @@ SHAPE_MUTATIONS = [
     (STORE, "the save is queued rather than written, and loses the race with process death",
      "            .commit()",
      "            .apply()"),
+    # RE-ANCHORED 21.9.2026: the constants moved into a `Keys` object and the anchor did not.
     (STORE, "accumulated is not persisted, so a paused stopwatch comes back at zero",
-     "            .putLong(K_ACCUMULATED, s.accumulated)\n",
+     "            .putLong(Keys.K_ACCUMULATED, s.accumulated)\n",
      ""),
     # Read the current number rather than hardcoding it. An anchor with a version in it stops
     # matching the first time the version is bumped, and a SKIPPED mutation reads almost like a
