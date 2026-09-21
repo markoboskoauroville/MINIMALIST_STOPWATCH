@@ -33,11 +33,19 @@ UI = ROOT / "app/src/main/java/com/mantra/stopwatch/MainActivity.kt"
 STORE = ROOT / "app/src/main/java/com/mantra/stopwatch/Store.kt"
 PALETTE = ROOT / "app/src/main/java/com/mantra/stopwatch/Palette.kt"
 VOICE = ROOT / "app/src/main/java/com/mantra/stopwatch/Voice.kt"
-LISTENER = ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt"
-VOICE = ROOT / "app/src/main/java/com/mantra/stopwatch/Voice.kt"
-LISTENER = ROOT / "app/src/main/java/com/mantra/stopwatch/VoiceListener.kt"
 PROPS = ROOT / "gradle.properties"
-MUTABLE = [LOGIC, UI, STORE, PALETTE, VOICE, LISTENER, PROPS]
+# VoiceListener.kt WAS IN THIS LIST AND HAS NOT EXISTED FOR SEVERAL VERSIONS. SpeechRecognizer
+# was taken out and the file went with it; this script kept naming it, kept it in MUTABLE, and
+# therefore crashed on its own first line of work — take_stash() reads every file in MUTABLE.
+# So the sweep this repository calls "the important one" had not run at all since that removal,
+# and nothing said so, because nothing runs it. It is not in the workflow: a script that only
+# fails when a person remembers to type it is a script that fails silently.
+#
+# Two mistakes worth naming rather than quietly deleting. The path was declared TWICE, which is
+# how a stale one survives a read-through — the eye finds the second and assumes the first was
+# the mistake. And a crash here looks nothing like a caught mutation, so the one run that would
+# have shown it up was the one nobody did.
+MUTABLE = [LOGIC, UI, STORE, PALETTE, VOICE, PROPS]
 
 TEST_CMD = os.environ.get("SABOTAGE_RUN", "./gradlew :app:testReleaseUnitTest -q --no-daemon")
 CHECK_CMD = "python3 scripts/verify.py"
@@ -79,6 +87,25 @@ LOGIC_MUTATIONS = [
     (LOGIC, "the future-instant guard is removed",
      "            if (phase == Phase.RUNNING && now < startedAt) return Stopwatch()",
      "            if (false) return Stopwatch()"),
+    (LOGIC, "a preset the plus and minus could never reach is allowed into the list",
+     "    if (seconds !in TIMER_MIN..TIMER_MAX) return presets",
+     "    if (false) return presets"),
+    (LOGIC, "the preset list drops the oldest to make room, losing one he saved",
+     "    if (presets.size >= PRESETS_MAX) return presets",
+     "    if (presets.size >= PRESETS_MAX) return presets.drop(1) + seconds"),
+    # POINTED AT THE LINE THAT ACTUALLY ENFORCES IT. It was aimed at an early return above this,
+    # survived, and that survival was the useful result: the early return was dead code and the
+    # deduplication was distinct() all along. The guard is gone and the mutation now breaks the
+    # thing that was doing the work.
+    (LOGIC, "pressing plus twice puts the same duration in twice",
+     "    return (presets + seconds).distinct().sorted()",
+     "    return (presets + seconds).sorted()"),
+    (LOGIC, "an unreadable preset string throws instead of reading as nothing",
+     "        .mapNotNull { it.trim().toIntOrNull() }",
+     "        .map { it.trim().toInt() }"),
+    (LOGIC, "a step is made variable again, so the button lies about what it does",
+     "val TIMER_STEPS = listOf(30, 60, 600)",
+     "val TIMER_STEPS = listOf(15, 60, 600)"),
     (LOGIC, "stop is offered as the suggested next action",
      "        Control.STOP -> if (phase == Phase.STOPPED) Tone.DEAD else Tone.SECONDARY",
      "        Control.STOP -> if (phase == Phase.STOPPED) Tone.DEAD else Tone.HIGHLIGHT"),
@@ -167,10 +194,6 @@ _APP_VERSION_LINE = next(
 )
 
 SHAPE_MUTATIONS = [
-    (LISTENER, "the recogniser restarts from inside its own callback with no gap",
-     "        main.postDelayed({ listen() }, delayMs)",
-     "        listen()"),
-
     # The anchor is the whole BoxWithConstraints modifier chain, not just the background call.
     # The settings panel added a second .background(BACKGROUND) and this mutation started
     # matching twice and reporting SKIP, which reads almost like a caught mutation in a long
@@ -178,18 +201,23 @@ SHAPE_MUTATIONS = [
     (UI, "tap-anywhere comes back on the background",
      "            .fillMaxSize()\n            .background(BACKGROUND)\n            .safeDrawingPadding()",
      "            .fillMaxSize()\n            .background(BACKGROUND)\n            .clickable { }\n            .safeDrawingPadding()"),
+    # RE-ANCHORED AT v45. The old anchor still said `::commit`, which the Transport call stopped
+    # using several versions ago, so this mutation had been skipping rather than running — and a
+    # SKIP in a long list reads almost like a catch. It matters more now than it did: v45 added
+    # the one condition allowed to wrap a control, so the check has to still refuse every other.
     (UI, "a button is hidden rather than dimmed when it cannot act",
-     "                Transport(Icons.Default.Pause, Control.PAUSE, state, button, ::commit)",
-     "                if (state.tone(Control.PAUSE) != Tone.DEAD) Transport(Icons.Default.Pause, Control.PAUSE, state, button, ::commit)"),
+     "                Transport(Icons.Default.Pause, Control.PAUSE, state, button) { next ->",
+     "                if (state.tone(Control.PAUSE) != Tone.DEAD) Transport(Icons.Default.Pause, Control.PAUSE, state, button) { next ->"),
     (UI, "the tone ladder is collapsed, so prominence means nothing",
      "                Tone.PRIMARY -> GLYPH_PRIMARY\n                Tone.HIGHLIGHT -> GLYPH",
      "                Tone.PRIMARY -> GLYPH\n                Tone.HIGHLIGHT -> GLYPH"),
     (UI, "the app goes back to following the phone instead of being told",
      "            Orientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT",
      "            Orientation.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED"),
+    # Indented four further at v45, when the top controls went inside the full-screen group.
     (UI, "the orientation button shows where you are instead of where you would go",
-     "            icon = if (orientation == Orientation.PORTRAIT) Icons.Default.StayCurrentLandscape\n                   else Icons.Default.StayCurrentPortrait,",
-     "            icon = if (orientation == Orientation.PORTRAIT) Icons.Default.StayCurrentPortrait\n                   else Icons.Default.StayCurrentLandscape,"),
+     "                icon = if (orientation == Orientation.PORTRAIT) Icons.Default.StayCurrentLandscape\n                       else Icons.Default.StayCurrentPortrait,",
+     "                icon = if (orientation == Orientation.PORTRAIT) Icons.Default.StayCurrentPortrait\n                       else Icons.Default.StayCurrentLandscape,"),
     (UI, "the circles come back around the transport glyphs",
      "        modifier = modifier.size(size),",
      "        modifier = modifier.size(size).border(1.5.dp, GLYPH, CircleShape),"),
@@ -223,6 +251,28 @@ SHAPE_MUTATIONS = [
     (UI, "the tick loop becomes unbounded",
      "        while (isActive) {",
      "        while (true) {"),
+    # ── v45's own rules, broken on purpose ───────────────────────────────────────────────
+    (UI, "the ring comes back round the mode letter, the one place it hid last time",
+     "                    .size(40.dp)\n                    .clickable {",
+     "                    .size(40.dp)\n                    .border(1.dp, GLYPH_SECOND, CircleShape)\n                    .clickable {"),
+    (UI, "full screen hides the transport but leaves the strip's height reserved",
+     "        val strip = if (fullscreen) 0.dp else if (landscape) 72.dp else 108.dp",
+     "        val strip = if (landscape) 72.dp else 108.dp"),
+    (UI, "full screen has no way back, so the controls can be taken away for good",
+     "                            if (fullscreen) {\n                                fullscreen = false",
+     "                            if (false) {\n                                fullscreen = false"),
+    (UI, "the panel is left open behind a screen that draws no way of closing it",
+     "                settingsOpen = false\n                fullscreen = true",
+     "                fullscreen = true"),
+    (UI, "the two sides of the duration row are typed out instead of generated",
+     "                TIMER_STEPS.reversed().forEach { step ->",
+     "                listOf(600, 60, 30).forEach { step ->"),
+    (UI, "the duration is moved by arithmetic in the interface, past its own bound",
+     "                        onTimerSeconds(timerShift(timerSeconds, step))",
+     "                        onTimerSeconds(timerSeconds + step)"),
+    (UI, "the plus becomes a control beside the list instead of the next cell in it",
+     "            val cells: List<Int?> = presets + listOf(null)",
+     "            val cells: List<Int?> = presets"),
     (STORE, "the save is queued rather than written, and loses the race with process death",
      "            .commit()",
      "            .apply()"),

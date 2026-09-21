@@ -1,7 +1,129 @@
-# DELIVERY RECORD — Minimalist Stopwatch v22 — 28.8.2026
+# DELIVERY RECORD — Minimalist Stopwatch v45 — 21.9.2026
 
 The shape is fixed so that two releases can be compared. The **NOT TESTED** block is the most
 valuable part of this document and it is longer than the gate list on purpose.
+
+**This document has now been stale twice.** At v22 it claimed to be v7; it then sat at v22 while
+the app reached v44, so for twenty-two versions the only honest account of what had and had not
+been proven described an app that no longer existed. Nothing between v23 and v44 was recorded at
+the time and it is not reconstructed here — those versions have no delivery record and saying so
+is more use than inventing one. The v22 record is kept below, unedited, as the last one anybody
+actually wrote.
+
+---
+
+    ARTEFACT   45-stopwatch-v45.apk, to be built by GitHub Actions from the commit tagged v45
+    VERSION    new: 45   previous: 44, still downloadable at the releases page
+    SIGNED BY  the permanent repository key, SHA-256 D9:3E:6B:00:...:D9:62
+    SIZE       1,036,847 bytes measured locally, UNSIGNED. The signed figure from the runner is
+               not yet known and this line must be corrected from the run, not left as an
+               estimate wearing the look of a measurement
+
+## What v45 is
+
+Four changes asked for in one sentence by Baba on 21.9.2026, and a fifth nobody asked for:
+
+    the rings are gone from every control, and the tone ladder is back carrying what they said
+    a full-screen button: one press and every control leaves, long press on the digits brings
+      them back
+    the six built-in timer presets are DELETED. Every preset is now one he saved
+    six duration buttons, three each side, 30s / 1m / 10m, each with its amount on its face
+    sabotage.py repaired — it had been crashing on a deleted file for months, unnoticed
+
+## The gates
+
+    G1  PROVENANCE   pass   every action pinned by commit SHA, Gradle distribution pinned by
+                            sha256, appVersion 44 -> 45. The runner asserts the three numbers
+                            agree; the local build confirms it compiles and packages clean
+
+    G2  SECRETS      pass   scanned by the workflow on the push. Nothing was added to this
+                            change that touches a key, a URL or a permission
+
+    G3  ANALYSIS     pass   verify.py: 89 of 89, each printing what it examined
+                            Lint fatal on release: clean, assembleRelease green
+                            Test 1: 126 cases, 0 failures, 0 errors
+                            Mutation sweep: RUN, and see below. This is the first version in
+                              months where that line is not a lie
+
+    G4  DEAD CODE    pass   15 source files, 5,941 lines. One dead guard found by the sweep and
+                            deleted; TimerLength, timerStep and timerNudge removed with the
+                            feature they served
+
+    G5  DEAD LOOPS   pass   counted by the workflow. Nothing in this change adds a loop or a
+                            wait
+
+    G6  STRESS       NOT RUN, no device
+
+    G7  BUDGETS      v44 -> v45
+                            source 5,941 lines across 15 files
+                            APK: not comparable yet, the v45 figure above is unsigned and local
+                            cold start, frame time, memory, battery: NEVER MEASURED, no device
+
+    G8  UPGRADE      NOT RUN by hand. v44 and v45 share the signing key, so it is testable
+
+    G9  RECORD       this document
+
+## THE GAP IN G3 IS NARROWER THAN IT WAS, AND IT IS A DIFFERENT GAP
+
+The v22 record called the mutation sweep "the largest piece of unpaid work in the repository".
+It was worse than that entry knew. **The sweep had not run at all since SpeechRecognizer was
+removed** — it named a file that no longer existed in the list it copies before starting, so it
+threw on its first step, every time, and nothing runs it in CI to report that.
+
+It runs again. All 70 mutations were examined, and every rule v45 introduces is proven to fail
+on purpose — the rings, the full-screen group, the strip's reserved height, the way back, the
+presets, the bound, the duplicate, the parser and the steps.
+
+**What running it found, both in the checker rather than the app, which is this repository's
+pattern:**
+
+    a check in verify.py with no assertion in it. v37 rewrote the tap-anywhere rule, replaced the
+      check() below it, and left background_click computed and unused. For eight versions nothing
+      watched whether the black behind everything was pressable. Restored
+    a guard in the new preset code that could not fail, because a distinct() further down was
+      already doing the job. Deleted
+
+**Seven mutations still point at anchors that have moved** and are listed by name in
+`HANDOFF.md`. They report SKIP rather than SURVIVED, so seven rules this repository claims to
+guard are currently unguarded — not broken, unwatched. That is the next job, and it is smaller
+than the one the v22 record described.
+
+## NOT TESTED — v45
+
+**Every one of the four things Baba asked for. None has been touched by a thumb.**
+
+    THE RINGS GONE              the four-step tone ladder has never been LOOKED AT on glass since
+                                it came back. The whole argument for removing the rings is about
+                                what a screen looks like at arm's length, and that argument has
+                                been made twice from a desk. Whether a dark-grey glyph reads as
+                                "live but not suggested" or simply as "off" at low brightness is
+                                the question, and it is unanswered
+    FULL SCREEN                 never entered on a phone. Whether the digits actually look
+                                bigger, whether the long press is discoverable without being
+                                told, and whether somebody can find their way back without
+                                reading this repository, are all unknown. THE DISCOVERABILITY IS
+                                THE RISK: the way out is a gesture, and a gesture nobody guesses
+                                is a trap however well documented
+    THE PRESET ROW              never pressed. The wrap at four presets, the hold-to-remove, and
+                                whether "full" reads as a state rather than a broken button, are
+                                untested on a real panel
+    THE SIX STEP BUTTONS        never pressed, and this is the one with a measurable layout risk:
+                                seven cells across a panel on the narrowest phone. They are laid
+                                out by WEIGHT precisely so they cannot overflow, but "cannot
+                                overflow" and "the 9sp label is legible at that width" are
+                                different claims and only the first is proven
+    THE v44 MIGRATION           a phone holding a v44 savedPreset has never been updated to v45.
+                                The inheritance is written and tested as a pure function; the
+                                actual preferences file on an actual phone has not been read
+    THE ARTEFACT UPLOAD         the new upload-artifact step has never run. It is pinned to a SHA
+                                resolved on 21.9.2026 and will be proven or not by the push
+
+Everything in the v22 NOT TESTED block below that has not been superseded still stands. No device
+has been used for any of this.
+
+---
+
+# The v22 record, kept as written — 28.8.2026
 
 **This document was stale for fifteen versions.** It claimed to be v7 while the app was v22, which
 made the only honest account of what had and had not been proven describe an app that no longer

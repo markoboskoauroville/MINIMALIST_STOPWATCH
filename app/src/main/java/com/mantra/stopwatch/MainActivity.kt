@@ -35,11 +35,11 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Pause
@@ -188,8 +188,25 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var lapMetres by remember { mutableIntStateOf(store.lapMetres) }
     var appMode by remember { mutableStateOf(store.appMode) }
     var timerSeconds by remember { mutableIntStateOf(store.timerSeconds) }
-    var savedPreset by remember { mutableIntStateOf(store.savedPreset) }
+    var presets by remember { mutableStateOf(store.timerPresets) }
     var useRecorded by remember { mutableStateOf(store.useRecorded) }
+
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // THE NUMBERS AND NOTHING ELSE. Baba, 21.9.2026: "add a button for the full screen when
+    // stopwatch is displayed without any buttons, only numbers."
+    //
+    // This app already hides the system bars, so "full screen" here does not mean the window —
+    // it means the APP'S OWN controls. Pressed, the eight glyphs and the transport strip leave
+    // the screen and the digits take the whole of it, which on a phone propped on a bench across
+    // a room is a measurably larger number rather than a tidier one.
+    //
+    // It is the one place this app deliberately breaks its own oldest rule — "no button is ever
+    // hidden, because a control that disappears moves the layout". The rule is about a control
+    // vanishing BECAUSE IT CANNOT ACT, which leaves you guessing where it went. Here every
+    // control leaves at once, because somebody pressed the button that says so, and one gesture
+    // brings all of them back. Nothing is guessed and nothing shuffles.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    var fullscreen by remember { mutableStateOf(store.fullscreen) }
 
     var names by remember { mutableStateOf(store.names) }
     var prerollStopwatch by remember { mutableIntStateOf(store.preroll(AppMode.STOPWATCH)) }
@@ -575,7 +592,16 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         val countdown = prerollLabel(prerollEndsAt - prerollNow).takeIf { prerollEndsAt > 0L }
 
         val button = if (landscape) 56.dp else 72.dp
-        val strip = if (landscape) 72.dp else 108.dp
+
+        // THE TWO RESERVED BANDS, AND IN FULL SCREEN THEY ARE NOT RESERVED.
+        //
+        // These two numbers are the whole of the full-screen change to the layout, and that is
+        // deliberate: the digits are already sized by measuring what is left over, so handing
+        // them two zeros gives them the screen without a second code path drawing them.
+        // A branch that laid the digits out differently in full screen would be a second layout
+        // to keep in step with the first, and the two would disagree within a version.
+        val strip = if (fullscreen) 0.dp else if (landscape) 72.dp else 108.dp
+        val topZone = if (fullscreen) 0.dp else LOCK_ZONE
 
         // THE TOP ROW'S CLEARANCE IS RESERVED HERE, and until now it was not. The digit sizing
         // subtracted LOCK_ZONE from the height it had to fill, so it BELIEVED the row above was
@@ -584,7 +610,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         // microphone, power and settings controls.
         //
         // The arithmetic and the layout disagreed, and the arithmetic was right.
-        Column(Modifier.fillMaxSize().padding(top = LOCK_ZONE)) {
+        Column(Modifier.fillMaxSize().padding(top = topZone)) {
             // ABOVE THE DIGITS, and only when the counter is on. It is a control as well as a
             // readout: tapping it is the other way to count a length, and at the end of a length
             // in a pool a thumb finds a wide target above the numbers more easily than a small
@@ -606,7 +632,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     colour = Color(if (flashing) Palette.flashOf(colour) else colour),
                     weight = weight,
                     width = screenW - EDGE * 4,
-                    height = (screenH - strip - LOCK_ZONE) * 0.30f,
+                    height = (screenH - strip - topZone) * 0.30f,
                     modifier = Modifier
                         .weight(0.30f)
                         .fillMaxWidth()
@@ -635,19 +661,48 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 colour = Color(if (flashing) Palette.flashOf(colour) else colour),
                 weight = weight,
                 width = screenW - EDGE * 2,
-                height = screenH - strip - LOCK_ZONE,
+                height = screenH - strip - topZone,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .combinedClickable(
                         onClick = { onPlay() },
+                        // ─────────────────────────────────────────────────────────────────
+                        // THE LONG PRESS MEANS TWO THINGS, AND ONLY ONE OF THEM IS REACHABLE AT
+                        // A TIME, which is why this is one gesture rather than two.
+                        //
+                        // In full screen there is no control on the screen at all, so there has
+                        // to be a gesture that brings them back, and it has to be one a pocket,
+                        // a sleeve or a wet hand cannot produce by accident — otherwise the mode
+                        // Baba asked for would undo itself while the phone sat on a bench. The
+                        // long press is already that gesture here; it is the reason reset lives
+                        // on it.
+                        //
+                        // SO IN FULL SCREEN IT LEAVES FULL SCREEN, AND RESET IS NOT REACHABLE.
+                        // That is a real loss and it is the right trade: leaving costs one long
+                        // press, after which stop is where it has always been, and the
+                        // alternative — reset under the one gesture you must use to escape —
+                        // would destroy a measurement every time somebody wanted their buttons
+                        // back.
+                        // ─────────────────────────────────────────────────────────────────
                         onLongClick = {
-                            cancelPreroll()
-                            commit(state.stop())
+                            if (fullscreen) {
+                                fullscreen = false
+                                store.fullscreen = false
+                            } else {
+                                cancelPreroll()
+                                commit(state.stop())
+                            }
                         },
                     ),
             )
-            Row(
+            // EVERY CONTROL LEAVES AT ONCE, OR NONE OF THEM DOES. The condition is on the row
+            // and not on the three glyphs inside it, and that is the difference between this and
+            // the thing the rule forbids: a transport that hid whichever button could not act
+            // would move the other two under your thumb. This hides the row, the strip's height
+            // goes to zero with it, and the digits grow into the space — one layout, one press,
+            // nothing shuffling.
+            if (!fullscreen) Row(
                 modifier = Modifier.fillMaxWidth().height(strip),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
@@ -671,155 +726,199 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             }
         }
 
-        // The two corner controls, swapped at v6 on Baba's instruction: orientation left,
-        // settings right. design-language.md 10 — a row has two ends and a middle, and a screen
-        // is read as weight before it is read as anything else. Both say what the next press
-        // does rather than what is currently true.
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        // THE EIGHT CONTROLS, AND THE ONE CONDITION THAT TAKES THEM ALL AWAY.
+        //
+        // Wrapped as a group rather than one by one, deliberately. A condition per control would
+        // read as eight independent decisions about eight controls, which is exactly the shape
+        // of the fault this app has always refused — a button that goes missing on its own and
+        // takes its position with it. There is one decision here and it is Baba's: numbers only,
+        // or the app. A long press on the digits is the way back.
+        // ─────────────────────────────────────────────────────────────────────────────────────
+        if (!fullscreen) {
+            // The two corner controls, swapped at v6 on Baba's instruction: orientation left,
+            // settings right. design-language.md 10 — a row has two ends and a middle, and a screen
+            // is read as weight before it is read as anything else. Both say what the next press
+            // does rather than what is currently true.
 
-        // design-language.md 5: a control says what the next press DOES. In portrait it shows
-        // the landscape glyph, because pressing it gives you landscape. It is not a readout of
-        // where you are — you can see where you are by looking at the screen.
-        Glyph(
-            icon = if (orientation == Orientation.PORTRAIT) Icons.Default.StayCurrentLandscape
-                   else Icons.Default.StayCurrentPortrait,
-            label = if (orientation == Orientation.PORTRAIT) "Turn landscape" else "Turn portrait",
-            tone = Tone.HIGHLIGHT,
-            size = 40.dp,
-            modifier = Modifier.align(Alignment.TopStart).padding(EDGE),
-        ) {
-            orientation = if (orientation == Orientation.PORTRAIT) Orientation.LANDSCAPE
-                          else Orientation.PORTRAIT
-            store.orientation = orientation
-        }
+            // design-language.md 5: a control says what the next press DOES. In portrait it shows
+            // the landscape glyph, because pressing it gives you landscape. It is not a readout of
+            // where you are — you can see where you are by looking at the screen.
+            Glyph(
+                icon = if (orientation == Orientation.PORTRAIT) Icons.Default.StayCurrentLandscape
+                       else Icons.Default.StayCurrentPortrait,
+                label = if (orientation == Orientation.PORTRAIT) "Turn landscape" else "Turn portrait",
+                tone = Tone.HIGHLIGHT,
+                size = 40.dp,
+                modifier = Modifier.align(Alignment.TopStart).padding(EDGE),
+            ) {
+                orientation = if (orientation == Orientation.PORTRAIT) Orientation.LANDSCAPE
+                              else Orientation.PORTRAIT
+                store.orientation = orientation
+            }
 
-        // ─────────────────────────────────────────────────────────────────────────────────────
-        // THE WAY OUT.
-        //
-        // The app is full screen, which took the system bars away and the back gesture with them.
-        // An app with no exit is a trap however good it is, and this one is meant to be left
-        // running on a bench.
-        //
-        // THE POWER MARK, NOT A CROSS. A cross is a thing being cancelled — it says the screen
-        // was a mistake. The power mark is the oldest and best-drawn symbol in the whole of
-        // consumer electronics: a broken circle with a stroke through the gap, one continuous
-        // idea, no corners, and it means the thing is being switched off rather than dismissed.
-        // Outlined, so it obeys the same rule as everything else on this screen: hollow is off,
-        // and this control is the one that turns everything off.
-        //
-        // Dim, because it is used once a day and the digits are used constantly.
-        //
-        // BETWEEN THE MICROPHONE AND THE SETTINGS, not in the middle. v28 took the centre for
-        // this and pushed the microphone aside, which had the priority backwards: the microphone
-        // is a state you check constantly and the exit is a control you use once. The middle
-        // belongs to the thing that is looked at, not to the thing that is looked for.
-        //
-        // The offset is a quarter of the width rather than a fixed distance, so it stays halfway
-        // between the two on a phone held either way up. A fixed number would sit beside the
-        // microphone in portrait and be lost in the middle of nowhere in landscape.
-        // ─────────────────────────────────────────────────────────────────────────────────────
-        // ─────────────────────────────────────────────────────────────────────────────────────
-        // S OR T, mirroring the power mark on the other side of the microphone.
-        //
-        // A LETTER, NOT A GLYPH, and that is deliberate. There is no icon in the Material set
-        // that says "stopwatch rather than timer" without being read twice — both are clocks and
-        // both are drawn as circles with hands. S and T are read instantly, they are the words
-        // themselves, and they are set in the same monospaced face as the digits so they belong
-        // to the screen rather than sitting on top of it.
-        //
-        // The letter shown is the mode you are IN, not the one the press would give. This is the
-        // one control on the screen that breaks that rule, and it breaks it for the same reason
-        // the microphone does: it is a STATE. You need to know which clock you are looking at
-        // before you look at the number, and a control that only says what it would become
-        // leaves that question unanswered.
-        // ─────────────────────────────────────────────────────────────────────────────────────
-        // THE RING BELONGS HERE TOO. A circle means a press will do something, and this control
-        // is always pressable — so it always has one. Leaving it bare made it the only control on
-        // the screen that could be pressed and did not say so, which is worse than having no
-        // language at all: an exception teaches you not to trust the rule.
-        //
-        // It is a letter rather than a glyph, so the ring is drawn here rather than by Glyph, and
-        // it is unconditional because the control is.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(EDGE)
-                .offset(x = -(screenW / 4 - 16.dp))
-                .size(40.dp)
-                .border(1.dp, GLYPH_SECOND, CircleShape)
-                .clickable {
-                    // Changing which way the clock runs mid-measurement would leave a figure on
-                    // screen that means something different from the one that was there a moment
-                    // before, so the measurement is cleared with the mode.
-                    appMode = if (appMode == AppMode.TIMER) AppMode.STOPWATCH else AppMode.TIMER
-                    store.appMode = appMode
-                    commit(state.stop())
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = if (appMode == AppMode.TIMER) "T" else "S",
-                style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = if (appMode == AppMode.TIMER) Color(colour) else GLYPH,
-                    fontSize = 18.sp,
-                ),
-                maxLines = 1,
-            )
-        }
+            // ─────────────────────────────────────────────────────────────────────────────────
+            // THE FULL-SCREEN BUTTON, NEXT TO THE ORIENTATION AND NOT BY ACCIDENT.
+            //
+            // Both of these controls answer the same question — what shape is the screen — and
+            // the two are used in the same breath: prop the phone up, turn it the way you want
+            // it, take the buttons away. Putting them side by side means one place to look
+            // instead of a hunt along a row of eight.
+            //
+            // It is the only control that is not on this screen when you need it, so the way
+            // back has to be somewhere a person will find without being told twice. It is the
+            // long press on the digits, the gesture this app already uses for the deliberate
+            // thing, and the panel's own help line says so in as many words.
+            //
+            // THERE IS NO MATCHING EXIT GLYPH, and the arrow only ever points one way, because
+            // the moment it would be needed it is not drawn. A control whose second state cannot
+            // be shown should not pretend to have one.
+            // ─────────────────────────────────────────────────────────────────────────────────
+            Glyph(
+                icon = Icons.Default.Fullscreen,
+                label = "Numbers only",
+                tone = Tone.SECONDARY,
+                size = 40.dp,
+                modifier = Modifier.align(Alignment.TopStart).padding(EDGE).offset(x = 44.dp),
+            ) {
+                // The panel cannot be left open behind a screen that has no way of closing it:
+                // its own X would be the only control drawn, over digits that were supposed to
+                // be alone. Closing it here costs nothing — nobody presses this while choosing a
+                // colour — and it makes the state impossible rather than merely unlikely.
+                settingsOpen = false
+                fullscreen = true
+                store.fullscreen = true
+            }
 
-        Glyph(
-            icon = Icons.Outlined.PowerSettingsNew,
-            label = "Close the stopwatch",
-            tone = Tone.SECONDARY,
-            size = 40.dp,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(EDGE)
-                .offset(x = screenW / 4 - 16.dp),
-        ) { activity.finish() }
+            // ─────────────────────────────────────────────────────────────────────────────────────
+            // THE WAY OUT.
+            //
+            // The app is full screen, which took the system bars away and the back gesture with them.
+            // An app with no exit is a trap however good it is, and this one is meant to be left
+            // running on a bench.
+            //
+            // THE POWER MARK, NOT A CROSS. A cross is a thing being cancelled — it says the screen
+            // was a mistake. The power mark is the oldest and best-drawn symbol in the whole of
+            // consumer electronics: a broken circle with a stroke through the gap, one continuous
+            // idea, no corners, and it means the thing is being switched off rather than dismissed.
+            // Outlined, so it obeys the same rule as everything else on this screen: hollow is off,
+            // and this control is the one that turns everything off.
+            //
+            // Dim, because it is used once a day and the digits are used constantly.
+            //
+            // BETWEEN THE MICROPHONE AND THE SETTINGS, not in the middle. v28 took the centre for
+            // this and pushed the microphone aside, which had the priority backwards: the microphone
+            // is a state you check constantly and the exit is a control you use once. The middle
+            // belongs to the thing that is looked at, not to the thing that is looked for.
+            //
+            // The offset is a quarter of the width rather than a fixed distance, so it stays halfway
+            // between the two on a phone held either way up. A fixed number would sit beside the
+            // microphone in portrait and be lost in the middle of nowhere in landscape.
+            // ─────────────────────────────────────────────────────────────────────────────────────
+            // ─────────────────────────────────────────────────────────────────────────────────────
+            // S OR T, mirroring the power mark on the other side of the microphone.
+            //
+            // A LETTER, NOT A GLYPH, and that is deliberate. There is no icon in the Material set
+            // that says "stopwatch rather than timer" without being read twice — both are clocks and
+            // both are drawn as circles with hands. S and T are read instantly, they are the words
+            // themselves, and they are set in the same monospaced face as the digits so they belong
+            // to the screen rather than sitting on top of it.
+            //
+            // The letter shown is the mode you are IN, not the one the press would give. This is the
+            // one control on the screen that breaks that rule, and it breaks it for the same reason
+            // the microphone does: it is a STATE. You need to know which clock you are looking at
+            // before you look at the number, and a control that only says what it would become
+            // leaves that question unanswered.
+            // ─────────────────────────────────────────────────────────────────────────────────────
+            // THE RING IS GONE FROM HERE TOO, and it had to go from here for the rule to hold. v40
+            // gave this letter a ring so that it would not be the one pressable thing on the screen
+            // without one. That was right while the rings existed; with them removed, a ring left
+            // here would make it the one thing on the screen WITH one, which is the same fault
+            // wearing the opposite coat.
+            //
+            // It says what it is the way the glyphs do now: coloured in the timer, grey in the
+            // stopwatch, and nothing drawn around it.
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(EDGE)
+                    .offset(x = -(screenW / 4 - 16.dp))
+                    .size(40.dp)
+                    .clickable {
+                        // Changing which way the clock runs mid-measurement would leave a figure on
+                        // screen that means something different from the one that was there a moment
+                        // before, so the measurement is cleared with the mode.
+                        appMode = if (appMode == AppMode.TIMER) AppMode.STOPWATCH else AppMode.TIMER
+                        store.appMode = appMode
+                        commit(state.stop())
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = if (appMode == AppMode.TIMER) "T" else "S",
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = if (appMode == AppMode.TIMER) Color(colour) else GLYPH,
+                        fontSize = 18.sp,
+                    ),
+                    maxLines = 1,
+                )
+            }
 
-        Glyph(
-            icon = if (settingsOpen) Icons.Default.Close else Icons.Default.Settings,
-            label = if (settingsOpen) "Close settings" else "Settings",
-            tone = Tone.HIGHLIGHT,
-            size = 40.dp,
-            modifier = Modifier.align(Alignment.TopEnd).padding(EDGE),
-        ) { settingsOpen = !settingsOpen }
+            Glyph(
+                icon = Icons.Outlined.PowerSettingsNew,
+                label = "Close the stopwatch",
+                tone = Tone.SECONDARY,
+                size = 40.dp,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(EDGE)
+                    .offset(x = screenW / 4 - 16.dp),
+            ) { activity.finish() }
 
-        // ─────────────────────────────────────────────────────────────────────────────────────
-        // THE MICROPHONE, TOP MIDDLE.
-        //
-        // v9 put it bottom right, where it sat beside the transport strip and Baba could not
-        // find it. Top middle is the third position on a screen whose two corners are already
-        // taken, and design-language.md 10 is explicit that a row has two ends AND A MIDDLE.
-        //
-        // FILLED IS ON, OUTLINED IS OFF. No slash. A struck-out microphone is a third mark to
-        // read — you have to notice the line, and a small line at arm's length is exactly what
-        // low vision loses first. Solid against hollow is a difference in weight, which is what
-        // an interface is read as before it is read as anything else, and it survives being
-        // glanced at from across a room.
-        //
-        // It is the only control here that shows a STATE rather than what the next press does. A
-        // switch that does not show its position can only be read by pressing it, and pressing
-        // this one to find out whether the microphone is open is precisely what must not be
-        // necessary.
-        // ─────────────────────────────────────────────────────────────────────────────────────
-        Glyph(
-            icon = if (listening) Icons.Filled.Mic else Icons.Outlined.Mic,
-            label = if (listening) "Voice on" else "Voice off",
-            tone = if (listening) Tone.PRIMARY else Tone.SECONDARY,
-            size = 40.dp,
-            // THE MIDDLE, AND IT KEEPS IT. v28 moved this aside for the exit and that was the
-            // wrong way round: this is a STATE, checked at a glance and often, and the exit is a
-            // control used once at the end. The centre belongs to what is looked at.
-            modifier = Modifier.align(Alignment.TopCenter).padding(EDGE),
-        ) {
-            if (!listening && !granted) {
-                askForMicrophone.launch(Manifest.permission.RECORD_AUDIO)
-            } else {
-                listening = !listening
-                store.listening = listening
+            Glyph(
+                icon = if (settingsOpen) Icons.Default.Close else Icons.Default.Settings,
+                label = if (settingsOpen) "Close settings" else "Settings",
+                tone = Tone.HIGHLIGHT,
+                size = 40.dp,
+                modifier = Modifier.align(Alignment.TopEnd).padding(EDGE),
+            ) { settingsOpen = !settingsOpen }
+
+            // ─────────────────────────────────────────────────────────────────────────────────────
+            // THE MICROPHONE, TOP MIDDLE.
+            //
+            // v9 put it bottom right, where it sat beside the transport strip and Baba could not
+            // find it. Top middle is the third position on a screen whose two corners are already
+            // taken, and design-language.md 10 is explicit that a row has two ends AND A MIDDLE.
+            //
+            // FILLED IS ON, OUTLINED IS OFF. No slash. A struck-out microphone is a third mark to
+            // read — you have to notice the line, and a small line at arm's length is exactly what
+            // low vision loses first. Solid against hollow is a difference in weight, which is what
+            // an interface is read as before it is read as anything else, and it survives being
+            // glanced at from across a room.
+            //
+            // It is the only control here that shows a STATE rather than what the next press does. A
+            // switch that does not show its position can only be read by pressing it, and pressing
+            // this one to find out whether the microphone is open is precisely what must not be
+            // necessary.
+            // ─────────────────────────────────────────────────────────────────────────────────────
+            Glyph(
+                icon = if (listening) Icons.Filled.Mic else Icons.Outlined.Mic,
+                label = if (listening) "Voice on" else "Voice off",
+                tone = if (listening) Tone.PRIMARY else Tone.SECONDARY,
+                size = 40.dp,
+                // THE MIDDLE, AND IT KEEPS IT. v28 moved this aside for the exit and that was the
+                // wrong way round: this is a STATE, checked at a glance and often, and the exit is a
+                // control used once at the end. The centre belongs to what is looked at.
+                modifier = Modifier.align(Alignment.TopCenter).padding(EDGE),
+            ) {
+                if (!listening && !granted) {
+                    askForMicrophone.launch(Manifest.permission.RECORD_AUDIO)
+                } else {
+                    listening = !listening
+                    store.listening = listening
+                }
             }
         }
 
@@ -848,9 +947,14 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 onLapMetres = { lapMetres = it; store.lapMetres = it },
                 appMode = appMode,
                 timerSeconds = timerSeconds,
-                savedPreset = savedPreset,
+                presets = presets,
                 onTimerSeconds = { timerSeconds = it; store.timerSeconds = it; commit(state.stop()) },
-                onSavePreset = { savedPreset = timerSeconds; store.savedPreset = timerSeconds },
+                // THE LIST GOES THROUGH THE PURE FUNCTIONS AND NOWHERE ELSE. Adding is not
+                // `presets + timerSeconds`: that would put a duplicate in on the second press,
+                // and it would not know about the ceiling. Both rules live in presetAdd, where
+                // Test 1 reads them, and this line only decides WHEN.
+                onAddPreset = { presets = presetAdd(presets, timerSeconds); store.timerPresets = presets },
+                onRemovePreset = { presets = presetRemove(presets, it); store.timerPresets = presets },
                 names = names,
                 onNames = { names = it; store.names = it; VoiceHub.reloadTemplates(context) },
                 live = live,
@@ -955,34 +1059,40 @@ private fun Glyph(
     // the colour to the disabled tint and it stops the press being delivered. A SECONDARY
     // control stays enabled — that is the whole point of the third tone.
     // ─────────────────────────────────────────────────────────────────────────────────────────
-    // THE OUTLINE IS THE LANGUAGE. Outlined means it can be pressed; bare means nothing will
-    // happen.
+    // NO RINGS. Baba, 21.9.2026: "remove circles around numbers." They are gone, and the
+    // language they were carrying has gone back where it came from.
     //
-    // v3 removed the circles because on glass they read as three more shapes on a screen whose
-    // whole design is what is absent. That was right about a circle drawn round every glyph all
-    // the time. This is a different thing: the outline is CONDITIONAL, so it is not decoration —
-    // it is the only mark on the screen carrying the answer to "will this do anything".
+    // This is the second time the circles have been removed and it should be the last, so the
+    // whole argument is written down rather than half of it. v3 removed a ring drawn round every
+    // glyph all the time, correctly: on glass it read as three more shapes on a screen whose
+    // entire design is what is absent. v39 brought a CONDITIONAL ring back, present exactly when
+    // a control could be pressed, on the reasoning that it was then information rather than
+    // decoration.
     //
-    // Reset the stopwatch and the square loses its ring: press it again and nothing happens, and
-    // now you can see that before you press rather than after.
+    // THE REASONING WAS SOUND AND THE RESULT WAS STILL WRONG, which is the useful part. A mark
+    // that is information to the person who knows the rule is a shape to everybody else, and at
+    // arm's length across a room — which is the only distance this app is ever read from — six
+    // thin circles around six small glyphs are six circles. They sat directly under the digits
+    // and competed with them.
+    //
+    // WHAT THE RING WAS SAYING IS NOT LOST; it goes back onto the WEIGHT of the glyph, which is
+    // how this app said everything before v39 and how the microphone and the play mark still say
+    // it. White is the one you want, grey is live, dark grey is live but not suggested, nearly
+    // black is inert. That is a four-step ladder read at a glance, with nothing drawn around it.
     IconButton(
         onClick = onPress,
         enabled = tone != Tone.DEAD,
-        modifier = modifier
-            .size(size)
-            .then(
-                if (tone != Tone.DEAD) {
-                    Modifier.border(1.dp, GLYPH_SECOND, CircleShape)
-                } else {
-                    Modifier
-                }
-            ),
+        modifier = modifier.size(size),
         colors = IconButtonDefaults.iconButtonColors(
-            // ONE GREY FOR EVERY GLYPH. The tone no longer decides the colour, because the
-            // outline decides everything now — see below. A glyph that is both dimmer AND
-            // un-outlined is saying one thing twice, and the second saying is the one that gets
-            // read as a different meaning.
-            contentColor = tint ?: GLYPH,
+            // THE TONE DECIDES THE COLOUR AGAIN. Between v39 and v45 it did not: every live glyph
+            // was one grey and the outline carried the state, which was one saying in one place.
+            // With the outline gone there would be no saying at all, so the ladder comes back —
+            // and it is the same ladder the constants at the top of this file were named for.
+            contentColor = tint ?: when (tone) {
+                Tone.PRIMARY -> GLYPH_PRIMARY
+                Tone.HIGHLIGHT -> GLYPH
+                else -> GLYPH_SECOND
+            },
             disabledContentColor = GLYPH_OFF,
         ),
     ) {
@@ -1018,9 +1128,10 @@ private fun SettingsGrid(
     onLapMetres: (Int) -> Unit,
     appMode: AppMode,
     timerSeconds: Int,
-    savedPreset: Int,
+    presets: List<Int>,
     onTimerSeconds: (Int) -> Unit,
-    onSavePreset: () -> Unit,
+    onAddPreset: () -> Unit,
+    onRemovePreset: (Int) -> Unit,
     names: Map<Control, String>,
     onNames: (Map<Control, String>) -> Unit,
     live: FloatArray,
@@ -1292,63 +1403,131 @@ private fun SettingsGrid(
         }
 
         if (tab == SettingsTab.TIMER) {
-            RowLabel("PRESET", colour)
-            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                val n = TimerLength.entries.size
-                val cellW = (gridWidth - gap * (n - 1)) / n
-                TimerLength.entries.forEach { length ->
-                    LapCell(
-                        // Shown as the clock will read it. "05:00" is what you will be looking
-                        // at; "five minutes" is a description of it.
-                        sample = Face.format(length.seconds * 1000L, Display.SINGLE),
-                        chosen = length.seconds == timerSeconds,
-                        colour = colour,
-                        width = cellW,
-                    ) { onTimerSeconds(length.seconds) }
-                }
-            }
-
-            // THE BIG BOX, big on purpose: this is the number being set and everything around it
-            // is a way of changing it. Minus and plus either side, the duration between them, in
-            // the face the clock will show it in.
-            RowLabel("CUSTOM", colour)
+            // ─────────────────────────────────────────────────────────────────────────────────
+            // THE DURATION, AND SIX BUTTONS THAT EACH SAY WHAT THEY DO.
+            //
+            // Baba, 21.9.2026: "left and right of the entry box for time, add 2 pluses and 2
+            // minuses ... plus is pushing the stopwatch 30 seconds forward or backwards, second
+            // plus is pushing for 1 minute, and add one more ... third plus and minus is pushing
+            // for 10 minutes." Three each side, thirty seconds, one minute, ten minutes.
+            //
+            // WHAT THIS REPLACES IS A SINGLE PAIR WHOSE STEP CHANGED UNDER YOUR THUMB — fifteen
+            // seconds under two minutes, thirty under ten, a minute above. That was written to
+            // save presses and it cost something worse: the same button did a different thing
+            // depending on a number you had to be looking at to predict. Now the step is on the
+            // face of the button, and nothing about the number you are on changes what a press
+            // will do.
+            //
+            // SMALLEST NEAREST THE DIGITS, growing outwards on both sides, so the row is
+            // symmetrical and the reach matches the size of the jump.
+            //
+            // EVERY CELL IS A WEIGHT, NOT A FIXED WIDTH. Seven things across a panel that is as
+            // narrow as the phone is: a fixed width fits the phone it was measured on and pushes
+            // the ten-minute button off the edge of a smaller one.
+            // ─────────────────────────────────────────────────────────────────────────────────
+            RowLabel("DURATION", colour)
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = gap),
+                modifier = Modifier.width(gridWidth).padding(bottom = gap),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.spacedBy(3.dp),
             ) {
-                Nudge("\u2212", colour) { onTimerSeconds(timerNudge(timerSeconds, up = false)) }
+                // Reversed for the minus side so the biggest jump is furthest out, and generated
+                // from TIMER_STEPS rather than typed, so the two sides can never disagree about
+                // what the second button is worth.
+                TIMER_STEPS.reversed().forEach { step ->
+                    Step("\u2212", stepLabel(step), colour, Modifier.weight(1f)) {
+                        onTimerSeconds(timerShift(timerSeconds, -step))
+                    }
+                }
                 Text(
                     text = Face.format(timerSeconds * 1000L, Display.SINGLE),
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = Color(colour),
-                        fontSize = 34.sp,
+                        fontSize = 26.sp,
                     ),
                     maxLines = 1,
                     softWrap = false,
-                    modifier = Modifier.padding(horizontal = 18.dp),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.weight(1.8f),
                 )
-                Nudge("+", colour) { onTimerSeconds(timerNudge(timerSeconds, up = true)) }
+                TIMER_STEPS.forEach { step ->
+                    Step("+", stepLabel(step), colour, Modifier.weight(1f)) {
+                        onTimerSeconds(timerShift(timerSeconds, step))
+                    }
+                }
             }
             Help(
-                "The step follows the number: fifteen seconds under two minutes, " +
-                    "half a minute under ten, a minute above.",
+                "Half a minute, a minute, ten minutes — the amount is written on the button, " +
+                    "so a press does the same thing wherever the number already is.",
                 colour,
             )
 
-            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
-                val half = (gridWidth - gap) / 2
-                LapCell("save as preset", chosen = false, colour = colour, width = half) { onSavePreset() }
-                LapCell(
-                    sample = if (savedPreset > 0)
-                        Face.format(savedPreset * 1000L, Display.SINGLE) else "\u2014",
-                    chosen = savedPreset > 0 && savedPreset == timerSeconds,
-                    colour = colour,
-                    width = half,
-                ) { if (savedPreset > 0) onTimerSeconds(savedPreset) }
+            // ─────────────────────────────────────────────────────────────────────────────────
+            // HIS PRESETS. THERE ARE NO OTHERS. Baba, 21.9.2026: "inside the settings, remove
+            // timer presets — all timer presets are defined by the user, so he can define
+            // multiple presets. Under the first preset, add plus so he can add multiples."
+            //
+            // What stood here was six durations chosen in advance and one "save as preset" slot
+            // beside them that could hold exactly one more. The six were guesses and the one was
+            // a consolation. Both are gone.
+            //
+            // THE PLUS IS THE LAST CELL RATHER THAN A SEPARATE BUTTON, so it sits immediately
+            // after the presets — under the first one while there is only one, and after the
+            // last one forever after. It is where the next preset will appear, which is the only
+            // place a control that makes one should be.
+            //
+            // A LONG PRESS REMOVES. It is not on a tap, because a tap is how a preset is USED
+            // and the two would be one finger apart; and it needs no confirmation, because the
+            // plus that put it there is in the same row and puts it back.
+            // ─────────────────────────────────────────────────────────────────────────────────
+            RowLabel(if (presets.isEmpty()) "PRESETS — NONE YET" else "PRESETS", colour)
+            val perRow = 3
+            val presetW = (gridWidth - gap * (perRow - 1)) / perRow
+            // The plus rides at the end of the same list, so it wraps with the presets and can
+            // never be stranded on a row of its own by a count nobody thought about.
+            val cells: List<Int?> = presets + listOf(null)
+            cells.chunked(perRow).forEach { row ->
+                Row(
+                    modifier = Modifier.width(gridWidth).padding(bottom = gap),
+                    horizontalArrangement = Arrangement.spacedBy(gap),
+                ) {
+                    row.forEach { seconds ->
+                        if (seconds == null) {
+                            // AT THE CEILING IT GOES DEAD RATHER THAN DISAPPEARING, the same rule
+                            // the transport has always followed: a control that vanishes takes
+                            // its position with it and you are left wondering what you did.
+                            PresetCell(
+                                sample = if (presets.size >= PRESETS_MAX) "full" else "+",
+                                chosen = false,
+                                live = presets.size < PRESETS_MAX,
+                                colour = colour,
+                                width = presetW,
+                                onPress = onAddPreset,
+                                onLongPress = {},
+                            )
+                        } else {
+                            PresetCell(
+                                // Shown as the clock will read it. "05:00" is what you will be
+                                // looking at; "five minutes" is a description of it.
+                                sample = Face.format(seconds * 1000L, Display.SINGLE),
+                                chosen = seconds == timerSeconds,
+                                live = true,
+                                colour = colour,
+                                width = presetW,
+                                onPress = { onTimerSeconds(seconds) },
+                                onLongPress = { onRemovePreset(seconds) },
+                            )
+                        }
+                    }
+                }
             }
+            Help(
+                "Set a duration above, then press + to keep it. Press a preset to use it, " +
+                    "hold it to remove it. Up to " + PRESETS_MAX + ".",
+                colour,
+            )
 
             // COUNT-IN LIVES HERE NOW. It belongs to whichever clock is about to start, and the
             // timer is a clock — it already worked in both modes, it was simply filed under the
@@ -1593,6 +1772,116 @@ private fun Help(text: String, colour: Long) {
         maxLines = 3,
         modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
     )
+}
+
+/**
+ * How a step is written on the face of a button: "30s", "1m", "10m".
+ *
+ * IT IS COMPUTED, NOT TYPED, so TIMER_STEPS is the only place the three amounts exist. Typing
+ * "10m" beside a step of 600 works until somebody changes the step and not the label, and then
+ * the button lies about what it does — which is the one thing a control on this screen may never
+ * do.
+ */
+private fun stepLabel(seconds: Int): String =
+    if (seconds % 60 == 0) "${seconds / 60}m" else "${seconds}s"
+
+/**
+ * One of the six steps: the sign, and under it the amount it moves.
+ *
+ * TWO LINES RATHER THAN ONE. "−30s" on a single line is four characters at a size that fits six
+ * of them across a phone, which is a size nobody reads. The sign is the thing the hand aims at
+ * and it gets the space; the amount is the thing the eye checks once and then remembers where it
+ * is, and it can be small.
+ *
+ * The width comes in as a weight from the row, never as a number, so seven cells always fit.
+ */
+@Composable
+private fun Step(
+    mark: String,
+    amount: String,
+    colour: Long,
+    modifier: Modifier = Modifier,
+    onPress: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .height(48.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(PANEL_IDLE)
+            .clickable { onPress() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = mark,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                color = Color(colour),
+                fontSize = 20.sp,
+            ),
+            maxLines = 1,
+        )
+        Text(
+            text = amount,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                color = Color(colour).copy(alpha = 0.55f),
+                fontSize = 9.sp,
+            ),
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
+}
+
+/**
+ * One saved duration, or the plus that makes another.
+ *
+ * A COUSIN OF LapCell RATHER THAN THE SAME THING, and the difference is the long press. LapCell
+ * is built on IconButton, which has no second gesture, and bolting one on would give every cell
+ * in the panel a hold action nobody asked for — including the ones where holding should do
+ * nothing at all.
+ *
+ * `live` dims the cell without removing it, which is how the plus says "no room" at the ceiling.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun PresetCell(
+    sample: String,
+    chosen: Boolean,
+    live: Boolean,
+    colour: Long,
+    width: Dp,
+    onPress: () -> Unit,
+    onLongPress: () -> Unit,
+) {
+    Box(
+        Modifier
+            .size(width = width, height = 44.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(if (chosen) PANEL_CHOSEN else PANEL_IDLE)
+            .combinedClickable(
+                enabled = live,
+                onClick = onPress,
+                onLongClick = onLongPress,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = sample,
+            style = TextStyle(
+                fontFamily = FontFamily.Monospace,
+                color = when {
+                    !live -> GLYPH_OFF
+                    chosen -> Color(colour)
+                    else -> GLYPH
+                },
+                fontSize = 13.sp,
+            ),
+            maxLines = 1,
+            softWrap = false,
+        )
+    }
 }
 
 /** The minus and the plus. Big enough to hit without looking, which is the whole job. */

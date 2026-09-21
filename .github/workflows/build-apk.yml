@@ -271,6 +271,30 @@ jobs:
             --notes "Minimalist stopwatch by Mantra Productions. Black screen, six digits, three transport controls, an orientation lock and a swatch grid. Build ${GITHUB_RUN_NUMBER} from $(git rev-parse --short HEAD)."
           echo "published=true" >> "$GITHUB_OUTPUT"
 
+      # ─────────────────────────────────────────────────────────────────────────────────────
+      # EVERY PUSH LEAVES AN APK BEHIND, WHETHER OR NOT IT PUBLISHES ONE.
+      #
+      # Baba, 21.9.2026: "every time the code is pushed, a new APK is rebuilt." It always was
+      # rebuilt — every gate above runs on every push — but until now the artefact only left the
+      # runner if the version had been bumped. Change the app, forget the bump, and the run went
+      # green having produced something nobody could install or even look at. The loud SKIP below
+      # tells you that happened; it does not hand you the build.
+      #
+      # This step runs BEFORE the publish and with `if: always()` is not what is wanted either —
+      # the APK must exist, so it sits after the build and before the release. Ninety days is the
+      # default retention and it is right: this is the fallback copy, not the distribution.
+      #
+      # THE RELEASE IS STILL THE THING PEOPLE INSTALL. An artifact is behind a login and expires;
+      # a release is a URL the phone can fetch, which is what UpdateCheck.kt reads. This does not
+      # replace the release, it removes the case where a run produces nothing at all.
+      # ─────────────────────────────────────────────────────────────────────────────────────
+      - name: Keep the APK on the run itself
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4, resolved 21.9.2026
+        with:
+          name: stopwatch-v${{ steps.provenance.outputs.version }}-build${{ github.run_number }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
       # versioning.md 4: only the last two builds stay. Runs only after publish succeeds, so a
       # failed build never deletes a good release. There is no way back to a deleted artefact;
       # the tag and the source survive, the APK does not.

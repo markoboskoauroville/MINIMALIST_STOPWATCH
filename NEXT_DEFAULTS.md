@@ -616,3 +616,153 @@ these tell you what the screen is about to look like, which is the actual questi
 draws. Sizing on MULTI and drawing SINGLE would size for eight glyphs and draw two, and the
 setting would appear to do nothing at all — a failure that looks like a dead control rather than
 like a sizing bug.
+
+---
+
+# v45 — 21.9.2026
+
+Four things asked for in one sentence, and the interesting part of each is what it reversed.
+
+## The circles are removed, for the second time, and the reasoning for them was correct
+
+Baba: "remove circles around numbers."
+
+They were removed once before, at v3, because on glass a ring round every glyph read as three
+more shapes on a screen whose entire design is what is absent. v39 brought them back
+CONDITIONALLY — present exactly when a control could be pressed — and the argument was good
+enough to write into `verify.py` as a check with its own paragraph: a mark that carries "will
+this do anything" is information, not decoration, and the only mark on the screen carrying it.
+
+**Both the argument and the outcome are worth keeping, because they disagree.** The ring really
+was the only thing saying whether a press would land. It was also, at the distance this app is
+read from, six thin circles under the digits, and the digits are what the app is. A mark that is
+information to somebody holding the rule in their head is a shape to everybody else.
+
+What the ring was saying is not lost. It went back onto the WEIGHT of the glyph, which is how
+this app said everything for thirty-eight versions and how the microphone and the play mark never
+stopped saying it: white is the one you want, grey is live, dark grey is live but not suggested,
+nearly black does nothing. Four steps, no geometry.
+
+**The S/T letter had to lose its ring too, and that is the whole test of whether a language is
+one.** v40 gave the letter a ring so it would not be the single pressable thing without one.
+Leaving that ring at v45 would have made it the single thing WITH one — the same fault, reversed.
+An exception in either direction teaches you not to trust the rule.
+
+The `verify.py` check that guarded the conditional ring now counts `CircleShape` across the whole
+screen rather than inside `Glyph` alone, because the last return came back in two places and a
+check watching one of them would have passed with a ring on the other.
+
+## Full screen, and the rule it is allowed to break
+
+Baba: "add a button for the full screen when stopwatch is displayed without any buttons, only
+numbers."
+
+This app hides the system bars already, so "full screen" here means the app's own controls. One
+press and all eight leave; the transport strip and the top band both go to zero height and the
+digits grow into the space.
+
+**It is measured against the oldest rule in the brief — "no button is ever hidden, because a
+control that disappears moves the layout" — and it does not break it.** That rule is about the
+REASON: a control vanishing because it cannot act leaves you guessing where it went and shuffles
+the ones beside it. Here everything goes at once, because somebody pressed the button that says
+so, and one gesture returns all of it. The condition is written round the group and round the
+transport row, never round a single glyph, and `verify.py` now collects every condition wrapped
+round a `Transport` or a `Glyph` and refuses any that is not `!fullscreen` — so the exception is
+one named thing rather than a hole.
+
+**Reset is not reachable in full screen, and that is the trade, not an oversight.** The way back
+has to be a gesture a pocket cannot produce, or the mode undoes itself on a bench. The long press
+is already that gesture, which is exactly why reset lives on it — and the two cannot share it,
+because then every attempt to get the buttons back would destroy a measurement. Leaving costs one
+long press, after which stop is where it has always been.
+
+**There is no matching exit glyph** and the arrow only ever points one way. At the moment the
+second state would be needed, nothing is drawn. A control whose other state cannot be shown
+should not pretend to have one.
+
+## The presets are his, and there are none in the source
+
+Baba: "inside the settings, remove timer presets. All timer presets are defined by the user, so
+he can define multiple presets. Under the first preset, add plus so he can add multiples."
+
+The `TimerLength` enum held six durations and its doc comment defended them: this app has no
+keyboard, so presets rather than a field. **That argument was answering the wrong objection.** The
+problem was never that the six were hard to reach; it was that they were somebody else's six. The
+"save as preset" slot beside them, holding exactly one, is the shape of a design that knew this
+and could not admit it.
+
+**The plus is the last cell of the same list, not a control beside it.** Baba asked for it "under
+the first preset". As the last cell it is under the first while there is one and after the last
+forever after, which is where the next preset will appear — the only place a control that makes
+one belongs. A button below the block would be a fixed position that stops being the right one
+the moment the list outgrows a row.
+
+**A hold removes; a tap uses.** No confirmation, because the plus that put it there is in the
+same row and puts it back — a test in Test 1 says so in as many words. A confirmation would be a
+dialogue in an app that has never had one, guarding an action that costs one press to undo.
+
+**Twelve at most, and at the ceiling the list is unchanged rather than rotated.** Dropping the
+oldest to make room would silently discard something he saved on purpose, and a preset vanishing
+unasked is the one behaviour that would stop the list being trusted. The plus goes dead and says
+"full" instead of disappearing — same rule as the transport.
+
+**Stored as one comma-separated string**, parsed by a function that is total and cannot throw. A
+list whose length is part of its storage layout needs migrating every time the length changes,
+and the first such migration written wrong is the one that loses somebody's list. The first read
+inherits v44's single `savedPreset`, so an existing phone does not open to an empty row and
+conclude the update ate it.
+
+## Six steps, each with its amount on its face
+
+Baba: "left and right of the entry box for time, add 2 pluses and 2 minuses. Plus is pushing the
+stopwatch 30 seconds forward or backwards. Second plus is pushing for 1 minute and add one more.
+Third plus and minus is pushing for 10 minutes."
+
+This replaces a single pair whose step GREW WITH THE NUMBER — fifteen seconds under two minutes,
+thirty under ten, a minute above — and that rule had its own defence written into the source:
+making somebody press eighty-eight times to reach twenty-two minutes is contempt disguised as
+precision.
+
+**True, and it bought the wrong thing.** The same button did a different amount depending on a
+number you had to be looking at to predict, so the only way to know what a press would do was to
+do it. Three fixed steps make the choice of step the choice of BUTTON, which is the same decision
+made visible, and the amount is written on the face.
+
+Smallest nearest the digits, growing outwards, so the reach matches the size of the jump. Both
+sides are generated from one list and each label is computed from the number the press uses —
+typing "10m" beside a step of 600 works until somebody changes one and not the other, and then
+the button lies, which is the one thing a control here may never do.
+
+**Every cell is a weight, never a fixed width.** Seven things across a panel as narrow as the
+phone: a fixed width fits the phone it was measured on and pushes the ten-minute button off the
+edge of a smaller one.
+
+## What the mutation sweep found, again, and this time about itself
+
+The pattern in this file is that the sweep finds the fault in the checker rather than in the app.
+This time it found the fault in the sweep.
+
+**`sabotage.py` had not run since SpeechRecognizer was removed.** It named `VoiceListener.kt` —
+deleted several versions ago — in the list of files it copies before starting, so it threw
+`FileNotFoundError` on its first step, every time. The path was declared TWICE in its header,
+which is how a stale one survives a read-through: the eye finds the second and assumes the first
+was the typo. Nothing runs it in CI, because it is slow, so nothing reported it; and `README.md`
+went on quoting a mutation count it had not produced in months.
+
+Repaired, and it earned its keep on the first run:
+
+- **`verify.py` had a check with no assertion in it.** v37 rewrote the rule about tap-anywhere,
+  replaced the `check()` call below it, and left `background_click` computed and unused. For
+  eight versions nothing watched whether the black behind everything was pressable — the precise
+  fault v1 existed to remove. The sweep printed `SURVIVED: tap-anywhere comes back on the
+  background`. This is the fourth time a check in this repository has read as healthy while
+  watching nothing, and the second time the sweep is the only thing that noticed.
+- **A guard in the brand-new preset code could not fail.** `presetAdd` opened with
+  `if (seconds in presets) return presets`; breaking it changed nothing, because a `distinct()`
+  further down was already doing the job. Deleted. A guard that cannot fail is worse than no
+  guard: it is a second place a reader believes the rule lives, so the next person to change the
+  rule changes one of them.
+
+**Seven mutations still point at anchors that have moved**, listed in `HANDOFF.md`. They report
+SKIP rather than SURVIVED, and a SKIP in a long list reads almost like a catch — which is the
+whole reason they are written down somewhere a person will read instead of left in the output.

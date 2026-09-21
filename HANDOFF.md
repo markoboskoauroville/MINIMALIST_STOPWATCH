@@ -1,7 +1,12 @@
 # HANDOFF — Minimalist Stopwatch
 
-**Current version: 19.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
-Latest artefact: `19-stopwatch-v19.apk`, tag `v19`.
+**Current version: 45.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
+Latest artefact: `45-stopwatch-v45.apk`, tag `v45`.
+
+*This header said 19 until 21.9.2026 and the app was at 44. Nothing reads it, which is exactly
+why it rotted — and why the counts further down this page were wrong by a factor of two and the
+mutation sweep had been dead for several versions without anybody noticing. Every number written
+on this page is now one somebody ran.*
 
 This is the briefing. The reasoning behind every decision, including what was tried and rejected,
 is in [`NEXT_DEFAULTS.md`](NEXT_DEFAULTS.md) — which is now the more valuable of the two
@@ -13,8 +18,9 @@ and was not proven about the shipped artefact is in [`DELIVERY_RECORD.md`](DELIV
 
 ## What it is
 
-A stopwatch. Black screen, enormous digits, three transport controls, a microphone, an
-orientation button and a gear. Nothing else, ever.
+A stopwatch and a timer. Black screen, enormous digits, three transport controls, a microphone,
+an orientation button, a full-screen button, an S/T mode letter, a power mark and a gear.
+Nothing else, ever — and with one press, not even those.
 
     play    toggle. Starts from zero, resumes from a pause, and PAUSES a running clock
     pause   toggle. Freezes a running clock, resumes a paused one. Does nothing from zeros
@@ -150,7 +156,7 @@ from evidence.
 
 ## The settings panel
 
-Two tabs. **LOOK** is adjustment: 48 swatches, normal or bold, MULTI or SINGLE — each shown in the
+Five tabs: **TIMER**, **WATCH**, **LAP**, **VOICE**, **LOOK**. **LOOK** is adjustment: 48 swatches, normal or bold, MULTI or SINGLE — each shown in the
 thing it describes rather than named in a word. **VOICE** is machinery: nine full-width sample
 lines, each carrying the waveform of its own recording, a meter across the top, and the matcher's
 raw distance beside each command.
@@ -165,17 +171,78 @@ The panel never covers the digits, because colour and weight are judged against 
 sized by whichever edge runs out first — v5 sized it by width alone and on a landscape phone it
 grew taller than the screen and covered its own way out.
 
+### The timer tab, and whose presets they are
+
+**There are no presets in the source.** v45 deleted the `TimerLength` enum — half a minute, one,
+three, five, ten, twenty-five — at Baba's word: "all timer presets are defined by the user." Six
+durations chosen in advance are six guesses, and the single "save as preset" slot that sat beside
+them was a consolation for the person none of the six suited.
+
+The duration is set by **six buttons, three each side**, each with its amount on its face:
+
+    −10m  −1m  −30s   [ 05:00 ]   +30s  +1m  +10m
+
+Both sides are generated from `TIMER_STEPS`, and the label on each face is computed from the same
+number the press uses, so a face cannot lie about what it does. **The amount is fixed**, which
+reverses the old single pair whose step grew with the number — clever, and unpredictable, because
+the same button did a different thing depending on a value you had to be reading to foresee.
+
+Under them is his list. **+ keeps the current duration, a press uses a preset, a hold removes
+one.** Twelve at most. The plus is the LAST CELL OF THE SAME LIST rather than a control beside
+it, so it wraps with the presets and is always where the next one will appear — under the first
+while there is one, after the last forever after.
+
+Stored as one comma-separated string under `timerPresets`, read by `presetsDecode`, which is
+total and cannot throw: the worst an unreadable value can do is read back as no presets. The
+first read inherits the old single `savedPreset` if one was there, so a phone updating from v44
+does not open to an empty row.
+
 ## The icon language
 
 **Hollow is off, solid is on**, everywhere: the microphone, the sample lines. No struck-out marks.
 A thin slash is the first thing low vision loses, and it is a third mark to read rather than a
 difference you see before you read anything.
 
+**Nothing wears a ring.** State is carried by the WEIGHT of the glyph, on a four-step ladder:
+white is the one you want next, grey is live, dark grey is live but not the suggestion, nearly
+black does nothing and cannot be pressed.
+
+This has now been decided three times and the third should hold, so the whole argument is here
+rather than a third of it. v3 removed a ring drawn round every glyph all the time — decoration.
+v39 brought a CONDITIONAL ring back, present exactly when a control could be pressed, reasoning
+that a mark carrying "will this do anything" is information. **The reasoning was sound and the
+screen was still worse for it**, which is the part worth remembering: a mark that is information
+to somebody who knows the rule is a shape to everybody else, and at the distance this app is read
+from, six thin circles under the digits are six circles. v45 removed them at Baba's word and put
+the ladder back. If a fourth session is about to add a ring, the thing to notice is that the
+argument FOR one is always correct and has twice been beside the point.
+
+## Full screen
+
+**Press the button beside the orientation control and every control leaves the screen.** Only
+the numbers remain, sized to the whole of the glass. A **long press on the digits** brings them
+all back, and nothing else does.
+
+Two things about it that look like faults and are not:
+
+- **Stop is unreachable while it is on.** The long press is the only gesture a pocket or a sleeve
+  cannot produce, so it has to be the way out — and reset cannot share it, or every attempt to
+  get the buttons back would destroy a measurement. Leaving costs one long press; stop is then
+  where it has always been.
+- **It hides controls, which this app otherwise never does.** The rule it appears to break is
+  about a control vanishing BECAUSE IT CANNOT ACT, which leaves you guessing and moves everything
+  beside it. Here every control leaves at once, because somebody pressed the button that says so.
+  The condition is written round the group and round the transport row, never round one glyph,
+  and `verify.py` refuses any other condition wrapped round a `Transport` or a `Glyph`.
+
+The setting survives the app being closed. Going full screen also closes the settings panel,
+because a panel open behind a screen that draws no controls would be the only thing on it.
+
 ## How to check it
 
-    python3 scripts/verify.py                       46 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest              Test 1, 84 cases
-    python3 scripts/sabotage.py                     the mutation sweep
+    python3 scripts/verify.py                       89 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest              Test 1, 126 cases
+    python3 scripts/sabotage.py                     70 mutations, 44 logic and 26 shape
 
 The sweep edits source in place and **will** be interrupted; it stashes every file it can touch
 before starting and restores on the next run. Use `SABOTAGE_SLICE=0:12` to run it in pieces. With
@@ -221,6 +288,44 @@ Five things cost more than everything else in this repository put together:
    something decided on a build server was wrong on glass: the landscape layout, the glyph
    brightness, the tenths, the settings panel that covered its own exit, and the entire speech
    recogniser.
+
+## The mutation sweep, and what running it found
+
+**It had not run since SpeechRecognizer was removed.** `sabotage.py` still named
+`VoiceListener.kt`, a file deleted several versions ago, in the list it copies before it starts —
+so it threw `FileNotFoundError` on its own first step, every time, and had done for months. The
+path was declared TWICE in the header, which is how a stale one survives being read: the eye
+finds the second and assumes the first was the mistake. Nothing runs it in CI, so nothing said so.
+Meanwhile `README.md` went on quoting a mutation count it produced.
+
+Repaired at v45, and running it immediately earned its keep twice:
+
+1. **A `verify.py` check had lost its assertion.** v37 rewrote the rule about tap-anywhere,
+   replaced the `check()` call, and left `background_click` computed and never used. For eight
+   versions nothing watched whether the black behind everything was pressable — the exact fault
+   v1 existed to remove. The sweep printed `SURVIVED: tap-anywhere comes back on the background`,
+   which is precisely what it is for. Restored as its own check.
+2. **A guard in the new preset code could not fail.** `presetAdd` opened with
+   `if (seconds in presets) return presets`, and breaking it changed nothing, because a
+   `distinct()` further down had been doing the whole job. A guard that cannot fail is worse than
+   none: it is a second place a reader believes the rule lives. Deleted.
+
+**Seven of its mutations still point at anchors that have moved**, and they are the next job.
+They are SKIPs rather than survivors — the anchor is not found, so the mutation never runs — and
+a SKIP in a long list reads almost like a catch, which is why they are written down here instead
+of left in the output:
+
+    a control label is typed at the call site again        Transport() signature changed
+    the reminder is typed by hand instead of generated     the tip moved
+    the meter is fed a raw level                           MaMeter was extracted
+    the microphone is left running when the screen goes    the DisposableEffect moved
+    the settings panel is moved over the digits            the panel went full-screen at v38
+    the tick loop becomes unbounded                        anchor now matches three times
+    accumulated is not persisted                           Store was rewritten
+
+None of them is a rule that stopped being true; every one is an anchor that stopped matching. But
+until each is re-pointed, seven rules this repository claims to guard are unguarded, and the same
+`SURVIVED` that was found this time could be sitting behind any of them.
 
 ## What has never been run on a phone by the machine that built it
 

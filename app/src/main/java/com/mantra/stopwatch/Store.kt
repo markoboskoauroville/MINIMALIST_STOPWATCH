@@ -91,7 +91,7 @@ class Store(private val context: Context) {
 
     /** The duration in force, in seconds. A preset writes it; the plus and minus nudge it. */
     var timerSeconds: Int
-        get() = p.getInt(Keys.K_SECONDS, TimerLength.FIVE.seconds).coerceIn(TIMER_MIN, TIMER_MAX)
+        get() = p.getInt(Keys.K_SECONDS, TIMER_DEFAULT).coerceIn(TIMER_MIN, TIMER_MAX)
         set(v) = p.edit().putInt(Keys.K_SECONDS, v.coerceIn(TIMER_MIN, TIMER_MAX)).apply()
 
     /** One saved custom duration, or 0. Beside the presets rather than among them. */
@@ -105,17 +105,41 @@ class Store(private val context: Context) {
         get() = p.getBoolean(Keys.K_RECORDED_SOUND, false)
         set(v) = p.edit().putBoolean(Keys.K_RECORDED_SOUND, v).apply()
 
-    var savedPreset: Int
-        get() = p.getInt(Keys.K_SAVED, 0)
-        set(v) = p.edit().putInt(Keys.K_SAVED, v).apply()
-
-    var timerLength: TimerLength
-        get() = try {
-            TimerLength.valueOf(p.getString(Keys.K_LENGTH, TimerLength.FIVE.name) ?: "")
-        } catch (e: IllegalArgumentException) {
-            TimerLength.FIVE
+    /**
+     * HIS DURATIONS, ALL OF THEM, and this replaces both the six built-in presets and the single
+     * "save as preset" slot that sat beside them.
+     *
+     * ONE STRING RATHER THAN A KEY PER PRESET. A list whose length is part of its own storage
+     * layout has to be migrated every time the length changes, and the first version of that
+     * migration to be written wrong is the one that loses somebody's list. A comma-separated
+     * string has no layout to get wrong: it is parsed by presetsDecode, which is total and
+     * cannot throw, so the worst an unreadable value can do is read back as no presets.
+     *
+     * THE FIRST READ INHERITS THE OLD SINGLE SLOT. v44 and earlier kept exactly one saved
+     * duration under K_SAVED, and somebody who had saved one would otherwise open v45 to an
+     * empty row and conclude the update had eaten it. If the new key has never been written and
+     * the old one holds something, that something becomes the first preset.
+     */
+    var timerPresets: List<Int>
+        get() {
+            val raw = p.getString(Keys.K_PRESETS, null)
+            if (raw != null) return presetsDecode(raw)
+            val inherited = p.getInt(Keys.K_SAVED, 0)
+            return if (inherited > 0) presetsDecode(inherited.toString()) else emptyList()
         }
-        set(v) = p.edit().putString(Keys.K_LENGTH, v.name).apply()
+        set(v) = p.edit().putString(Keys.K_PRESETS, presetsEncode(presetsDecode(presetsEncode(v)))).apply()
+
+    /**
+     * Whether the screen is showing the numbers and nothing else.
+     *
+     * IT SURVIVES THE APP BEING CLOSED, and that is the whole reason it is here rather than being
+     * a plain remembered value. This is a display left running on a bench: somebody sets it the
+     * way they want it once, and an app that forgets and comes back wearing eight controls has
+     * made them do the work again every morning.
+     */
+    var fullscreen: Boolean
+        get() = p.getBoolean(Keys.K_FULLSCREEN, false)
+        set(v) = p.edit().putBoolean(Keys.K_FULLSCREEN, v).apply()
 
     /** One count-in per clock, because they are used for different things on the same day. */
     fun preroll(mode: AppMode): Int =
@@ -256,9 +280,13 @@ class Store(private val context: Context) {
         const val K_PREROLL = "preroll"
         const val K_NAME = "name_"
         const val K_TIMER = "timerMode"
-        const val K_LENGTH = "timerLength"
         const val K_SECONDS = "timerSeconds"
+        // READ, NEVER WRITTEN, from v45 on. It is the single preset v44 kept, and it is here
+        // only so that the first read of K_PRESETS can inherit it. Deleting it would silently
+        // discard the one duration an existing phone had saved.
         const val K_SAVED = "savedPreset"
+        const val K_PRESETS = "timerPresets"
+        const val K_FULLSCREEN = "fullscreen"
         const val K_RECORDED_SOUND = "useRecorded"
         const val K_LISTENING = "listening"
     }

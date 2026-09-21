@@ -134,24 +134,107 @@ enum class Display { MULTI, SINGLE }
 enum class AppMode { STOPWATCH, TIMER }
 
 /**
- * How long the timer runs. Presets rather than a field, for the same reason the pool lengths are
- * presets: this app has no keyboard by design, and these are the durations somebody standing in a
- * kitchen or on a mat actually asks for.
+ * THE BUILT-IN PRESETS ARE GONE, at Baba's word on 21.9.2026: "all timer presets are defined by
+ * the user, so he can define multiple presets."
+ *
+ * The enum that stood here held six durations somebody chose in advance — half a minute, one,
+ * three, five, ten, twenty-five — and the argument for it was that this app has no keyboard. That
+ * argument was answered by the wrong thing. A list of six guesses is still six guesses, and the
+ * person who wanted seven minutes had to walk there with a nudge every time. What he actually
+ * needed was not a better list; it was HIS list.
+ *
+ * So the durations now live in [Store.timerPresets] and every one of them was put there by a
+ * press. The only number left in the source is the one the app opens with before he has saved
+ * anything, and it is a starting point rather than a preset.
  */
-enum class TimerLength(val seconds: Int) {
-    /**
-     * Thirty seconds, and it is the one that was missing. The presets ran from a minute upwards,
-     * which quietly said that anything shorter was unusual — and half a minute is a plank, a
-     * rest between sets, and steeping tea. The custom control could always reach it; a preset is
-     * what stops you having to.
-     */
-    HALF(30),
-    ONE(60),
-    THREE(180),
-    FIVE(300),
-    TEN(600),
-    TWENTY_FIVE(1_500),
+const val TIMER_DEFAULT = 5 * 60
+
+/**
+ * How many presets may be kept.
+ *
+ * A BOUND, because the row wraps and an unbounded list would eventually push the count-in off the
+ * bottom of the panel — a failure that only shows up on the narrowest phone after the twentieth
+ * press, which is the worst possible moment to find it.
+ */
+const val PRESETS_MAX = 12
+
+/**
+ * The three steps either side of the duration, in seconds, from the inside out.
+ *
+ * ASKED FOR AS THREE PAIRS RATHER THAN ONE SMART PAIR, and that reverses the rule that stood
+ * here. The old nudge grew its own step with the number — fifteen seconds under two minutes, half
+ * a minute under ten, a minute above — which meant the SAME BUTTON moved a different amount
+ * depending on where you already were. It is clever and it is unpredictable, and a control whose
+ * effect you have to work out before pressing it is a control you press twice to see what happens.
+ *
+ * Three buttons, three fixed amounts, each written on its own face. Thirty seconds, a minute, ten
+ * minutes. You choose the step by choosing the button, which is the same decision made visible.
+ *
+ * Smallest first, so the row reads outwards from the number it changes: the further from the
+ * digits, the bigger the jump.
+ */
+val TIMER_STEPS = listOf(30, 60, 600)
+
+/**
+ * The duration moved by a fixed amount, bounded at both ends.
+ *
+ * Bounded HERE rather than at the button, so there is one answer to "what happens at six hours"
+ * and Test 1 can read it. A press at the ceiling is not refused — it simply leaves the number
+ * where it is, which is what a person reading the digits expects a button at the end of its
+ * travel to do.
+ */
+fun timerShift(seconds: Int, delta: Int): Int = (seconds + delta).coerceIn(TIMER_MIN, TIMER_MAX)
+
+/**
+ * The saved presets, read back from the one string they are stored in.
+ *
+ * TOTAL RATHER THAN STRICT. This parses whatever is in the preferences file, including what an
+ * older version wrote, a half-finished write and an empty string, and it never throws. A stopwatch
+ * that will not open because its settings file has a comma in the wrong place is worse than one
+ * that opens with no presets.
+ *
+ * Sorted, deduplicated and clamped on the way out, so every reader downstream — the panel, the
+ * add, the remove — is handed the same shape and none of them has to sort it again.
+ */
+fun presetsDecode(raw: String): List<Int> =
+    raw.split(',')
+        .mapNotNull { it.trim().toIntOrNull() }
+        .filter { it in TIMER_MIN..TIMER_MAX }
+        .distinct()
+        .sorted()
+        .take(PRESETS_MAX)
+
+/** The inverse, and the only place the separator is written. */
+fun presetsEncode(presets: List<Int>): String = presets.joinToString(",")
+
+/**
+ * The current duration added to the list.
+ *
+ * A DUPLICATE IS NOT AN ERROR AND NOT A SECOND CELL. Pressing plus twice on the same number is
+ * what happens when somebody is not sure whether the first press landed, and the honest answer to
+ * that is a list that already contains it rather than a complaint or a twin.
+ *
+ * At the ceiling the list is returned unchanged. Dropping the oldest to make room would silently
+ * throw away something he saved on purpose, and a preset vanishing without being asked to is the
+ * one behaviour that would stop the list being trusted.
+ */
+fun presetAdd(presets: List<Int>, seconds: Int): List<Int> {
+    if (seconds !in TIMER_MIN..TIMER_MAX) return presets
+    if (presets.size >= PRESETS_MAX) return presets
+    // THE DUPLICATE IS STOPPED HERE AND NOWHERE ELSE. There used to be an `if (seconds in
+    // presets) return presets` above, and the mutation sweep showed it was dead: breaking it
+    // changed nothing, because distinct() had already been doing the whole job. A guard that
+    // cannot fail is worse than no guard — it is a second place a reader believes the rule
+    // lives, so the next person to change the rule changes only one of them.
+    return (presets + seconds).distinct().sorted()
 }
+
+/** One preset taken out. Removing something absent is a no-op rather than a fault. */
+fun presetRemove(presets: List<Int>, seconds: Int): List<Int> = presets.filter { it != seconds }
+
+/** A timer of nothing is not a timer, and one of six hours is a calendar. */
+const val TIMER_MIN = 15
+const val TIMER_MAX = 6 * 60 * 60
 
 /**
  * What the timer shows: the length less what has elapsed, and never below zero.
@@ -160,31 +243,6 @@ enum class TimerLength(val seconds: Int) {
  * sign has stopped being a timer and become a stopwatch nobody asked for, and the figure it shows
  * is one somebody could read as time remaining.
  */
-/**
- * Nudging a custom duration up or down.
- *
- * THE STEP IS NOT CONSTANT, and that is the point of writing it down rather than leaving it to
- * the interface. Below two minutes it moves in fifteens, because the difference between forty-five
- * seconds and a minute matters when you are holding a plank. Above ten minutes it moves in
- * minutes, because nobody sets a twenty-two minute rest in fifteen-second increments and making
- * them press eighty-eight times to find out is contempt disguised as precision.
- */
-fun timerStep(seconds: Int): Int = when {
-    seconds < 120 -> 15
-    seconds < 600 -> 30
-    else -> 60
-}
-
-/** Bounded at both ends: a timer of zero is not a timer, and one of six hours is a calendar. */
-fun timerNudge(seconds: Int, up: Boolean): Int {
-    val step = timerStep(if (up) seconds else seconds - 1)
-    val next = if (up) seconds + step else seconds - step
-    return next.coerceIn(TIMER_MIN, TIMER_MAX)
-}
-
-const val TIMER_MIN = 15
-const val TIMER_MAX = 6 * 60 * 60
-
 fun timerRemaining(lengthMs: Long, elapsedMs: Long): Long {
     val left = lengthMs - elapsedMs
     return if (left < 0L) 0L else left

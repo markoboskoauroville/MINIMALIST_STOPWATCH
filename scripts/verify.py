@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 116
+TEST_FLOOR = 126
 
 
 def code_only(text):
@@ -144,10 +144,14 @@ colour_body = colours.group(1) if colours else ""
 tones_used = {t for t in ("GLYPH_PRIMARY", "GLYPH", "GLYPH_SECOND", "GLYPH_OFF") if t in colour_body}
 enabled_expr = re.search(r"enabled\s*=\s*(tone[^,\n]*)", ui)
 enabled_text = enabled_expr.group(1).strip() if enabled_expr else ""
-# ONE GREY NOW, and the outline carries the state instead. A glyph that is both dimmer AND
-# un-outlined says one thing twice, and the second saying gets read as a different meaning.
+# ALL FOUR AGAIN, AND THIS REVERSES v39's REVERSAL. Between v39 and v45 the check demanded
+# exactly two — one grey for every live glyph, with the ring carrying the state — and that was
+# right while the ring existed. The rings were removed at v45 on Baba's word, so if the ladder
+# did not come back with them there would be no way to tell a live control from a suggested one
+# at all. Four tones, four colours, and the ladder is the only thing saying it.
 check("every tone reaches the drawn colour, and only DEAD is inert",
-      tones_used == {"GLYPH", "GLYPH_OFF"} and enabled_text == "tone != Tone.DEAD",
+      tones_used == {"GLYPH_PRIMARY", "GLYPH", "GLYPH_SECOND", "GLYPH_OFF"}
+      and enabled_text == "tone != Tone.DEAD",
       f"{len(tones_used)} of 4 tones reach the drawn colour: `enabled = {enabled_text}`")
 
 # ── 4c ───────────────────────────────────────────────────────────────────────────────────────
@@ -214,8 +218,24 @@ check("the redraw delay can never be zero",
 # ── 7 ────────────────────────────────────────────────────────────────────────────────────────
 # Tap-anywhere is gone and its absence is a decision. If a clickable ever reappears on the
 # background this goes red, because that is the stray touch that destroys a measurement.
-background_click = re.search(r"\.background\(BACKGROUND\)[\s\S]{0,200}?\.clickable", ui)
-clickables = len(re.findall(r"\.clickable\(", ui))
+background_click = re.search(r"\.background\(BACKGROUND\)[\s\S]{0,200}?\.clickable", code_only(ui))
+clickables = len(re.findall(r"\.clickable\s*[({]", code_only(ui)))
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# THIS ASSERTION WENT MISSING AT v37 AND NOBODY NOTICED FOR EIGHT VERSIONS.
+#
+# The two lines above were computed and then never used: v37 rewrote the rule about tap-anywhere
+# and replaced the check() below with a new one about the long press, leaving `background_click`
+# dangling. The mutation sweep said so in as many words — "SURVIVED: tap-anywhere comes back on
+# the background" — and the sweep crashed on a deleted file before it reached this, so the one
+# thing that would have reported it could not run.
+#
+# It is restored as its own check rather than folded into the one below, because they guard two
+# different things: that one is about what a TAP does, this one is about WHERE a tap is taken.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+check("the background itself is never pressable",
+      background_click is None and clickables >= 3,
+      f"{clickables} clickables on the screen, none of them on the black behind everything")
+
 # The count used to have to be zero, which stopped being the right question when the recorder
 # row was added: a word you press to record it is a clickable, and it is meant to be. What must
 # stay true is that the BACKGROUND carries none, which is the thing that would destroy a running
@@ -237,11 +257,23 @@ check("no destructive action sits on a single tap",
 # The mutation sweep walked straight through the old version of this: it looked for the word
 # canPause, which v4 deleted, so it was checking for a shape that could no longer exist. It now
 # looks for ANY conditional wrapping a transport emission, whatever the condition is written in.
-hidden = re.search(r"\bif\s*\(.*?\)\s*\{?\s*(Transport|Glyph)\s*\(", ui)
+# v45 ADDED THE ONE CONDITION THIS IS ALLOWED TO FIND, and the check had to be told about it
+# rather than left to pass by luck. It did pass by luck for one run: the full-screen group has a
+# comment between the `if` and the first Glyph, so the old regex — which read the file WITH its
+# comments — walked straight past it. That is the fifth time a comment has decided the outcome of
+# a check in this repository, so this one reads code_only like the rest.
+#
+# The rule is unchanged and it is about the REASON: a control may not be hidden because it cannot
+# act. `!fullscreen` is not that reason — everything goes at once, because somebody pressed the
+# button that says so, and a long press brings all of it back. Any OTHER condition wrapped round
+# a Transport or a Glyph is the fault, and this names the condition it found.
+conditions = re.findall(r"\bif\s*\(([^)]*)\)\s*\{?\s*(?:Transport|Glyph)\s*\(", code_only(ui))
+unexpected = [c for c in conditions if c.strip() != "!fullscreen"]
 emitted = len(re.findall(r"^\s*Transport\(", ui, re.M))
 check("no button is hidden when it cannot act",
-      hidden is None and emitted == 3,
-      f"{emitted} transport controls emitted unconditionally, 0 wrapped in a condition")
+      not unexpected and emitted == 3,
+      f"{emitted} transport controls, {len(conditions)} conditions round a control, "
+      f"all of them !fullscreen" if not unexpected else f"wrapped in: {unexpected}")
 
 # ── 8b ───────────────────────────────────────────────────────────────────────────────────────
 # The circles were removed on 27.8.2026 because on glass they read as three more shapes on a
@@ -249,13 +281,20 @@ check("no button is hidden when it cannot act",
 # the transport, this goes red.
 glyph_body = re.search(r"private fun Glyph\((.*?)\n\}", code_only(ui), re.S)
 borders = re.findall(r"\.border\(", glyph_body.group(1) if glyph_body else "")
-# REVERSED AT v39, and the reversal is not a return. v3 removed a circle drawn round every glyph
-# ALL THE TIME, which was decoration. This outline is CONDITIONAL: present exactly when the
-# control can be pressed, so it is the only mark on the screen carrying "will this do anything".
-# If it ever becomes unconditional again it is decoration once more, and this goes red.
-check("the outline round a glyph is conditional, never decoration",
-      len(borders) == 1 and "if (tone != Tone.DEAD)" in code_only(ui),
-      f"{len(borders)} border in Glyph, drawn only while the control is live")
+# REMOVED AGAIN AT v45, AND THIS TIME THE CHECK SAYS SO IN ONE LINE RATHER THAN TWO ARGUMENTS.
+# Baba: "remove circles around numbers." v39 had brought a CONDITIONAL ring back on the reasoning
+# that a mark present exactly when a control can be pressed is information rather than
+# decoration. The reasoning was sound and the result was still wrong: at the distance this app is
+# read from, six thin circles under the digits are six circles. The state went back onto the
+# weight of the glyph, which is where it lived for thirty-eight versions.
+#
+# THE COUNT IS ZERO AND IT IS COUNTED IN THE WHOLE FILE, not only in Glyph, because the last
+# return came back in two places — Glyph and the S/T letter — and a check that only watched one
+# of them would have passed while a ring sat on the other.
+all_rings = code_only(ui).count("CircleShape")
+check("nothing on the clock face wears a ring",
+      len(borders) == 0 and all_rings == 0,
+      f"{len(borders)} borders in Glyph, {all_rings} uses of CircleShape in the whole screen")
 
 # ── 8c ───────────────────────────────────────────────────────────────────────────────────────
 # One transport row, not one per orientation. v2 had a landscape branch putting the buttons down
@@ -782,11 +821,23 @@ check("the settings that need explaining have help text",
       "private fun Help(" in code_only(ui) and code_only(ui).count("Help(") >= 4,
       "two lines at most, and only where the cells cannot speak for themselves")
 
-# The custom duration is nudged through the pure function, not by arithmetic in the interface.
-check("the custom duration is nudged through the tested function",
-      "timerNudge(timerSeconds, up = false)" in code_only(ui)
-      and "timerNudge(timerSeconds, up = true)" in code_only(ui),
-      "the step rule lives in one place and Test 1 walks it")
+# The duration is moved through the pure function, not by arithmetic in the interface, and the
+# bound lives with it — so there is one answer to "what happens at six hours" and Test 1 reads it.
+check("the duration is moved through the tested function",
+      "timerShift(timerSeconds, -step)" in code_only(ui)
+      and "timerShift(timerSeconds, step)" in code_only(ui),
+      "plus and minus are the same function with the sign flipped, bounded in one place")
+
+# SIX BUTTONS FROM ONE LIST. Baba asked for three steps each side — thirty seconds, a minute, ten
+# minutes — and if the two sides were typed out separately they would disagree about what the
+# middle button is worth on the first evening somebody changed one. Both sides are generated from
+# TIMER_STEPS, and the label on each face is computed from the same number the press uses.
+check("the six steps are generated from one list, not typed twice",
+      "TIMER_STEPS.reversed().forEach" in code_only(ui)
+      and "TIMER_STEPS.forEach" in code_only(ui)
+      and "private fun stepLabel(" in code_only(ui)
+      and re.search(r"val TIMER_STEPS = listOf\(30, 60, 600\)", src) is not None,
+      "thirty seconds, a minute, ten minutes: one list, two sides, labels computed from it")
 
 # CLOSE ON THE RIGHT, ALWAYS. Written into MANTRA_MANIFEST as a standing rule. A way out that
 # moves between screens is a way out that has to be looked for, and looking for the exit is the
@@ -843,12 +894,64 @@ check("starting has one route, and it knows a finished timer",
       and "timerFinished(timerSeconds * 1000L, elapsed)" in code_only(ui),
       "the digits and the play glyph both go through it; the first press at zero resets")
 
-# The preset row was laid out on a hardcoded five, which was a fact about the list rather than
-# about the row. Deriving the width from the list means adding a preset can never push one off
-# the edge of the panel — a failure that would only show on the narrowest phone.
-check("the preset row is laid out from the list, not from a count",
-      "TimerLength.entries.size" in code_only(ui) and "gap * (n - 1)) / n" in code_only(ui),
-      "one cell per preset, whatever the list holds")
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# THERE ARE NO PRESETS IN THE SOURCE. Baba, 21.9.2026: "all timer presets are defined by the
+# user." What stood here was six durations chosen in advance, and the check that guarded them
+# only asked that the ROW be laid out from the list rather than from a hardcoded count.
+#
+# That is no longer the question. The question is whether a duration can get onto that row
+# without somebody having pressed a button, and the way that would happen is a seed list written
+# into the source. So the check is now about the ABSENCE of one: the enum is gone, and every cell
+# the panel draws comes from the store.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+check("every preset was put there by a press, never by the source",
+      "TimerLength" not in code_only(src)
+      and "TimerLength" not in code_only(ui)
+      and "presets + listOf(null)" in code_only(ui)
+      and "store.timerPresets" in code_only(ui),
+      "no durations in the source: the row is whatever the store holds, and the store holds presses")
+
+# THE PLUS RIDES AT THE END OF THE SAME LIST rather than being a control beside it, so it wraps
+# with the presets. Baba asked for it "under the first preset"; as the last cell it is under the
+# first while there is one and after the last forever after, which is where the next preset will
+# appear. A separate button below the block would be a fixed place that stops being the right one
+# the moment the list grows past a row.
+check("the plus sits where the next preset will appear",
+      "val cells: List<Int?> = presets + listOf(null)" in code_only(ui)
+      and "cells.chunked(perRow)" in code_only(ui),
+      "one list of cells, wrapped together, with the plus as the last of them")
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# FULL SCREEN HIDES EVERY CONTROL AT ONCE, OR IT IS THE THING THE RULE FORBIDS.
+#
+# Check 8 above bans hiding a control BECAUSE IT CANNOT ACT: that leaves you guessing where it
+# went and moves everything beside it. Full screen is the opposite shape — one press, everything
+# leaves, one gesture brings it all back — and the difference is only real if the condition is
+# written once round the group and once round the transport row, never round a single glyph.
+#
+# AND THERE MUST BE A WAY BACK. An app whose controls can all be taken away and not returned is
+# a trap, and this one is meant to be left running on a bench. The long press on the digits is
+# the way out, and it is checked here rather than trusted.
+controls_group = code_only(ui).count("if (!fullscreen)")
+check("full screen takes every control at once, and gives them all back",
+      controls_group == 2
+      and "if (fullscreen) {\n                                fullscreen = false" in code_only(ui)
+      and "store.fullscreen = false" in code_only(ui)
+      and "val topZone = if (fullscreen) 0.dp else LOCK_ZONE" in code_only(ui)
+      # BOTH BANDS, NOT ONE. The mutation sweep caught this check half-written: hiding the
+      # transport row while leaving `strip` at its full height survives, and the result is the
+      # numbers exactly the size they always were with a band of black under them — which looks
+      # like the button did nothing. The reserved height is the whole of the change.
+      and "val strip = if (fullscreen) 0.dp else if (landscape) 72.dp else 108.dp" in code_only(ui),
+      f"{controls_group} conditions — the group and the transport row — and a long press back")
+
+# THE PANEL CANNOT BE LEFT OPEN BEHIND A SCREEN WITH NO WAY OF CLOSING IT. Full screen draws no
+# controls, so a settings panel still open would be the only thing on the screen, over digits
+# that were supposed to be alone. Made impossible here rather than merely unlikely.
+fs_press = re.search(r"\) \{\n                settingsOpen = false\n                fullscreen = true", code_only(ui))
+check("going full screen closes the panel first",
+      fs_press is not None,
+      "the panel is shut in the same press, so the two states cannot both be true")
 
 # AN APP THAT CAN INSTALL SOFTWARE WITHOUT BEING ASKED AGAIN is a serious thing for a stopwatch
 # to be. The download URL goes to Android, whose own installer takes over with its own dialogue.
@@ -884,13 +987,14 @@ check("the update check cannot hang",
       and "readTimeout = 8_000" in (MAIN / "UpdateCheck.kt").read_text(),
       "both timeouts bounded, and every failure reports a reason rather than a shrug")
 
-# EVERY PRESSABLE CONTROL WEARS THE RING. The S/T toggle was a letter rather than a glyph, so it
-# missed the ring Glyph draws and became the only control on the screen that could be pressed and
-# did not say so. An exception to a visual language teaches you not to trust the language.
-check("the mode toggle wears the ring like everything else",
+# THE S/T TOGGLE FOLLOWS WHATEVER THE LANGUAGE IS, and that is the durable half of the rule the
+# old version of this check was written for. v40 gave the letter a ring so it would not be the
+# one pressable thing without one; v45 took every ring away, so a ring left here would make it
+# the one thing WITH one. The same fault, the opposite coat. The letter stays; the ring does not.
+check("the mode toggle is marked the same way as everything else",
       'text = if (appMode == AppMode.TIMER) "T" else "S"' in code_only(ui)
-      and code_only(ui).count("border(1.dp, GLYPH_SECOND, CircleShape)") == 2,
-      "two rings drawn from the same constant: the glyphs conditionally, the mode toggle always")
+      and "GLYPH_SECOND, CircleShape" not in code_only(ui),
+      "a letter, coloured in the timer and grey in the stopwatch, with nothing drawn around it")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

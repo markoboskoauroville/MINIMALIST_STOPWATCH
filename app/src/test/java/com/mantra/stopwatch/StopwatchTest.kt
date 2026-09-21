@@ -1175,48 +1175,153 @@ class StopwatchTest {
         assertTrue(timerFinished(60_000, 61_000))
     }
 
-    /** The offered lengths are what they claim, in seconds, so the face cannot disagree. */
+    /**
+     * THE THREE AMOUNTS ON THE BUTTONS, and they are a layout fact as much as a list of numbers:
+     * six cells and a duration have to fit across the narrowest phone, so a fourth pair would be
+     * a decision about the row and not only about the steps.
+     */
     @Test
-    fun theTimerLengthsAreWhatTheyClaim() {
-        assertEquals(30, TimerLength.HALF.seconds)
-        assertEquals(60, TimerLength.ONE.seconds)
-        assertEquals(180, TimerLength.THREE.seconds)
-        assertEquals(1_500, TimerLength.TWENTY_FIVE.seconds)
-        for (l in TimerLength.entries) assertTrue("$l must be positive", l.seconds > 0)
-
-        // The row is laid out as one cell per preset, so the count is a layout fact as much as a
-        // list of durations: a sixth entry has to be a sixth cell or one of them is off the edge.
-        assertEquals("six presets, six cells", 6, TimerLength.entries.size)
-
-        // Every preset must be reachable by the custom control too, or a preset could set a value
-        // the minus and plus could never return to.
-        for (l in TimerLength.entries) {
-            assertTrue("$l is outside the custom range", l.seconds in TIMER_MIN..TIMER_MAX)
-        }
-
-        // In order, and no duplicates: a row with the same duration twice has a dead cell in it.
-        val seconds = TimerLength.entries.map { it.seconds }
-        assertEquals("presets must ascend", seconds.sorted(), seconds)
-        assertEquals("no duplicates", seconds.size, seconds.toSet().size)
+    fun theTimerStepsAreTheThreeAmountsWrittenOnTheButtons() {
+        assertEquals(listOf(30, 60, 600), TIMER_STEPS)
+        assertEquals("three each side, six cells", 3, TIMER_STEPS.size)
+        assertEquals("steps must ascend", TIMER_STEPS.sorted(), TIMER_STEPS)
+        assertEquals("no duplicates", TIMER_STEPS.size, TIMER_STEPS.toSet().size)
+        for (s in TIMER_STEPS) assertTrue("$s must be positive", s > 0)
     }
 
     /**
-     * The step is not constant, and that is why it is here rather than in the interface. Making
-     * somebody press eighty-eight times to reach twenty-two minutes is contempt disguised as
-     * precision; making them jump a minute at a time near forty-five seconds is uselessly coarse.
+     * A FIXED AMOUNT, WHEREVER YOU ALREADY ARE, and that is the whole reason the old variable
+     * step was replaced. The same button moving a different amount depending on the number is a
+     * control you have to read the display to predict.
      */
     @Test
-    fun theCustomTimerStepsByAnAmountThatSuitsTheDuration() {
-        assertEquals(15, timerStep(30))
-        assertEquals(15, timerStep(119))
-        assertEquals(30, timerStep(120))
-        assertEquals(30, timerStep(599))
-        assertEquals(60, timerStep(600))
+    fun aStepMovesTheDurationByExactlyThatAmountWhereverItStarts() {
+        for (from in listOf(30, 45, 119, 120, 599, 600, 1_800, 3_600)) {
+            for (step in TIMER_STEPS) {
+                assertEquals("up $step from $from", from + step, timerShift(from, step))
+            }
+        }
+        assertEquals(30, timerShift(60, -30))
+        assertEquals(600, timerShift(1_200, -600))
+    }
 
-        assertEquals(60, timerNudge(45, up = true))
-        assertEquals(30, timerNudge(45, up = false))
-        assertEquals(150, timerNudge(120, up = true))
-        assertEquals(660, timerNudge(600, up = true))
+    /** Bounded at both ends: a timer of zero is not a timer and one of six hours is a calendar. */
+    @Test
+    fun theDurationCannotLeaveItsRangeHoweverHardItIsPushed() {
+        assertEquals(TIMER_MIN, timerShift(TIMER_MIN, -600))
+        assertEquals(TIMER_MIN, timerShift(20, -600))
+        assertEquals(TIMER_MAX, timerShift(TIMER_MAX, 600))
+        assertEquals(TIMER_MAX, timerShift(TIMER_MAX - 10, 600))
+        for (s in listOf(15, 60, 119, 120, 599, 600, 3_600, TIMER_MAX)) {
+            for (step in TIMER_STEPS) {
+                assertTrue(timerShift(s, step) in TIMER_MIN..TIMER_MAX)
+                assertTrue(timerShift(s, -step) in TIMER_MIN..TIMER_MAX)
+            }
+        }
+    }
+
+    /**
+     * Up then down must return where it started, or the control drifts as you hunt for a value.
+     * Away from the two ends, where clamping is the point and drift is the correct answer.
+     */
+    @Test
+    fun aStepUpAndTheSameStepDownReturnsToWhereItStarted() {
+        for (s in listOf(660, 700, 1_200, 1_805, 3_600)) {
+            for (step in TIMER_STEPS) {
+                assertEquals("$s by $step", s, timerShift(timerShift(s, step), -step))
+            }
+        }
+    }
+
+    /** The duration the app opens with, before anybody has saved anything, is a usable one. */
+    @Test
+    fun theDurationTheAppOpensWithIsInsideItsOwnRange() {
+        assertEquals(300, TIMER_DEFAULT)
+        assertTrue(TIMER_DEFAULT in TIMER_MIN..TIMER_MAX)
+    }
+
+    /** What is written is what comes back, which is the only promise storage has to keep. */
+    @Test
+    fun thePresetsComeBackAsTheyWereWritten() {
+        assertEquals(listOf(30, 300, 1_500), presetsDecode(presetsEncode(listOf(30, 300, 1_500))))
+        assertEquals("", presetsEncode(emptyList()))
+        assertEquals(emptyList<Int>(), presetsDecode(""))
+    }
+
+    /**
+     * TOTAL, NOT STRICT. A stopwatch that will not open because its settings file has a comma in
+     * the wrong place is worse than one that opens with no presets. Every one of these is a shape
+     * a half-finished write or an older version could leave behind.
+     */
+    @Test
+    fun anUnreadablePresetStringIsReadAsNoPresetsRatherThanThrowing() {
+        assertEquals(emptyList<Int>(), presetsDecode("nonsense"))
+        assertEquals(emptyList<Int>(), presetsDecode(",,,"))
+        assertEquals(emptyList<Int>(), presetsDecode("  "))
+        assertEquals(listOf(60), presetsDecode("60,,rubbish,"))
+        assertEquals(listOf(60), presetsDecode(" 60 "))
+        assertEquals(emptyList<Int>(), presetsDecode("99999999999999999999"))
+    }
+
+    /** A preset the plus and minus could never return to would be a cell that traps the app. */
+    @Test
+    fun aPresetOutsideTheRangeIsNeverKept() {
+        assertEquals(emptyList<Int>(), presetsDecode("0,-30,${TIMER_MAX + 1}"))
+        assertEquals(emptyList<Int>(), presetAdd(emptyList(), 0))
+        assertEquals(emptyList<Int>(), presetAdd(emptyList(), TIMER_MAX + 1))
+        assertEquals(listOf(TIMER_MIN), presetAdd(emptyList(), TIMER_MIN))
+        assertEquals(listOf(TIMER_MAX), presetAdd(emptyList(), TIMER_MAX))
+    }
+
+    /**
+     * Pressing plus twice is what somebody does when they are not sure the first press landed,
+     * and the honest answer is a list that already holds it — not a twin, and not a complaint.
+     */
+    @Test
+    fun addingTheSameDurationTwiceLeavesOneCell() {
+        val once = presetAdd(emptyList(), 300)
+        assertEquals(listOf(300), presetAdd(once, 300))
+        assertEquals(listOf(300), presetsDecode("300,300,300"))
+    }
+
+    /** The row wraps, so an unbounded list would push the count-in off the bottom of the panel. */
+    @Test
+    fun thePresetListStopsAtItsCeilingRatherThanDroppingTheOldest() {
+        var list = emptyList<Int>()
+        for (i in 1..PRESETS_MAX) list = presetAdd(list, i * 60)
+        assertEquals(PRESETS_MAX, list.size)
+
+        // AT THE CEILING THE LIST IS UNCHANGED. Dropping the oldest to make room would throw
+        // away something saved on purpose, without being asked.
+        val full = presetAdd(list, 9_000)
+        assertEquals(list, full)
+        assertTrue("nothing he saved may vanish", 60 in full)
+        assertEquals(PRESETS_MAX, presetsDecode((1..40).joinToString(",") { "${it * 60}" }).size)
+    }
+
+    /** Sorted on the way out, so no reader downstream has to sort it a second time. */
+    @Test
+    fun thePresetsAlwaysComeBackInOrder() {
+        assertEquals(listOf(30, 60, 300), presetsDecode("300,30,60"))
+        assertEquals(listOf(30, 60, 300), presetAdd(listOf(60, 300), 30))
+        val grown = presetAdd(presetAdd(presetAdd(emptyList(), 600), 30), 120)
+        assertEquals(grown.sorted(), grown)
+    }
+
+    /** Removing is a long press, so it has to be exact: the rest of the list is untouched. */
+    @Test
+    fun removingOnePresetLeavesEveryOtherOneWhereItWas() {
+        assertEquals(listOf(30, 300), presetRemove(listOf(30, 60, 300), 60))
+        assertEquals(listOf(30, 60, 300), presetRemove(listOf(30, 60, 300), 999))
+        assertEquals(emptyList<Int>(), presetRemove(listOf(60), 60))
+        assertEquals(emptyList<Int>(), presetRemove(emptyList(), 60))
+    }
+
+    /** A preset removed and added again is the same preset, or the plus is not a way back. */
+    @Test
+    fun aPresetRemovedByMistakeIsPutBackByThePlus() {
+        val before = listOf(30, 60, 300)
+        assertEquals(before, presetAdd(presetRemove(before, 60), 60))
     }
 
     /**
@@ -1235,26 +1340,6 @@ class StopwatchTest {
         assertEquals(LAP_MAX_METRES, lapNudge(LAP_MAX_METRES, up = true))
         assertNull("count only shows no distance", null.takeIf { false })
         assertEquals("2", lapLabel(2, on = true, metres = lapNudge(1, up = false)))
-    }
-
-    /** Bounded at both ends: a timer of zero is not a timer and one of six hours is a calendar. */
-    @Test
-    fun theCustomTimerCannotLeaveItsRange() {
-        assertEquals(TIMER_MIN, timerNudge(TIMER_MIN, up = false))
-        assertEquals(TIMER_MIN, timerNudge(1, up = false))
-        assertEquals(TIMER_MAX, timerNudge(TIMER_MAX, up = true))
-        for (s in listOf(15, 60, 119, 120, 599, 600, 3_600)) {
-            assertTrue(timerNudge(s, up = true) in TIMER_MIN..TIMER_MAX)
-            assertTrue(timerNudge(s, up = false) in TIMER_MIN..TIMER_MAX)
-        }
-    }
-
-    /** Up then down must return where it started, or the control drifts as you hunt for a value. */
-    @Test
-    fun nudgingUpThenDownReturnsToWhereItStarted() {
-        for (s in listOf(30, 45, 105, 120, 300, 570, 600, 1_800)) {
-            assertEquals("from $s", s, timerNudge(timerNudge(s, up = true), up = false))
-        }
     }
 
     /**

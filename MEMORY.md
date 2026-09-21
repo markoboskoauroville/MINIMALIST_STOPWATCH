@@ -100,3 +100,33 @@ Both times the SKIP read almost exactly like a caught mutation in a list of thir
 the anchor contained the version number and the version was bumped; once because the settings
 panel added a second `.background(BACKGROUND)` and the anchor stopped being unique. **When
 reading a sweep result, count the SKIPs before believing the caught total.**
+
+## sabotage.py is not in CI, and it silently stopped working once
+
+The mutation sweep is the only thing on this repository that has reliably found faults in the
+CHECKS rather than in the app, and **nothing runs it automatically** because it is slow. That is
+a decision, not an oversight — but it has a cost that was paid in full once already.
+
+Between the removal of SpeechRecognizer and 21.9.2026, `sabotage.py` named `VoiceListener.kt` in
+the list of files it copies before it starts. The file was deleted with the recogniser, so the
+script threw `FileNotFoundError` on its own first step, every single run. It had not swept
+anything for months, `README.md` went on quoting a mutation count it was no longer producing, and
+the two things it found within minutes of being repaired were a `verify.py` check that had lost
+its assertion eight versions earlier and a guard in brand-new code that could not fail.
+
+**Run it before believing a green `verify.py`.** Its own header is the first place to look if it
+does anything other than print mutations: a crash there looks nothing like a failed mutation.
+
+## Seven mutations point at anchors that have moved
+
+Named in `HANDOFF.md` under *The mutation sweep*. They report `SKIP` rather than `SURVIVED`, and
+a SKIP in a long list reads almost like a catch. Until each is re-pointed, seven rules this
+repository claims to guard are unwatched.
+
+## Rings have been removed twice and the argument for them is always good
+
+v3 removed them, v39 brought a conditional one back with a sound argument, v45 removed them again
+at Baba's word. State is carried by the WEIGHT of the glyph — white, grey, dark grey, nearly
+black. If a future session is about to add a ring, the thing to notice is that the case FOR one
+is correct both times and has twice been beside the point: at the distance this app is read from,
+circles under the digits are circles.
