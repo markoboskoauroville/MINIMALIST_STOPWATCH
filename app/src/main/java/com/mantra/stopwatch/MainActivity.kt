@@ -20,6 +20,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -76,6 +79,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -208,6 +212,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // ─────────────────────────────────────────────────────────────────────────────────────────
     var fullscreen by remember { mutableStateOf(store.fullscreen) }
 
+    // WHEN THE LAST TAP LANDED, so the one after it knows whether it is the second of two.
+    // Zero means there has not been one, which is a real state rather than a sentinel.
+    var lastTapAt by remember { mutableLongStateOf(0L) }
+
     var names by remember { mutableStateOf(store.names) }
     var prerollStopwatch by remember { mutableIntStateOf(store.preroll(AppMode.STOPWATCH)) }
     var prerollTimer by remember { mutableIntStateOf(store.preroll(AppMode.TIMER)) }
@@ -313,6 +321,28 @@ private fun Screen(store: Store, activity: ComponentActivity) {
      * the count-in if there is one. Two presses to go again, and the first of them visibly
      * changes the number, which is what was missing.
      */
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // TWO WAYS IN AND TWO WAYS OUT OF FULL SCREEN, AND ONE PIECE OF CODE FOR EACH DIRECTION.
+    //
+    // v45 had one button in and one long press out, written at the two places they happened. v46
+    // adds the pinch at Baba's word — "pinch in to exit and pinch out to enter" — and that is the
+    // moment two call sites become four. Four copies of "also close the panel, also write the
+    // store" is four chances for one of them to forget, and the one that forgets is found weeks
+    // later as "sometimes it comes back with the buttons on".
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    fun enterFullscreen() {
+        // The panel cannot be left open behind a screen that draws no way of closing it: its own
+        // X would be the only control on screen, over digits that were supposed to be alone.
+        settingsOpen = false
+        fullscreen = true
+        store.fullscreen = true
+    }
+
+    fun leaveFullscreen() {
+        fullscreen = false
+        store.fullscreen = false
+    }
+
     fun onPlay() {
         if (prerollEndsAt > 0L) {
             cancelPreroll()
@@ -578,6 +608,63 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         Modifier
             .fillMaxSize()
             .background(BACKGROUND)
+            // ─────────────────────────────────────────────────────────────────────────────────
+            // THE PINCH, ON THE WHOLE SCREEN. Baba: "pinch in to exit and pinch out to enter."
+            //
+            // ON THE ROOT RATHER THAN ON THE DIGITS, because in full screen the digits are all
+            // there is but on the ordinary screen they are not, and a way out that only works if
+            // you happen to land on the numbers is a way out you have to aim for. A pinch is
+            // already a whole-screen gesture everywhere else on the phone.
+            //
+            // IT IS NOT A CLICKABLE AND THAT DISTINCTION IS THE WHOLE REASON THIS IS ALLOWED
+            // HERE. v1 removed tap-anywhere because a stray touch on the background destroyed a
+            // measurement, and `verify.py` still refuses a `.clickable` on this modifier. A pinch
+            // cannot be made by a pocket, a sleeve or one finger, and the worst it can do is
+            // change how much of the screen the numbers take — it never touches the clock.
+            //
+            // THE ACCUMULATOR LIVES INSIDE awaitEachGesture, so it starts at one for every new
+            // gesture. Hoisted out, a long afternoon of small spreads would eventually add up to
+            // a quarter and the screen would change with nobody having asked it to.
+            //
+            // `fired` means the gesture has already had its answer. Without it, carrying on
+            // spreading past the threshold would re-fire on every frame — and in full screen that
+            // is a control changing state sixty times a second under a finger that is still
+            // moving.
+            // ─────────────────────────────────────────────────────────────────────────────────
+            .pointerInput(fullscreen, settingsOpen) {
+                // NOT WHILE THE PANEL IS OPEN. The panel is drawn over this, and a pinch meant
+                // for a swatch grid that instead swallowed the whole panel would be the app
+                // taking a decision nobody made.
+                if (settingsOpen) return@pointerInput
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var zoom = 1f
+                    var fired = false
+                    do {
+                        val event = awaitPointerEvent()
+                        // ONE FINGER IS NOT A PINCH. calculateZoom returns 1 for a single
+                        // pointer, so this would be harmless either way — but reading it only
+                        // when there are two says what a pinch IS, rather than relying on
+                        // arithmetic elsewhere to come out right.
+                        if (!fired && event.changes.size >= 2) {
+                            zoom *= event.calculateZoom()
+                            val verdict = pinchVerdict(zoom)
+                            if (verdict == Pinch.OUT && !fullscreen) {
+                                fired = true
+                                enterFullscreen()
+                            } else if (verdict == Pinch.IN && fullscreen) {
+                                fired = true
+                                leaveFullscreen()
+                            }
+                            // CONSUMED ONLY ONCE IT HAS ACTED, so that a pinch which decides
+                            // nothing leaves every other gesture on the screen untouched. Once it
+                            // has acted, the fingers lifting must not also read as a tap on the
+                            // digits underneath.
+                            if (fired) event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
+                }
+            }
             .safeDrawingPadding()
     ) {
         val screenW = maxWidth
@@ -666,33 +753,64 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     .weight(1f)
                     .fillMaxWidth()
                     .combinedClickable(
-                        onClick = { onPlay() },
                         // ─────────────────────────────────────────────────────────────────
-                        // THE LONG PRESS MEANS TWO THINGS, AND ONLY ONE OF THEM IS REACHABLE AT
-                        // A TIME, which is why this is one gesture rather than two.
+                        // ONE TAP STOPS IT, TWO TAPS RESET IT — AND THE FIRST TAP STILL FIRES
+                        // THE INSTANT IT LANDS. That last clause is the whole design of this
+                        // block and it is worth the paragraph.
                         //
-                        // In full screen there is no control on the screen at all, so there has
-                        // to be a gesture that brings them back, and it has to be one a pocket,
-                        // a sleeve or a wet hand cannot produce by accident — otherwise the mode
-                        // Baba asked for would undo itself while the phone sat on a bench. The
-                        // long press is already that gesture here; it is the reason reset lives
-                        // on it.
+                        // Compose will detect a double tap for you, through `onDoubleClick`. The
+                        // price is that EVERY SINGLE TAP IS THEN HELD BACK for the length of the
+                        // double-tap window, because until that window closes the tap might turn
+                        // out to be the first of two. Three hundred milliseconds is nothing in a
+                        // menu. In a stopwatch it is three tenths of a second of a measurement
+                        // that never happened, on every single start, forever — and this app
+                        // exists to measure things.
                         //
-                        // SO IN FULL SCREEN IT LEAVES FULL SCREEN, AND RESET IS NOT REACHABLE.
-                        // That is a real loss and it is the right trade: leaving costs one long
-                        // press, after which stop is where it has always been, and the
-                        // alternative — reset under the one gesture you must use to escape —
-                        // would destroy a measurement every time somebody wanted their buttons
-                        // back.
+                        // SO THE TAP IS NEVER HELD. It acts immediately, and the second tap,
+                        // if one comes, resets ON TOP of whatever the first one did. That works
+                        // because the composition is harmless in both directions:
+                        //
+                        //     running, tap tap   pauses, then resets      -> zeros
+                        //     stopped, tap tap   starts, then resets      -> zeros
+                        //     counting in, tap tap  cancels, then resets  -> zeros
+                        //
+                        // Every path ends at zeros, which is what two taps mean. The
+                        // intermediate state exists for less than a third of a second and is the
+                        // correct answer to the first tap in its own right.
+                        //
+                        // A THIRD RAPID TAP RESETS AGAIN rather than starting a new measurement,
+                        // because `lastTapAt` is not cleared when a double fires. A burst of
+                        // panicky taps therefore ends at zeros instead of quietly starting the
+                        // clock, and of the two possible surprises that is the safe one.
+                        //
+                        // WHAT v1 REMOVED IS NOT BEING PUT BACK. Tap-anywhere was deleted
+                        // because its second state was destructive on a SINGLE STRAY TAP: touch
+                        // it once to start, touch it again an hour later and the measurement was
+                        // gone. Here a lone tap can only ever pause or start — recoverable, and
+                        // visible. Reset needs two taps inside a third of a second, which is a
+                        // thing a hand does on purpose and a pocket does not do at all.
                         // ─────────────────────────────────────────────────────────────────
-                        onLongClick = {
-                            if (fullscreen) {
-                                fullscreen = false
-                                store.fullscreen = false
-                            } else {
+                        onClick = {
+                            val now = SystemClock.elapsedRealtime()
+                            onPlay()
+                            if (isDoubleTap(lastTapAt, now)) {
                                 cancelPreroll()
+                                // `stop()` builds a fresh zeroed clock and ignores its receiver,
+                                // so it does not matter that `state` here was captured before
+                                // onPlay() committed over it.
                                 commit(state.stop())
                             }
+                            lastTapAt = now
+                        },
+                        // THE LONG PRESS MEANS ONE THING AGAIN, IN BOTH MODES, and getting back
+                        // to that is the quiet win in v46. It had to carry the way out of full
+                        // screen because nothing else could, which cost reset entirely while
+                        // full screen was on — written down at the time as a real loss. The
+                        // pinch now owns that door, so this goes back to reset everywhere, and
+                        // reset is reachable in full screen again.
+                        onLongClick = {
+                            cancelPreroll()
+                            commit(state.stop())
                         },
                     ),
             )
@@ -733,7 +851,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         // read as eight independent decisions about eight controls, which is exactly the shape
         // of the fault this app has always refused — a button that goes missing on its own and
         // takes its position with it. There is one decision here and it is Baba's: numbers only,
-        // or the app. A long press on the digits is the way back.
+        // or the app. A pinch in brings them all back.
         // ─────────────────────────────────────────────────────────────────────────────────────
         if (!fullscreen) {
             // The two corner controls, swapped at v6 on Baba's instruction: orientation left,
@@ -765,10 +883,16 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             // it, take the buttons away. Putting them side by side means one place to look
             // instead of a hunt along a row of eight.
             //
-            // It is the only control that is not on this screen when you need it, so the way
-            // back has to be somewhere a person will find without being told twice. It is the
-            // long press on the digits, the gesture this app already uses for the deliberate
-            // thing, and the panel's own help line says so in as many words.
+            // THE WAY BACK IS THE PINCH, and v46 made that true. This button is the only
+            // control that is not on the screen when you want it again, so the return has to be
+            // something a person finds without being told twice — and a pinch is the one gesture
+            // every phone already teaches: it is how a photo, a map and a web page have been
+            // made smaller for fifteen years. Pinch out to fill the screen, pinch in to give it
+            // back.
+            //
+            // v45 hung the return on the long press, which worked and cost too much: the long
+            // press is reset, so reset had to be surrendered for as long as full screen was on.
+            // The pinch owns the door now and the long press went back to meaning one thing.
             //
             // THERE IS NO MATCHING EXIT GLYPH, and the arrow only ever points one way, because
             // the moment it would be needed it is not drawn. A control whose second state cannot
@@ -780,15 +904,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 tone = Tone.SECONDARY,
                 size = 40.dp,
                 modifier = Modifier.align(Alignment.TopStart).padding(EDGE).offset(x = 44.dp),
-            ) {
-                // The panel cannot be left open behind a screen that has no way of closing it:
-                // its own X would be the only control drawn, over digits that were supposed to
-                // be alone. Closing it here costs nothing — nobody presses this while choosing a
-                // colour — and it makes the state impossible rather than merely unlikely.
-                settingsOpen = false
-                fullscreen = true
-                store.fullscreen = true
-            }
+            ) { enterFullscreen() }
 
             // ─────────────────────────────────────────────────────────────────────────────────────
             // THE WAY OUT.

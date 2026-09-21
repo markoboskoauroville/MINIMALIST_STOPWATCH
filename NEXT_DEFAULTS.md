@@ -766,3 +766,135 @@ Repaired, and it earned its keep on the first run:
 **Seven mutations still point at anchors that have moved**, listed in `HANDOFF.md`. They report
 SKIP rather than SURVIVED, and a SKIP in a long list reads almost like a catch — which is the
 whole reason they are written down somewhere a person will read instead of left in the output.
+
+---
+
+# v46 — 21.9.2026, the gestures
+
+Baba, in three messages: "pinch is exiting the full screen and pinch is entering the full screen,
+so we have pinch in to exit and pinch out to enter"; "one tap is stopping the stopwatch"; "two
+taps are resetting the stopwatch. When I mean stopwatch, I mean any mode stopwatch or timer."
+
+## One tap was already what he asked for, and saying so was the right answer
+
+`Control.PLAY` has been a toggle since v4: running → pause, anything else → play. A tap on the
+digits has gone through it since v37. "One tap is stopping the stopwatch" describes the app as
+built, so nothing was changed for it and nothing was invented to look busy. **The useful thing
+was to say so**, because the alternative reading — one tap ONLY stops, and something else starts
+— would have left full screen with no way to start a measurement at all, the mode having no
+buttons in it.
+
+## Two taps reset, and the first tap is not held back
+
+This is the whole engineering content of the version.
+
+Compose finds a double tap for you with `onDoubleClick`, and it is one parameter. The price is
+invisible until you look for it: **every single tap is then delayed by the double-tap window**,
+because until that window closes the tap might turn out to be the first of two. Three hundred
+milliseconds is imperceptible in a menu. In a stopwatch it is three tenths of a second missing
+from the front of every measurement the app will ever take, forever, and it would never be
+noticed as a bug — the number would simply always be slightly wrong.
+
+So the tap is never held. It acts the instant it lands, and the second tap, if one comes, resets
+**on top of** whatever the first one did. That works because the composition is harmless in every
+direction:
+
+    running, tap tap        pauses, then resets       -> zeros
+    stopped, tap tap        starts, then resets       -> zeros
+    counting in, tap tap    cancels, then resets      -> zeros
+
+All three end at zeros, which is what two taps mean, and each intermediate state is the correct
+answer to the first tap in its own right, visible for less than a third of a second.
+
+**A third rapid tap resets again** rather than starting a new measurement, because `lastTapAt` is
+not cleared when a double fires. Of the two possible surprises — a panicky burst of taps ending
+at zeros, or ending with the clock quietly running — that is the safe one.
+
+## What v1 removed is not being put back, and the check had to be rewritten to say why
+
+This is the one place in this repository where a rule was reversed on purpose, so it is worth
+being exact about what was and was not reversed.
+
+v1 deleted tap-anywhere. The objection was never that a large target is bad; it was that **the
+second state was destructive on a single isolated tap**. Touch once to start, touch again an hour
+later, and the measurement was gone, with the whole screen as the target.
+
+v37 answered that by making the tap a toggle and putting reset behind a long press. v46 adds a
+second route to reset — two taps — and the fault v1 removed still cannot occur: **a lone tap can
+only pause or start.** Both are recoverable and both are visible. Reset needs two taps inside a
+third of a second, which is something a hand does on purpose and a pocket cannot do.
+
+**The check guarding this had to be rewritten, and the rewrite is the interesting part.** It read
+"the string `state.stop()` must not appear in the onClick body", which was a PROXY for the rule.
+The proxy stopped fitting the moment a guarded reset went into that body, while the rule it stood
+for was exactly as true as before. A check that goes red because the code got better is a check
+that will be deleted by the next tired person, so it now asserts the thing itself: the reset in
+that body is reachable only behind `isDoubleTap`, and there is exactly one of it.
+
+## The pinch, and why it may sit on the background when a tap may not
+
+`verify.py` has refused a `.clickable` on the root modifier chain since v1. The pinch handler
+goes there anyway, and the two are not in conflict, because the rule was never "nothing may
+listen to the background" — it was "a stray touch must not destroy a measurement".
+
+A pinch cannot be made by a pocket, a sleeve, or one finger. It requires two pointers moving a
+quarter of the way apart or together. And the worst it can do is change how much of the screen
+the numbers take: **it never reaches the clock at all.**
+
+**On the root rather than on the digits**, because in full screen the digits are everything but
+on the ordinary screen they are not, and a way out that only works if you land on the numbers is
+a way out you have to aim for. A pinch is already a whole-screen gesture on every phone.
+
+**A ratio, not a distance.** A quarter. Pixels would mean a different gesture on every phone, and
+proportion is the entire idea of a pinch. The same quarter in both directions, written as
+`1 / PINCH_RATIO` rather than as a second number — a gesture that is harder to undo than to do
+would feel wrong and nobody would ever work out why.
+
+Three things stop it acting when nobody asked, and each is asserted:
+
+1. **Two pointers.** `calculateZoom` returns 1 for a single pointer, so reading it unconditionally
+   would be harmless — but requiring two says what a pinch IS rather than relying on arithmetic
+   elsewhere to come out right.
+2. **The accumulator starts fresh for every gesture**, inside `awaitEachGesture`. Hoisted out, an
+   afternoon of small spreads would eventually total a quarter and the screen would change with
+   nobody having asked.
+3. **One firing per gesture.** Without `fired`, carrying on spreading past the threshold re-fires
+   on every frame — a control changing state sixty times a second under a finger still moving.
+
+## The quiet win: the long press means one thing again
+
+v45's full screen hung its way out on the long press, which is reset — so **reset had to be
+surrendered for as long as full screen was on**, and the v45 delivery record wrote that down as a
+real loss rather than hiding it.
+
+The pinch owns that door now. The long press went back to meaning reset in both modes, and reset
+is reachable in full screen again. A feature added at Baba's request paid off a debt recorded
+against a previous one, which is what happens when the debt is written down instead of argued
+away.
+
+## What the sweep found this time, which was mostly the sweep finding me out
+
+Ten mutations were written for the new gestures. **Four survived the first run.**
+
+Three were rules of the brand-new code that nothing was watching: the pinch firing once per
+gesture, the guard that keeps the pinch off the settings panel, and arming the double-tap window
+at all. The last of those is the nastiest shape a fault can have — `lastTapAt = 0L` instead of
+`lastTapAt = now` breaks nothing, throws nothing, and simply means two taps never reset anything,
+forever.
+
+The fourth is the one worth remembering. **A check that was `caught` at v45 quietly stopped
+working at v46 because the file got longer.** It searched a 200-character window after
+`.background(BACKGROUND)` for a `.clickable`; the pinch handler pushed the end of that modifier
+chain past 200 characters, and the window stopped reaching it. A tap could have been added to the
+background and the check would have said nothing. A character count was never the question — the
+question is whether THAT CHAIN carries a clickable — so it now extracts the chain and reads it
+whole, and cannot go stale by growing.
+
+**That is twice a check here has been broken by the commit that made a file longer, and both
+times only the mutation sweep noticed.**
+
+And a third instance of a pattern this repository keeps producing: **asserting that a thing
+EXISTS rather than that it is USED.** The first pinch check asked whether `var fired` was
+declared. A flag nobody reads is declared perfectly well, so breaking the condition that reads it
+left the check green. The earlier two were a colour constant asserted to exist rather than to be
+used, and a check searching for a function that had been deleted.

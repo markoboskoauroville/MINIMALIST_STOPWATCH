@@ -26,7 +26,7 @@ failures = []
 checks_run = []
 
 # The number of tests that existed when this line was last updated. See the ratchet at the end.
-TEST_FLOOR = 126
+TEST_FLOOR = 133
 
 
 def code_only(text):
@@ -218,7 +218,20 @@ check("the redraw delay can never be zero",
 # ── 7 ────────────────────────────────────────────────────────────────────────────────────────
 # Tap-anywhere is gone and its absence is a decision. If a clickable ever reappears on the
 # background this goes red, because that is the stray touch that destroys a measurement.
-background_click = re.search(r"\.background\(BACKGROUND\)[\s\S]{0,200}?\.clickable", code_only(ui))
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# THE WHOLE ROOT CHAIN, NOT TWO HUNDRED CHARACTERS OF IT.
+#
+# This used to search a 200-character window after `.background(BACKGROUND)`, which was a guess
+# at "roughly the same modifier chain" and held only while the chain stayed short. v46 put the
+# pinch handler in that chain, the window stopped reaching the end of it, and the sweep went from
+# `caught` to `SURVIVED` in one commit — a tap could have been added to the background and this
+# would have said nothing.
+#
+# A character count was never the question. The question is whether THIS modifier chain carries a
+# clickable, so the chain is extracted and read whole. It cannot go stale by growing.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+root_chain = re.search(r"BoxWithConstraints\(\s*Modifier(.*?)\n    \) \{", code_only(ui), re.S)
+background_click = re.search(r"\.clickable", root_chain.group(1)) if root_chain else "no root chain"
 clickables = len(re.findall(r"\.clickable\s*[({]", code_only(ui)))
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # THIS ASSERTION WENT MISSING AT v37 AND NOBODY NOTICED FOR EIGHT VERSIONS.
@@ -233,8 +246,9 @@ clickables = len(re.findall(r"\.clickable\s*[({]", code_only(ui)))
 # different things: that one is about what a TAP does, this one is about WHERE a tap is taken.
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 check("the background itself is never pressable",
-      background_click is None and clickables >= 3,
-      f"{clickables} clickables on the screen, none of them on the black behind everything")
+      root_chain is not None and background_click is None and clickables >= 3,
+      f"{clickables} clickables on the screen, none of them in the root chain "
+      f"({len(root_chain.group(1)) if root_chain else 0} characters of it, read whole)")
 
 # The count used to have to be zero, which stopped being the right question when the recorder
 # row was added: a word you press to record it is a clickable, and it is meant to be. What must
@@ -245,11 +259,45 @@ check("the background itself is never pressable",
 # The numbers are a control again, but a tap now toggles running and paused, and reset is behind
 # a long press. What must stay true is the thing that was actually wrong: NO DESTRUCTIVE ACTION
 # ON A SINGLE TAP.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# RESTATED AT v46, AND THE RULE IT GUARDS HAS NOT MOVED AN INCH.
+#
+# Baba asked for "two taps are resetting the stopwatch", so `state.stop()` now appears inside the
+# tap handler and the old form of this check — "the word stop must not be in the onClick body" —
+# goes red. That check was a PROXY for the rule, and the proxy has stopped fitting while the rule
+# it stood for is exactly as true as it was.
+#
+# THE RULE IS v1's AND IT IS ABOUT A STRAY TOUCH. Tap-anywhere was removed because its second
+# state was destructive on ONE ISOLATED TAP: touch to start, touch again whenever, measurement
+# gone, with the whole screen as the target. What must stay true is that a lone tap can only
+# pause or start — recoverable, visible, and undone by touching again.
+#
+# So this now checks the thing itself: the reset inside the tap handler is reachable ONLY behind
+# `isDoubleTap`, and the long press is still there as the other deliberate route. A reset sitting
+# in that body unguarded is the fault, and it is what this goes red for.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# The anchor is `onLongClick`, not the comment above it: code_only() has already stripped every
+# comment by the time this runs, and anchoring on one would be the fifth time in this repository
+# that a check was decided by prose rather than by code.
 digits_tap = re.search(r"combinedClickable\(\s*onClick = \{(.*?)\},\s*onLongClick", code_only(ui), re.S)
 tap_body = digits_tap.group(1) if digits_tap else ""
+guarded = re.search(r"if \(isDoubleTap\(lastTapAt, now\)\) \{[^}]*commit\(state\.stop\(\)\)", tap_body, re.S)
+stops = tap_body.count("state.stop()")
 check("no destructive action sits on a single tap",
-      digits_tap is not None and "state.stop()" not in tap_body and "onLongClick" in code_only(ui),
-      "a tap toggles running and paused; reset needs a long press, which a pocket cannot make")
+      digits_tap is not None and guarded is not None and stops == 1
+      and "onLongClick" in code_only(ui),
+      f"{stops} reset in the tap handler, behind isDoubleTap; a lone tap can only pause or start")
+
+# THE TAP IS NEVER HELD BACK, and on a stopwatch that is not a nicety. Compose's own
+# `onDoubleClick` delays EVERY tap by the double-tap window so it can find out whether a second
+# one is coming — three tenths of a second off the front of every measurement this app ever
+# takes. The reset is composed on top of the first tap's effect instead, which reaches zeros by
+# every path. If `onDoubleClick` ever appears on the digits, the delay is back and this goes red.
+check("the tap that starts a measurement is never delayed to look for a second one",
+      "onDoubleClick" not in code_only(ui)
+      and "val now = SystemClock.elapsedRealtime()" in tap_body
+      and "onPlay()" in tap_body,
+      "the tap acts immediately and the second one resets on top of it")
 
 # ── 8 ────────────────────────────────────────────────────────────────────────────────────────
 # Never hide a control that is temporarily unavailable. A disabled button is dimmed; a button
@@ -888,11 +936,17 @@ check("choosing the recorded word cannot make the app silent",
 # remaining figure stayed clamped at zero, and nothing appeared to happen however often you
 # pressed. One route into starting means that state cannot be handled in one place and forgotten
 # in another.
+# v46 MOVED THE DIGITS' CALL OUT OF A ONE-LINE LAMBDA and the count had to follow. The rule is
+# unchanged and is the reason it is counted at all: a finished timer sits PAUSED past its length,
+# so a second route into starting would handle that state in one place and forget it in the
+# other. Both routes still call the one function; only its surroundings grew.
+starts = len(re.findall(r"\bonPlay\(\)", code_only(ui)))
 check("starting has one route, and it knows a finished timer",
-      code_only(ui).count("{ onPlay() }") == 1
-      and code_only(ui).count("-> onPlay() }") == 1
+      code_only(ui).count("-> onPlay() }") == 1
+      and starts == 3
       and "timerFinished(timerSeconds * 1000L, elapsed)" in code_only(ui),
-      "the digits and the play glyph both go through it; the first press at zero resets")
+      f"one definition and {starts - 1} call sites — the digits and the play glyph; "
+      "the first press at zero resets")
 
 # ─────────────────────────────────────────────────────────────────────────────────────────────
 # THERE ARE NO PRESETS IN THE SOURCE. Baba, 21.9.2026: "all timer presets are defined by the
@@ -932,10 +986,16 @@ check("the plus sits where the next preset will appear",
 # AND THERE MUST BE A WAY BACK. An app whose controls can all be taken away and not returned is
 # a trap, and this one is meant to be left running on a bench. The long press on the digits is
 # the way out, and it is checked here rather than trusted.
+# THE WAY BACK MOVED TO THE PINCH AT v46, and the long press went back to meaning one thing in
+# both modes — which also gave reset back inside full screen, a loss the v45 record wrote down.
+# What must stay true is that there IS a way back and that it is written in exactly one place.
 controls_group = code_only(ui).count("if (!fullscreen)")
+leaves = len(re.findall(r"\bleaveFullscreen\(\)", code_only(ui)))
 check("full screen takes every control at once, and gives them all back",
       controls_group == 2
-      and "if (fullscreen) {\n                                fullscreen = false" in code_only(ui)
+      and "fun leaveFullscreen()" in code_only(ui)
+      and leaves == 2
+      and "verdict == Pinch.IN && fullscreen" in code_only(ui)
       and "store.fullscreen = false" in code_only(ui)
       and "val topZone = if (fullscreen) 0.dp else LOCK_ZONE" in code_only(ui)
       # BOTH BANDS, NOT ONE. The mutation sweep caught this check half-written: hiding the
@@ -943,15 +1003,67 @@ check("full screen takes every control at once, and gives them all back",
       # numbers exactly the size they always were with a band of black under them — which looks
       # like the button did nothing. The reserved height is the whole of the change.
       and "val strip = if (fullscreen) 0.dp else if (landscape) 72.dp else 108.dp" in code_only(ui),
-      f"{controls_group} conditions — the group and the transport row — and a long press back")
+      f"{controls_group} conditions — the group and the transport row — and a pinch in back")
 
 # THE PANEL CANNOT BE LEFT OPEN BEHIND A SCREEN WITH NO WAY OF CLOSING IT. Full screen draws no
 # controls, so a settings panel still open would be the only thing on the screen, over digits
 # that were supposed to be alone. Made impossible here rather than merely unlikely.
-fs_press = re.search(r"\) \{\n                settingsOpen = false\n                fullscreen = true", code_only(ui))
-check("going full screen closes the panel first",
-      fs_press is not None,
-      "the panel is shut in the same press, so the two states cannot both be true")
+# WRITTEN ONCE, NOW THAT THERE ARE TWO WAYS IN. v45 had a button; v46 added the pinch, and two
+# copies of "also close the panel, also write the store" is two chances for one of them to
+# forget. The one that forgets is found weeks later as "sometimes it comes back with the buttons
+# on". Both doors call the same function and this counts them.
+fs_body = re.search(r"fun enterFullscreen\(\) \{(.*?)\n    \}", code_only(ui), re.S)
+enters = len(re.findall(r"\benterFullscreen\(\)", code_only(ui)))
+check("going full screen closes the panel first, by one route",
+      fs_body is not None
+      and "settingsOpen = false" in fs_body.group(1)
+      and "store.fullscreen = true" in fs_body.group(1)
+      and enters == 3,
+      f"one function, {enters - 1} doors into it — the button and the pinch out")
+
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+# THE PINCH IS ALLOWED ON THE BACKGROUND WHERE A TAP IS NOT, and the distinction is the reason
+# the check above it can stay strict. v1 removed tap-anywhere because a stray touch destroyed a
+# measurement; a pinch cannot be made by a pocket, a sleeve or one finger, and the worst it can
+# do is change how much of the screen the numbers take. It never reaches the clock.
+#
+# So: two pointers required, an accumulator that starts fresh for every gesture, and one firing
+# per gesture. The last two are what stop it acting on an afternoon's worth of small movements,
+# or sixty times a second under a finger that is still moving.
+# ─────────────────────────────────────────────────────────────────────────────────────────────
+pinch = re.search(r"awaitEachGesture \{(.*?)\n                \}", code_only(ui), re.S)
+pinch_body = pinch.group(1) if pinch else ""
+# THE GUARD IS ASSERTED AS ONE EXPRESSION, not as two words that happen to both be in the file.
+# The sweep walked straight through the first version of this: it asked whether `var fired` was
+# DECLARED, and a flag nobody reads is declared perfectly well. Breaking the condition that
+# reads it left the declaration untouched and the check green. Third time this exact shape of
+# mistake has been made in this repository — asserting that a thing exists rather than that it
+# is used — and the sweep has found it every time.
+check("the pinch is a pinch, and it can never be made by one finger",
+      pinch is not None
+      and "if (!fired && event.changes.size >= 2) {" in pinch_body
+      and "var zoom = 1f" in pinch_body
+      and "var fired = false" in pinch_body
+      and "if (fired) event.changes.forEach { it.consume() }" in pinch_body
+      and "pinchVerdict(zoom)" in pinch_body,
+      "two pointers required, the zoom accumulated per gesture, and one answer per gesture")
+
+# NOT WHILE THE PANEL IS OPEN. The panel is drawn over the root, so without this a pinch meant
+# for a swatch grid swallows the whole panel and the app has taken a decision nobody made. The
+# accumulator is per gesture and the firing is once per gesture; this is the third of the three
+# things that keep the pinch from acting when it was not asked to.
+check("the pinch keeps its hands off the settings panel",
+      "if (settingsOpen) return@pointerInput" in code_only(ui)
+      and ".pointerInput(fullscreen, settingsOpen)" in code_only(ui),
+      "the handler is not installed at all while the panel is up")
+
+# THE WINDOW HAS TO BE ARMED BY EVERY TAP or the second of two never finds the first, and two
+# taps quietly stop resetting anything. It fails silently and in the safe direction, which is
+# exactly the kind of fault that ships: nothing breaks, a gesture just never works.
+check("every tap arms the window for the one that might follow it",
+      "lastTapAt = now" in tap_body
+      and "var lastTapAt by remember { mutableLongStateOf(0L) }" in code_only(ui),
+      "the instant is recorded after the tap acts, so the next one can see it")
 
 # AN APP THAT CAN INSTALL SOFTWARE WITHOUT BEING ASKED AGAIN is a serious thing for a stopwatch
 # to be. The download URL goes to Android, whose own installer takes over with its own dialogue.

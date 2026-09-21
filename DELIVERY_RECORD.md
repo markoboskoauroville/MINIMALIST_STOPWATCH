@@ -1,4 +1,98 @@
-# DELIVERY RECORD — Minimalist Stopwatch v45 — 21.9.2026
+# DELIVERY RECORD — Minimalist Stopwatch v46 — 21.9.2026
+
+    ARTEFACT   46-stopwatch-v46.apk, built by GitHub Actions from the commit tagged v46
+    VERSION    new: 46   previous: 45, still downloadable at the releases page
+    SIGNED BY  the permanent repository key, SHA-256 D9:3E:6B:00:...:D9:62
+    SIZE       to be read back from the published release, not estimated here
+
+## What v46 is
+
+Three messages from Baba, all gestures:
+
+    pinch out enters full screen, pinch in leaves it
+    one tap stops a running clock  (already true since v4 — said so rather than rebuilt)
+    two taps reset, in EITHER mode, stopwatch or timer
+
+And the consequence nobody asked for: the pinch owns the way out of full screen, so the long
+press went back to meaning reset in both modes, and **reset is reachable inside full screen
+again** — a loss this document recorded against v45.
+
+## The gates
+
+    G1  PROVENANCE   pass   appVersion 45 -> 46, every action pinned by SHA, Gradle pinned by
+                            sha256. The runner asserts the three numbers agree
+
+    G2  SECRETS      pass   nothing in this change touches a key, a URL or a permission
+
+    G3  ANALYSIS     pass   verify.py: 93 of 93, up from 89
+                            Lint fatal on release: clean, assembleRelease green
+                            Test 1: 133 cases, up from 126, 0 failures, 0 errors
+                            Mutation sweep: 83 mutations, up from 70. RUN — and it found four
+                              things, three of them in code written the same hour
+
+    G4  DEAD CODE    pass   no dead code added; no function left behind by the change
+
+    G5  DEAD LOOPS   pass   ONE NEW LOOP, and it is the reason to read this line rather than
+                            skip it. `awaitEachGesture`'s do/while runs until the last pointer
+                            lifts, which is a bound set by a finger rather than by a number.
+                            That is the normal shape of every pointer loop in Compose and it is
+                            the same shape the workflow's G5 counts and permits — it is not
+                            `while (true)`, and it cannot spin, because `awaitPointerEvent()`
+                            suspends until the hardware has something to say
+
+    G6  STRESS       NOT RUN, no device
+
+    G7  BUDGETS      v45 -> v46: source grew by the gesture code and its comments. APK figure to
+                            be read from the release. Cold start, frame time, memory, battery:
+                            NEVER MEASURED, no device
+
+    G8  UPGRADE      NOT RUN by hand. v45 and v46 share the signing key, so it is testable
+
+    G9  RECORD       this document
+
+## What the sweep found at v46
+
+Ten mutations written for the new gestures; **four survived the first run.** Three were rules of
+brand-new code that nothing was watching: the pinch firing once per gesture, the guard keeping it
+off the settings panel, and arming the double-tap window at all. That last one is the worst shape
+a fault can take — it breaks nothing, throws nothing, and simply means two taps never reset
+anything.
+
+The fourth is the one to remember. **A check that passed at v45 quietly stopped working at v46
+because the file got longer.** It searched a 200-character window after `.background(BACKGROUND)`
+for a `.clickable`; the pinch handler pushed the end of that modifier chain past the window. A
+tap could have been added to the background and nothing would have said so. It now extracts the
+root modifier chain and reads it whole. **Twice now a check here has been broken by the commit
+that made a file longer, and both times only the sweep noticed.**
+
+Seven mutations still point at anchors that moved in versions before this one. Unchanged, and
+still the next job.
+
+## NOT TESTED — v46
+
+**Every gesture. None has been made by a hand.** This is a change made ENTIRELY of gestures, and
+gestures are the one kind of thing a JVM cannot judge at all. The arithmetic behind them is
+proven — thresholds, windows, clock guards — and the arithmetic was never the risk.
+
+    THE PINCH                never made on glass. Whether a quarter is the right amount of
+                             travel, whether it is found without being told, and — the real
+                             question — WHETHER IT FIRES AT ALL through the digits' own click
+                             handler. The pinch sits on the root and the digits carry a
+                             `combinedClickable`; Compose dispatches to the child first. The
+                             reasoning says the clickable cancels on slop and releases the
+                             pointers, and the reasoning has not met a thumb
+    TWO TAPS                 never made. Whether 300ms is comfortable for Baba specifically is
+                             not a thing this machine can know, and he is the only user
+    THE COMPOSED RESET       the pause-then-reset flicker is asserted to be invisible at under a
+                             third of a second. NOBODY HAS LOOKED AT IT
+    RESET IN FULL SCREEN     the long press works there again in principle; never tried
+    THE PANEL GUARD          pinching over an open settings panel should do nothing. Untested
+
+Everything in the v45 block below still stands except the artefact upload, which ran.
+
+---
+
+# The v45 record — 21.9.2026
 
 The shape is fixed so that two releases can be compared. The **NOT TESTED** block is the most
 valuable part of this document and it is longer than the gate list on purpose.

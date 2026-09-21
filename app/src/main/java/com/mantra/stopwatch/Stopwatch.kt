@@ -232,6 +232,66 @@ fun presetAdd(presets: List<Int>, seconds: Int): List<Int> {
 /** One preset taken out. Removing something absent is a no-op rather than a fault. */
 fun presetRemove(presets: List<Int>, seconds: Int): List<Int> = presets.filter { it != seconds }
 
+/**
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ * THE GESTURES, decided here rather than in the interface so Test 1 can read them.
+ *
+ * Baba, 21.9.2026: "pinch in to exit and pinch out to enter" full screen; "one tap is stopping
+ * the stopwatch"; "two taps are resetting the stopwatch — when I mean stopwatch, I mean any mode,
+ * stopwatch or timer." The last clause is the reason none of this knows which mode is showing:
+ * a gesture that meant one thing on the stopwatch and another on the timer would be two gestures
+ * wearing one shape.
+ * ─────────────────────────────────────────────────────────────────────────────────────────────
+ */
+
+/**
+ * How far apart or together the fingers must travel before the screen changes.
+ *
+ * A QUARTER, AND IT IS A RATIO RATHER THAN A DISTANCE. Pixels would mean a different gesture on
+ * every phone, and the whole point of a pinch is that it is proportional. A quarter is a
+ * deliberate movement and not a struggle: an accidental spread while picking the phone up rarely
+ * reaches it, and a real pinch passes it without anybody trying.
+ */
+const val PINCH_RATIO = 1.25f
+
+/** What a pinch has asked for, if anything yet. */
+enum class Pinch { NONE, OUT, IN }
+
+/**
+ * The verdict on a pinch so far, from the zoom accumulated since the fingers went down.
+ *
+ * IT DOES NOT KNOW WHETHER THE SCREEN IS ALREADY FULL. Pinching out while already full screen
+ * asks for something that has already happened, and the honest answer to that is to do nothing —
+ * but that decision belongs to the screen, which knows its own state, not to this. Keeping it out
+ * of here means this function has one input and one answer, which is the whole reason it is
+ * testable.
+ */
+fun pinchVerdict(zoom: Float): Pinch = when {
+    zoom >= PINCH_RATIO -> Pinch.OUT
+    zoom <= 1f / PINCH_RATIO -> Pinch.IN
+    else -> Pinch.NONE
+}
+
+/**
+ * How close two taps must be to count as one double tap. Android's own default, which is what a
+ * thumb has been trained on by every other app on the phone.
+ */
+const val DOUBLE_TAP_MS = 300L
+
+/**
+ * Whether this tap lands close enough behind the last one to mean two.
+ *
+ * GUARDED AGAINST A CLOCK THAT GOES BACKWARDS even though the caller passes
+ * `elapsedRealtime()`, which is monotonic. This app has been bitten once by assuming a clock and
+ * the assumption is cheap to remove: a negative gap is not a double tap, it is a bug somewhere
+ * else, and treating it as a reset would throw away a measurement to report that bug.
+ *
+ * A previous instant of zero means there has been no previous tap. That is a real state — the
+ * first tap after the app opens — and not a sentinel standing in for one.
+ */
+fun isDoubleTap(previousTapAt: Long, now: Long): Boolean =
+    previousTapAt > 0L && now >= previousTapAt && now - previousTapAt <= DOUBLE_TAP_MS
+
 /** A timer of nothing is not a timer, and one of six hours is a calendar. */
 const val TIMER_MIN = 15
 const val TIMER_MAX = 6 * 60 * 60

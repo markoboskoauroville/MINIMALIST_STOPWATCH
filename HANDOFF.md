@@ -1,7 +1,7 @@
 # HANDOFF — Minimalist Stopwatch
 
-**Current version: 45.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
-Latest artefact: `45-stopwatch-v45.apk`, tag `v45`.
+**Current version: 46.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
+Latest artefact: `46-stopwatch-v46.apk`, tag `v46`.
 
 *This header said 19 until 21.9.2026 and the app was at 44. Nothing reads it, which is exactly
 why it rotted — and why the counts further down this page were wrong by a factor of two and the
@@ -217,32 +217,77 @@ from, six thin circles under the digits are six circles. v45 removed them at Bab
 the ladder back. If a fourth session is about to add a ring, the thing to notice is that the
 argument FOR one is always correct and has twice been beside the point.
 
+## The gestures
+
+    tap          stops a running clock, starts a stopped one
+    tap tap      back to zeros, in either mode
+    long press   back to zeros
+    pinch out    full screen — the numbers and nothing else
+    pinch in     the controls come back
+
+Baba, 21.9.2026: "two taps are resetting the stopwatch — when I mean stopwatch, I mean any mode,
+stopwatch or timer." That clause is why nothing in `Stopwatch.kt`'s gesture code knows which mode
+is showing. A gesture meaning one thing on the stopwatch and another on the timer would be two
+gestures wearing one shape.
+
+**A single tap can only ever pause or start, and that is the whole of v1's rule kept intact.**
+Tap-anywhere was removed in v1 because its second state was destructive on ONE ISOLATED TAP:
+touch to start, touch again an hour later, measurement gone, with the whole screen as the target.
+Reset now needs two taps inside 300ms, or a long press. Neither is a thing a pocket does.
+
+**THE FIRST TAP IS NEVER HELD BACK, and this is the design decision in the change.** Compose will
+find a double tap for you through `onDoubleClick`, and the price is that every single tap waits
+out the double-tap window first, because until it closes the tap might be the first of two. Three
+hundred milliseconds is nothing in a menu and it is three tenths of a second off the front of
+every measurement in a stopwatch. So the tap acts immediately and the second one resets ON TOP of
+whatever the first did:
+
+    running, tap tap      pauses, then resets       -> zeros
+    stopped, tap tap      starts, then resets       -> zeros
+    counting in, tap tap  cancels, then resets      -> zeros
+
+Every path ends at zeros, which is what two taps mean, and the intermediate state is the correct
+answer to the first tap in its own right. A third rapid tap resets again rather than starting a
+new measurement, because `lastTapAt` is not cleared when a double fires — so a burst of panicky
+taps ends at zeros instead of quietly starting the clock.
+
 ## Full screen
 
-**Press the button beside the orientation control and every control leaves the screen.** Only
-the numbers remain, sized to the whole of the glass. A **long press on the digits** brings them
-all back, and nothing else does.
+**Press the button beside the orientation control, or pinch out, and every control leaves the
+screen.** Only the numbers remain, sized to the whole of the glass. **Pinch in to bring them
+back.**
 
-Two things about it that look like faults and are not:
-
-- **Stop is unreachable while it is on.** The long press is the only gesture a pocket or a sleeve
-  cannot produce, so it has to be the way out — and reset cannot share it, or every attempt to
-  get the buttons back would destroy a measurement. Leaving costs one long press; stop is then
-  where it has always been.
+- **The pinch is on the ROOT, not on the digits**, so it is found anywhere on the glass. A way
+  out that only works if you land on the numbers is a way out you have to aim for.
+- **It is the one thing the black background responds to, and `verify.py` still refuses a
+  `.clickable` there.** That is not an inconsistency: v1 removed tap-anywhere because a stray
+  touch destroyed a measurement, and a pinch cannot be made by a pocket, a sleeve or one finger.
+  The worst it can do is change how much of the screen the numbers take.
+- **v45 hung the way out on the long press and it cost too much.** The long press is reset, so
+  reset had to be surrendered for as long as full screen was on — written down at the time as a
+  real loss. The pinch owns that door now and **the long press means one thing again in both
+  modes**, with reset reachable in full screen.
 - **It hides controls, which this app otherwise never does.** The rule it appears to break is
   about a control vanishing BECAUSE IT CANNOT ACT, which leaves you guessing and moves everything
-  beside it. Here every control leaves at once, because somebody pressed the button that says so.
-  The condition is written round the group and round the transport row, never round one glyph,
-  and `verify.py` refuses any other condition wrapped round a `Transport` or a `Glyph`.
+  beside it. Here every control leaves at once, because somebody asked. The condition is written
+  round the group and round the transport row, never round one glyph, and `verify.py` refuses any
+  other condition wrapped round a `Transport` or a `Glyph`.
+
+Three things keep the pinch from acting when nobody asked: two pointers are required, the zoom
+accumulator starts fresh for every gesture (hoisted out, an afternoon of small spreads would
+eventually add up to a quarter), and it fires once per gesture (without that, carrying on past
+the threshold re-fires on every frame). All three are asserted, and all three were proven to fail
+on purpose — two of them only after the sweep found nothing was watching them.
 
 The setting survives the app being closed. Going full screen also closes the settings panel,
-because a panel open behind a screen that draws no controls would be the only thing on it.
+because a panel open behind a screen that draws no controls would be the only thing on it; both
+doors go through one `enterFullscreen()` so neither can forget.
 
 ## How to check it
 
-    python3 scripts/verify.py                       89 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest              Test 1, 126 cases
-    python3 scripts/sabotage.py                     70 mutations, 44 logic and 26 shape
+    python3 scripts/verify.py                       93 structural checks, one second
+    ./gradlew :app:testReleaseUnitTest              Test 1, 133 cases
+    python3 scripts/sabotage.py                     83 mutations, 49 logic and 34 shape
 
 The sweep edits source in place and **will** be interrupted; it stashes every file it can touch
 before starting and restores on the next run. Use `SABOTAGE_SLICE=0:12` to run it in pieces. With
@@ -309,6 +354,20 @@ Repaired at v45, and running it immediately earned its keep twice:
    `if (seconds in presets) return presets`, and breaking it changed nothing, because a
    `distinct()` further down had been doing the whole job. A guard that cannot fail is worse than
    none: it is a second place a reader believes the rule lives. Deleted.
+
+**It went on earning its keep at v46.** Ten mutations were written for the new gestures and
+**four survived the first sweep**: three rules of the brand-new code that nothing was watching
+(the pinch firing once per gesture, the panel guard, and arming the double-tap window), and one
+check that had been `caught` at v45 and quietly stopped working — it searched a 200-character
+window after `.background(BACKGROUND)` for a `.clickable`, and the pinch handler made the chain
+longer than the window. A character count was never the right question; it now extracts the root
+modifier chain and reads it whole. **Twice now, a check in this repository has been broken by the
+commit that made the file longer**, and both times only the sweep said so.
+
+A pattern worth naming, because it has now happened three times: **asserting that a thing EXISTS
+rather than that it is USED.** The first version of the pinch check asked whether `var fired` was
+declared. A flag nobody reads is declared perfectly well, so breaking the condition that reads it
+left the check green.
 
 **Seven of its mutations still point at anchors that have moved**, and they are the next job.
 They are SKIPs rather than survivors — the anchor is not found, so the mutation never runs — and

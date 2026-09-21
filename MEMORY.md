@@ -130,3 +130,26 @@ at Baba's word. State is carried by the WEIGHT of the glyph — white, grey, dar
 black. If a future session is about to add a ring, the thing to notice is that the case FOR one
 is correct both times and has twice been beside the point: at the distance this app is read from,
 circles under the digits are circles.
+
+## Never use Compose's `onDoubleClick` on the digits
+
+It delays EVERY single tap by the double-tap window, because until the window closes the tap
+might be the first of two. Three tenths of a second off the front of every measurement, on an app
+whose whole job is measuring. v46 composes the reset on top of the first tap's effect instead —
+pause then reset, or start then reset, both arriving at zeros — so the tap never waits.
+`verify.py` goes red if `onDoubleClick` appears anywhere in the screen.
+
+## A check that searches a fixed window of characters will rot when the file grows
+
+Twice now. A check searched 200 characters after `.background(BACKGROUND)` for a `.clickable`; it
+passed at v45, and at v46 the pinch handler made that modifier chain longer than the window, so
+the check silently stopped watching anything. **Extract the thing you mean and read it whole** —
+the root modifier chain, the function body, the enum — rather than guessing at a distance. Both
+times only `sabotage.py` noticed.
+
+## Assert that a thing is USED, never that it EXISTS
+
+Three times in this repository: a colour constant asserted to exist rather than to be read, a
+check searching for a function that had been deleted, and `var fired` asserted to be declared
+while the condition that reads it was broken. A declaration nobody reads compiles perfectly well.
+Read the actual expression.

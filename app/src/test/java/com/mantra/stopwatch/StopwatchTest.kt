@@ -1233,6 +1233,90 @@ class StopwatchTest {
         }
     }
 
+    /**
+     * A QUARTER, IN BOTH DIRECTIONS, AND THE TWO MUST BE THE SAME SIZE OF MOVEMENT. Written as
+     * `1 / PINCH_RATIO` rather than as a second number, because a pinch out that needs a quarter
+     * and a pinch in that needs a fifth is a gesture that is harder to undo than to do — and
+     * nobody would ever find out why it felt wrong.
+     */
+    @Test
+    fun aPinchIsAQuarterOfTheWayInEitherDirection() {
+        assertEquals(1.25f, PINCH_RATIO)
+        assertEquals(Pinch.OUT, pinchVerdict(PINCH_RATIO))
+        assertEquals(Pinch.IN, pinchVerdict(1f / PINCH_RATIO))
+
+        // Well past the threshold is still one answer, not a louder one.
+        assertEquals(Pinch.OUT, pinchVerdict(4f))
+        assertEquals(Pinch.IN, pinchVerdict(0.1f))
+    }
+
+    /**
+     * NOTHING HAPPENS UNTIL THE THRESHOLD IS CROSSED, which is the half that keeps the screen
+     * still. A finger resting on the glass, a two-finger scroll, a phone picked up by both edges:
+     * all of these move the distance between two pointers a little, and none of them is a pinch.
+     */
+    @Test
+    fun aSmallMovementBetweenTwoFingersIsNotAPinch() {
+        assertEquals(Pinch.NONE, pinchVerdict(1f))
+        assertEquals(Pinch.NONE, pinchVerdict(1.24f))
+        assertEquals(Pinch.NONE, pinchVerdict(0.81f))
+        for (z in listOf(0.9f, 0.95f, 1.0f, 1.05f, 1.1f, 1.2f)) {
+            assertEquals("zoom $z must not act", Pinch.NONE, pinchVerdict(z))
+        }
+    }
+
+    /** The verdict never depends on which way up the screen already is; the screen decides that. */
+    @Test
+    fun thePinchVerdictKnowsNothingAboutTheStateItWouldChange() {
+        // Two directions, three answers, and no third input anywhere in the signature. If a
+        // future session adds one, this stops compiling, which is the point.
+        assertEquals(Pinch.OUT, pinchVerdict(2f))
+        assertEquals(Pinch.IN, pinchVerdict(0.5f))
+        assertEquals(Pinch.NONE, pinchVerdict(1f))
+        assertEquals(3, Pinch.entries.size)
+    }
+
+    /** Android's own window, so a thumb is not being asked to learn a number this app invented. */
+    @Test
+    fun twoTapsInsideAThirdOfASecondAreOneDoubleTap() {
+        assertEquals(300L, DOUBLE_TAP_MS)
+        assertTrue(isDoubleTap(1_000L, 1_000L))
+        assertTrue(isDoubleTap(1_000L, 1_150L))
+        assertTrue(isDoubleTap(1_000L, 1_300L))
+    }
+
+    /**
+     * THE GAP THAT MUST NOT RESET A MEASUREMENT. This is the whole of v1's objection to
+     * tap-anywhere, kept as a test: a second touch that arrives later than the window is an
+     * ordinary tap and may only pause or start, never destroy.
+     */
+    @Test
+    fun aTapThatArrivesLateIsNotHalfOfAnything() {
+        assertFalse(isDoubleTap(1_000L, 1_301L))
+        assertFalse(isDoubleTap(1_000L, 2_000L))
+        assertFalse(isDoubleTap(1_000L, 3_600_000L))
+    }
+
+    /** The first tap after the app opens has nothing behind it and must not find one. */
+    @Test
+    fun theFirstTapOfAllIsNeverADoubleTap() {
+        assertFalse(isDoubleTap(0L, 0L))
+        assertFalse(isDoubleTap(0L, 150L))
+        assertFalse(isDoubleTap(0L, 10_000L))
+    }
+
+    /**
+     * A NEGATIVE GAP IS A BUG SOMEWHERE ELSE, AND THE ANSWER TO IT IS NOT TO THROW A MEASUREMENT
+     * AWAY. elapsedRealtime is monotonic so this should be unreachable; this app has been wrong
+     * about a clock before and the guard costs one comparison.
+     */
+    @Test
+    fun aClockThatGoesBackwardsCannotResetTheStopwatch() {
+        assertFalse(isDoubleTap(2_000L, 1_900L))
+        assertFalse(isDoubleTap(2_000L, 0L))
+        assertFalse(isDoubleTap(Long.MAX_VALUE, 1L))
+    }
+
     /** The duration the app opens with, before anybody has saved anything, is a usable one. */
     @Test
     fun theDurationTheAppOpensWithIsInsideItsOwnRange() {
