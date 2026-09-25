@@ -27,6 +27,24 @@ class StopwatchTest {
     // THE FACE. Boundaries are where format bugs live, so every one of them is named.
     // -----------------------------------------------------------------------------------------
 
+    // R, 26.9.2026: the wall clock, 24 hours, hours and minutes, the minutes always two digits.
+    @Test
+    fun theClockReadsLikeAClock() {
+        assertEquals("0:00", Face.clock(0, 0))        // midnight
+        assertEquals("9:05", Face.clock(9, 5))        // the minute padded, the hour not
+        assertEquals("12:00", Face.clock(12, 0))
+        assertEquals("14:30", Face.clock(14, 30))     // twenty-four hours, never 2:30
+        assertEquals("23:59", Face.clock(23, 59))
+    }
+
+    @Test
+    fun theLetterGoesRoundSThenTThenR() {
+        assertEquals(AppMode.TIMER, AppMode.STOPWATCH.next())
+        assertEquals(AppMode.CLOCK, AppMode.TIMER.next())
+        assertEquals(AppMode.STOPWATCH, AppMode.CLOCK.next())
+        assertEquals(listOf("S", "T", "R"), AppMode.entries.map { it.letter })
+    }
+
     @Test
     fun formatsAtTheBoundaries() {
         assertEquals("0", Face.format(0))

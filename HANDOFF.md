@@ -1,7 +1,18 @@
 # HANDOFF — Minimalist Stopwatch
 
-**Current version: 46.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
-Latest artefact: `46-stopwatch-v46.apk`, tag `v46`.
+**Current version: 47.** Repository public at `markoboskoauroville/MINIMALIST_STOPWATCH`.
+Latest artefact: `47-stopwatch-v47.apk`, tag `v47`.
+
+**v47, 26.9.2026 — R, the real-time clock.** Baba: "Third mode, R. R means real time ... the real
+time clock without seconds, minutes and hours in 24 hours format." The mode letter now goes
+S → T → R → S. In R the same digits show the wall clock as `H:MM`, twenty-four hours (`9:05`,
+`14:30`, `0:00`): the minutes are always two digits, because "9:5" is not a time anybody reads;
+the hour keeps the no-leading-zero rule. R has nothing to start. The digits' tap and long press,
+the three transport glyphs (drawn DEAD, left in place so nothing moves) and the spoken commands
+all do nothing, and the lap count is hidden. The time is read once a second on the second, so a
+clock correction or a time-zone change shows within a second. Stored as a second key `clockMode`
+beside `timerMode`, so a phone updated from v46 opens in the mode it was left in. New: Face.clock,
+AppMode.next/letter, 2 tests (135 now), verify check 94. Not yet seen on a phone.
 
 *This header said 19 until 21.9.2026 and the app was at 44. Nothing reads it, which is exactly
 why it rotted — and why the counts further down this page were wrong by a factor of two and the

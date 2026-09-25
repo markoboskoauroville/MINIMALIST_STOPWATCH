@@ -2,7 +2,7 @@
 
 # Minimalist Stopwatch
 
-A stopwatch and a timer. Black screen, enormous digits, three transport buttons, an orientation
+A stopwatch, a timer and a clock. Black screen, enormous digits, three transport buttons, an orientation
 lock, a full-screen button and a gear. Nothing else, ever — and with one press or one pinch, not
 even those.
 
@@ -25,6 +25,17 @@ It is the one thing this app hides on purpose, and it is the opposite of a butto
 because it cannot act: everything goes at once, because you pressed the thing that says so, and
 one gesture returns all of it. The setting survives the app being closed, so a display left on a
 bench comes back the way it was left.
+
+## The three modes
+
+The letter at the top says which clock you are looking at, and one press moves it on:
+
+    S    stopwatch, counting up
+    T    timer, counting down from a preset
+    R    real time: the time of day, hours and minutes in twenty-four hours (14:30, 9:05)
+
+R is only a clock. The transport buttons go dark and the digits ignore taps, because there is
+nothing to start or stop.
 
 ## The gestures
 

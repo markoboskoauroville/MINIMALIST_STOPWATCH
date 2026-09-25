@@ -1144,9 +1144,18 @@ check("the update check cannot hang",
 # one pressable thing without one; v45 took every ring away, so a ring left here would make it
 # the one thing WITH one. The same fault, the opposite coat. The letter stays; the ring does not.
 check("the mode toggle is marked the same way as everything else",
-      'text = if (appMode == AppMode.TIMER) "T" else "S"' in code_only(ui)
+      'text = appMode.letter' in code_only(ui)
       and "GLYPH_SECOND, CircleShape" not in code_only(ui),
       "a letter, coloured in the timer and grey in the stopwatch, with nothing drawn around it")
+
+# R HAS NOTHING TO START. Every way in — the digits, the transport, a spoken word — is shut while
+# the wall clock is showing, or a tap on the time would run a stopwatch behind it nobody can see.
+check("the real-time clock cannot start a measurement",
+      "if (appMode == AppMode.CLOCK) return" in code_only(ui)
+      and code_only(ui).count("if (appMode == AppMode.CLOCK) return@combinedClickable") == 2
+      and "if (appMode == AppMode.CLOCK) return@cmd" in code_only(ui)
+      and "tone = if (live) state.tone(control) else Tone.DEAD" in code_only(ui),
+      "onPlay, the tap, the long press and the voice all return in R; the transport goes dark")
 
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")

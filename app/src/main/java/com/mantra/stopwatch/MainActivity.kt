@@ -5,6 +5,7 @@ import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.os.SystemClock
+import java.time.LocalTime
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -344,6 +345,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     }
 
     fun onPlay() {
+        // THE CLOCK HAS NOTHING TO START. A tap on the time must not quietly run a stopwatch
+        // behind it that nobody can see.
+        if (appMode == AppMode.CLOCK) return
         if (prerollEndsAt > 0L) {
             cancelPreroll()
             return
@@ -467,7 +471,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // These callbacks are set while this screen exists and cleared when it leaves. In between the
     // engine carries on without it, which is the entire point.
     DisposableEffect(Unit) {
-        VoiceHub.onCommand = { control ->
+        VoiceHub.onCommand = cmd@{ control ->
+            // The clock has nothing to start, pause or stop, spoken or pressed.
+            if (appMode == AppMode.CLOCK) return@cmd
             // Lap is a command but not a transport control, so it is routed here rather than
             // pressed into the model.
             if (control == Control.LAP) {
@@ -543,6 +549,24 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // and can never return zero, so this loop cannot spin. `isActive` rather than `true`: the
     // bound is the coroutine's own life, and writing it that way means the gate that greps for
     // unbounded loops sees an honest answer.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    // R, THE WALL CLOCK. Read on the second rather than on the minute, because a minute-long
+    // sleep would miss the phone's own clock being corrected, a time zone being crossed, or the
+    // screen coming back from a long pause with the old time still on it. Once a second is
+    // nothing, and it runs only while R is showing.
+    // ─────────────────────────────────────────────────────────────────────────────────────────
+    var wall by remember { mutableStateOf(LocalTime.now()) }
+    LaunchedEffect(appMode) {
+        if (appMode != AppMode.CLOCK) return@LaunchedEffect
+        while (isActive) {
+            // THE ONE PLACE THIS SCREEN READS THE WALL CLOCK, and it reads it to SHOW it, never
+            // to measure with it. verify.py check 2 still holds: no millisecond wall read here.
+            val t = LocalTime.now()
+            wall = t
+            delay((1000L - t.nano / 1_000_000L).coerceIn(1L, 1000L))
+        }
+    }
+
     LaunchedEffect(state) {
         if (state.phase != Phase.RUNNING) return@LaunchedEffect
         var sinceWrite = 0L
@@ -675,7 +699,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         // accumulated over twenty-nine versions holds for both modes without being proven twice.
         val lengthMs = timerSeconds * 1000L
         val shown = if (appMode == AppMode.TIMER) timerRemaining(lengthMs, elapsed) else elapsed
-        val text = Face.format(shown, display)
+        val text = if (appMode == AppMode.CLOCK) Face.clock(wall.hour, wall.minute)
+                   else Face.format(shown, display)
         val countdown = prerollLabel(prerollEndsAt - prerollNow).takeIf { prerollEndsAt > 0L }
 
         val button = if (landscape) 56.dp else 72.dp
@@ -713,7 +738,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             // A THIRD OF THE HEIGHT, NOT HALF. The lap count is context; the clock is the
             // measurement. Giving them equal weight would make you look twice to find out which
             // number is which, and the one you came for is the one below.
-            lapLabel(laps, lapOn, lapMetres)?.let { label ->
+            // Not over the clock: a lap count above the time of day is a number with no meaning.
+            lapLabel(laps, lapOn && appMode != AppMode.CLOCK, lapMetres)?.let { label ->
                 Digits(
                     text = label,
                     colour = Color(if (flashing) Palette.flashOf(colour) else colour),
@@ -791,6 +817,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                         // thing a hand does on purpose and a pocket does not do at all.
                         // ─────────────────────────────────────────────────────────────────
                         onClick = {
+                            if (appMode == AppMode.CLOCK) return@combinedClickable
                             val now = SystemClock.elapsedRealtime()
                             onPlay()
                             if (isDoubleTap(lastTapAt, now)) {
@@ -809,6 +836,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                         // pinch now owns that door, so this goes back to reset everywhere, and
                         // reset is reachable in full screen again.
                         onLongClick = {
+                            if (appMode == AppMode.CLOCK) return@combinedClickable
                             cancelPreroll()
                             commit(state.stop())
                         },
@@ -834,11 +862,15 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 // PLAY goes through the countdown; the other two cancel it. A countdown running
                 // while somebody presses stop is a countdown that is no longer wanted, and
                 // leaving it to finish would start a measurement nobody asked for.
-                Transport(Icons.Default.PlayArrow, Control.PLAY, state, button) { _ -> onPlay() }
-                Transport(Icons.Default.Pause, Control.PAUSE, state, button) { next ->
+                // IN R THE THREE STAY WHERE THEY ARE AND GO DARK. The row does not leave, so
+                // nothing moves under the thumb when the letter changes; the glyphs simply have
+                // nothing to do, and look it.
+                val transportLive = appMode != AppMode.CLOCK
+                Transport(Icons.Default.PlayArrow, Control.PLAY, state, button, transportLive) { _ -> onPlay() }
+                Transport(Icons.Default.Pause, Control.PAUSE, state, button, transportLive) { next ->
                     cancelPreroll(); commit(next)
                 }
-                Transport(Icons.Default.Stop, Control.STOP, state, button) { next ->
+                Transport(Icons.Default.Stop, Control.STOP, state, button, transportLive) { next ->
                     cancelPreroll(); commit(next)
                 }
             }
@@ -964,18 +996,19 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                         // Changing which way the clock runs mid-measurement would leave a figure on
                         // screen that means something different from the one that was there a moment
                         // before, so the measurement is cleared with the mode.
-                        appMode = if (appMode == AppMode.TIMER) AppMode.STOPWATCH else AppMode.TIMER
+                        // S, T, R and round again. One letter, one press, one step.
+                        appMode = appMode.next()
                         store.appMode = appMode
                         commit(state.stop())
                     },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = if (appMode == AppMode.TIMER) "T" else "S",
+                    text = appMode.letter,
                     style = TextStyle(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
-                        color = if (appMode == AppMode.TIMER) Color(colour) else GLYPH,
+                        color = if (appMode != AppMode.STOPWATCH) Color(colour) else GLYPH,
                         fontSize = 18.sp,
                     ),
                     maxLines = 1,
@@ -1138,12 +1171,13 @@ private fun Transport(
     control: Control,
     state: Stopwatch,
     size: Dp,
+    live: Boolean,
     commit: (Stopwatch) -> Unit,
 ) {
     Glyph(
         icon = icon,
         label = control.spoken,
-        tone = state.tone(control),
+        tone = if (live) state.tone(control) else Tone.DEAD,
         size = size,
     ) { commit(state.press(control, SystemClock.elapsedRealtime())) }
 }

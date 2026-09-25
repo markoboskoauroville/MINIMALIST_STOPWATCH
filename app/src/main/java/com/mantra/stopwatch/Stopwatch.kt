@@ -131,7 +131,24 @@ enum class Display { MULTI, SINGLE }
  * the reboot rules, the process death, the never-adding-deltas — holds for both modes because
  * both modes are the same measurement read two ways.
  */
-enum class AppMode { STOPWATCH, TIMER }
+enum class AppMode(val letter: String) {
+    STOPWATCH("S"),
+    TIMER("T"),
+
+    /**
+     * R, REAL TIME. Baba, 26.9.2026: "Third mode, R. R means real time ... the real time clock
+     * without seconds, minutes and hours in 24 hours format."
+     *
+     * NOT A MEASUREMENT AT ALL, and that is why it touches nothing above. The stopwatch and the
+     * timer are one elapsed figure read two ways; the clock is the wall clock read once a
+     * second, and the transport has nothing to start, pause or stop in it. The same screen, the
+     * same digits, the same colour and weight — only the number comes from somewhere else.
+     */
+    CLOCK("R");
+
+    /** The next letter round the ring, S to T to R and back to S. One press, one step. */
+    fun next(): AppMode = entries[(ordinal + 1) % entries.size]
+}
 
 /**
  * THE BUILT-IN PRESETS ARE GONE, at Baba's word on 21.9.2026: "all timer presets are defined by
@@ -594,6 +611,17 @@ data class Stopwatch(
  * rather than prevented; a stopwatch running for four days has other problems.
  */
 object Face {
+    /**
+     * The wall clock in twenty-four hours, hours and minutes, no seconds.
+     *
+     * THE MINUTES ARE ALWAYS TWO DIGITS, and that is the one place this file pads a field. On the
+     * stopwatch "1:5" is a duration and the colon says which number is which; on a clock "9:5"
+     * is not a time anybody reads, because every clock they have ever seen says 9:05. The hour
+     * keeps the app's rule and carries no zero in front: 9:05, 14:30, 0:00.
+     */
+    fun clock(hour: Int, minute: Int): String =
+        "${hour.coerceIn(0, 23)}:${minute.coerceIn(0, 59).toString().padStart(2, '0')}"
+
     fun format(ms: Long, display: Display = Display.MULTI): String {
         val t = if (ms < 0L) 0L else ms
         val seconds = t / 1000L
