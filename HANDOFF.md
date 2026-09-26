@@ -12,7 +12,7 @@ the three transport glyphs (drawn DEAD, left in place so nothing moves) and the 
 all do nothing, and the lap count is hidden. The time is read once a second on the second, so a
 clock correction or a time-zone change shows within a second. Stored as a second key `clockMode`
 beside `timerMode`, so a phone updated from v46 opens in the mode it was left in. New: Face.clock,
-AppMode.next/letter, 2 tests (135 now), verify check 94. Not yet seen on a phone.
+AppMode.next/letter, 2 tests (135 now), verify check 94. Tried on the Pixel 7 emulator (API 35) from the published APK: S → T → R → S, R read 1:59 then 2:00 on the minute against `adb shell date`, a tap on the digits and on play in R changed nothing, S came back at 0, and R survived a force-stop.
 
 *This header said 19 until 21.9.2026 and the app was at 44. Nothing reads it, which is exactly
 why it rotted — and why the counts further down this page were wrong by a factor of two and the
