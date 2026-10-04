@@ -8,9 +8,11 @@ even those.
 
 By **Mantra Productions**, Zagreb. Built for reading across a room.
 
-    play    toggle. Starts, resumes, and pauses a running clock
-    pause   toggle. Freezes a running clock, resumes a paused one
-    stop    back to zeros
+```
+play    toggle. Starts, resumes, and pauses a running clock
+pause   toggle. Freezes a running clock, resumes a paused one
+stop    back to zeros
+```
 
 Play and pause are one toggle wearing two glyphs, so there is no wrong one to hit. The symbols
 never change; the highlight moves between them to say what the next press would do. While the
@@ -30,20 +32,24 @@ bench comes back the way it was left.
 
 The letter at the top says which clock you are looking at, and one press moves it on:
 
-    S    stopwatch, counting up
-    T    timer, counting down from a preset
-    R    real time: the time of day, hours and minutes in twenty-four hours (14:30, 9:05)
+```
+S    stopwatch, counting up
+T    timer, counting down from a preset
+R    real time: the time of day, hours and minutes in twenty-four hours (14:30, 9:05)
+```
 
 R is only a clock. The transport buttons go dark and the digits ignore taps, because there is
 nothing to start or stop.
 
 ## The gestures
 
-    tap          stops a running clock, starts a stopped one
-    tap tap      back to zeros, in either mode
-    long press   back to zeros
-    pinch out    full screen — the numbers and nothing else
-    pinch in     the controls come back
+```
+tap          stops a running clock, starts a stopped one
+tap tap      back to zeros, in either mode
+long press   back to zeros
+pinch out    full screen — the numbers and nothing else
+pinch in     the controls come back
+```
 
 They work in both modes, on the stopwatch and on the timer alike, because "reset the thing on the
 screen" is one idea and a gesture that meant two would be two gestures wearing one shape.
@@ -93,7 +99,9 @@ preset on the row is one you put there.
 
 Six buttons set the duration, three either side of it, and each says on its face what it does:
 
-    −10m  −1m  −30s   [ 05:00 ]   +30s  +1m  +10m
+```
+−10m  −1m  −30s   [ 05:00 ]   +30s  +1m  +10m
+```
 
 The amount is fixed. The old single pair grew its own step with the number — fifteen seconds
 under two minutes, thirty under ten, a minute above — which saved presses and cost the one thing
@@ -130,9 +138,11 @@ is worse than no answer.
 
 ## Checking it
 
-    python3 scripts/verify.py            93 structural checks, one second
-    ./gradlew :app:testReleaseUnitTest   133 cases, plain JVM, no emulator
-    python3 scripts/sabotage.py          83 mutations, each rule broken on purpose
+```sh
+python3 scripts/verify.py            93 structural checks, one second
+./gradlew :app:testReleaseUnitTest   133 cases, plain JVM, no emulator
+python3 scripts/sabotage.py          83 mutations, each rule broken on purpose
+```
 
 The last one is the important one. A test you have never seen fail is a rumour.
 
