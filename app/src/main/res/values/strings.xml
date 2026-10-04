@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Stopwatch</string>
+    <!--
+      The full name. Launchers truncate a label like this to roughly a dozen characters under the
+      icon, so what appears on the home screen will be "Stopwatch T…" or similar — the name is
+      what the app IS, and the launcher shows what it can.
+    -->
+    <string name="app_name">Stopwatch Timer and Other Features</string>
 </resources>

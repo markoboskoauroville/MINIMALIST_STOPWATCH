@@ -1157,6 +1157,21 @@ check("the real-time clock cannot start a measurement",
       and "tone = if (live) state.tone(control) else Tone.DEAD" in code_only(ui),
       "onPlay, the tap, the long press and the voice all return in R; the transport goes dark")
 
+# ALWAYS AWAKE WHILE SHOWING, not only while the clock runs. The moment you have set a timer and
+# are waiting to press it, or have just stopped and want to read the figure, is exactly when the
+# clock is NOT running — the screen used to go dark at every moment the app was being looked at
+# rather than used.
+check("the screen stays awake on the switch, not on the phase",
+      "DisposableEffect(keepAwake)" in code_only(ui)
+      and "state.phase == Phase.STOPPED" not in code_only(ui).split("DisposableEffect(keepAwake)")[1][:400],
+      "the wake flag follows the setting; leaving the app releases it either way")
+
+# On unless turned off: somebody who wants a clock that stays lit should not have to find the
+# setting first.
+check("staying awake is the default",
+      'p.getBoolean(Keys.K_AWAKE, true)' in store,
+      "the stored default is true, so a fresh install stays lit")
+
 print()
 print(f"{len(checks_run) - len(failures)} of {len(checks_run)} checks passed")
 if failures:

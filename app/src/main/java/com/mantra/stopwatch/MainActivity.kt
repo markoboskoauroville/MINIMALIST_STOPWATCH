@@ -195,6 +195,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     var timerSeconds by remember { mutableIntStateOf(store.timerSeconds) }
     var presets by remember { mutableStateOf(store.timerPresets) }
     var useRecorded by remember { mutableStateOf(store.useRecorded) }
+    var keepAwake by remember { mutableStateOf(store.keepAwake) }
 
     // ─────────────────────────────────────────────────────────────────────────────────────────
     // THE NUMBERS AND NOTHING ELSE. Baba, 21.9.2026: "add a button for the full screen when
@@ -582,12 +583,22 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         }
     }
 
-    DisposableEffect(state.phase) {
+    // ALWAYS AWAKE WHILE THE APP IS SHOWING, not only while the clock runs.
+    //
+    // It used to let the screen sleep whenever the stopwatch sat at zeros, which sounds thrifty
+    // and is wrong in practice: the moment you have set a timer and are waiting to press it, or
+    // have just stopped and want to read the figure, is exactly when the clock is NOT running.
+    // The screen went dark at every moment the app was being looked at rather than used.
+    //
+    // It no longer depends on the phase at all — only on the switch, and the switch is on until
+    // somebody turns it off. Leaving the app releases it either way: this app has no business
+    // holding a phone awake once it is out of sight.
+    DisposableEffect(keepAwake) {
         val w = activity.window
-        if (state.phase == Phase.STOPPED) {
-            w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        } else {
+        if (keepAwake) {
             w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         onDispose { w.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
@@ -1090,6 +1101,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 weight = weight,
                 display = display,
                 onDisplay = { display = it; store.display = it },
+                keepAwake = keepAwake,
+                onKeepAwake = { keepAwake = it; store.keepAwake = it },
                 lapOn = lapOn,
                 lapMetres = lapMetres,
                 onLapOn = { lapOn = it; store.lapOn = it },
@@ -1271,6 +1284,8 @@ private fun SettingsGrid(
     colour: Long,
     weight: Weight,
     display: Display,
+    keepAwake: Boolean,
+    onKeepAwake: (Boolean) -> Unit,
     onDisplay: (Display) -> Unit,
     lapOn: Boolean,
     lapMetres: Int,
@@ -1779,6 +1794,23 @@ private fun SettingsGrid(
         //
         // Normal or bold, shown in the thing they describe. A row reading "Bold" set in bold
         // tells you less than the digits themselves set in bold, which is what is being chosen.
+        // THE SCREEN'S OWN BEHAVIOUR, in the tab that holds how the screen looks and acts.
+        RowLabel("SCREEN", colour)
+        Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+            val half = (gridWidth - gap) / 2
+            LapCell("stay awake", chosen = keepAwake, colour = colour, width = half) {
+                onKeepAwake(true)
+            }
+            LapCell("let it sleep", chosen = !keepAwake, colour = colour, width = half) {
+                onKeepAwake(false)
+            }
+        }
+        Help(
+            "On by default. A clock propped on a bench that goes dark is a clock you have to " +
+                "keep waking, and it dims at exactly the moment you glance over.",
+            colour,
+        )
+
         RowLabel("WEIGHT", colour)
         Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
             val half = (gridWidth - gap) / 2

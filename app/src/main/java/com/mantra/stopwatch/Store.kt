@@ -110,6 +110,18 @@ class Store(private val context: Context) {
      * One switch for both, because "which sound does this app make" is one question. Having a
      * setting per moment would be two settings to keep in step for one preference.
      */
+    /**
+     * Whether the screen stays awake while the app is showing. ON unless turned off.
+     *
+     * DEFAULTING TO ON IS THE POINT. A stopwatch propped on a bench that goes dark after thirty
+     * seconds is a stopwatch you have to keep waking, and the one moment it dims is the moment
+     * you glance over to read it. Somebody who does not want that can turn it off; somebody who
+     * does should not have to find the setting first.
+     */
+    var keepAwake: Boolean
+        get() = p.getBoolean(Keys.K_AWAKE, true)
+        set(v) = p.edit().putBoolean(Keys.K_AWAKE, v).apply()
+
     var useRecorded: Boolean
         get() = p.getBoolean(Keys.K_RECORDED_SOUND, false)
         set(v) = p.edit().putBoolean(Keys.K_RECORDED_SOUND, v).apply()
@@ -298,6 +310,7 @@ class Store(private val context: Context) {
         const val K_PRESETS = "timerPresets"
         const val K_FULLSCREEN = "fullscreen"
         const val K_RECORDED_SOUND = "useRecorded"
+        const val K_AWAKE = "keepAwake"
         const val K_LISTENING = "listening"
     }
 }
