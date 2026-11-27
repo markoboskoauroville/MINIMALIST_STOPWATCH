@@ -276,16 +276,16 @@ check("the background itself is never pressable",
 # `isDoubleTap`, and the long press is still there as the other deliberate route. A reset sitting
 # in that body unguarded is the fault, and it is what this goes red for.
 # ─────────────────────────────────────────────────────────────────────────────────────────────
-# The anchor is `onLongClick`, not the comment above it: code_only() has already stripped every
-# comment by the time this runs, and anchoring on one would be the fifth time in this repository
-# that a check was decided by prose rather than by code.
-digits_tap = re.search(r"combinedClickable\(\s*onClick = \{(.*?)\},\s*onLongClick", code_only(ui), re.S)
+# The gesture belongs to the rendered number. detectTapGestures rejects pointer movement rather
+# than accepting a slide that releases in the same broad layout box.
+digits_tap = re.search(r"onTap = if \(appMode == AppMode\.CLOCK\) null else \{(.*?)\},", code_only(ui), re.S)
 tap_body = digits_tap.group(1) if digits_tap else ""
 guarded = re.search(r"if \(isDoubleTap\(lastTapAt, now\)\) \{[^}]*requestReset\(\)", tap_body, re.S)
 stops = tap_body.count("state.stop()")
 check("no destructive action sits on a single tap",
       digits_tap is not None and guarded is not None and stops == 0
-      and "onLongClick" in code_only(ui),
+      and "detectTapGestures(onTap = { onTap() })" in code_only(ui)
+      and "onTap: (() -> Unit)? = null" in code_only(ui),
       f"{stops} direct resets in the tap handler; double tap asks for confirmation")
 
 # THE TAP IS NEVER HELD BACK, and on a stopwatch that is not a nicety. Compose's own
@@ -298,6 +298,12 @@ check("the tap that starts a measurement is never delayed to look for a second o
       and "val now = SystemClock.elapsedRealtime()" in tap_body
       and "onPlay()" in tap_body,
       "the tap acts immediately and the second one resets on top of it")
+
+check("only a stationary tap on the rendered number acts",
+      ".fillMaxWidth(),\n                onTap =" in code_only(ui)
+      and "modifier = if (onTap == null) Modifier else Modifier.pointerInput(onTap)" in code_only(ui)
+      and "detectTapGestures(onTap = { onTap() })" in code_only(ui),
+      "the broad number band has no click modifier; the Text bounds own tap-only detection")
 
 # ── 8 ────────────────────────────────────────────────────────────────────────────────────────
 # Never hide a control that is temporarily unavailable. A disabled button is dimmed; a button
@@ -1151,11 +1157,11 @@ check("the mode toggle is marked the same way as everything else",
 # the wall clock is showing, or a tap on the time would run a stopwatch behind it nobody can see.
 check("the real-time clock cannot start a measurement",
       "if (appMode == AppMode.CLOCK) return" in code_only(ui)
-      and code_only(ui).count("if (appMode == AppMode.CLOCK) return@combinedClickable") == 2
+      and "onTap = if (appMode == AppMode.CLOCK) null else" in code_only(ui)
       and "if (appMode == AppMode.CLOCK) return@cmd" in code_only(ui)
       and "if (!live)" in code_only(ui)
       and "Tone.DEAD" in code_only(ui).split("private fun Transport")[1],
-      "onPlay, the tap, the long press and the voice all return in R; the transport goes dark")
+      "onPlay, the number tap and the voice all return in R; the transport goes dark")
 
 # ALWAYS AWAKE WHILE SHOWING, not only while the clock runs. The moment you have set a timer and
 # are waiting to press it, or have just stopped and want to read the figure, is exactly when the

@@ -48,23 +48,22 @@ tap or long press asks for confirmation before returning it to zero.
 
 ```
 tap          stops a running clock, starts a stopped one
-tap tap      back to zeros, in either mode
-long press   back to zeros
+tap tap      back to zeros, in stopwatch, timer or counter
 pinch out    full screen — the numbers and nothing else
 pinch in     the controls come back
 ```
 
-They work in both modes, on the stopwatch and on the timer alike, because "reset the thing on the
-screen" is one idea and a gesture that meant two would be two gestures wearing one shape.
+They work only as stationary taps on the rendered number. Sliding, dragging or holding the number
+does nothing. This is especially important for the counter: one tap adds one, and two taps ask to
+reset the count.
 
 Every reset now asks "Are you sure you want to reset?" with Yes and No, including reset from the
 transport button and voice command. Reset is not applied unless Yes is pressed.
 
 **A single tap can only ever pause or start**, and that is deliberate. The first version of this
 app had tap-anywhere and it was removed, because its second state was destructive: touch once to
-start, touch again whenever, measurement gone, with the whole screen as the target. Reset now
-needs two taps inside a third of a second — a thing a hand does on purpose and a pocket does not
-do at all — or a long press, which a sleeve cannot make either.
+start, touch again whenever, measurement gone, with the whole screen as the target. Reset now needs two taps inside a third of a second — a thing a hand does on purpose and a pocket
+does not do at all. Sliding or long-pressing the number cannot start, advance or reset anything.
 
 **The first tap is never held back.** Most apps that watch for a double tap delay every single
 tap by the double-tap window, because until it closes the tap might turn out to be the first of

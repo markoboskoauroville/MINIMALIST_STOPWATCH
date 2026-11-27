@@ -24,6 +24,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -802,8 +803,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     height = (screenH - strip - topZone) * 0.30f,
                     modifier = Modifier
                         .weight(0.30f)
-                        .fillMaxWidth()
-                        .clickable { laps++; flashes++ },
+                        .fillMaxWidth(),
+                    onTap = { laps++; flashes++ },
                 )
             }
 
@@ -831,65 +832,17 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 height = screenH - strip - topZone,
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    .combinedClickable(
-                        // ─────────────────────────────────────────────────────────────────
-                        // ONE TAP STOPS IT, TWO TAPS RESET IT — AND THE FIRST TAP STILL FIRES
-                        // THE INSTANT IT LANDS. That last clause is the whole design of this
-                        // block and it is worth the paragraph.
-                        //
-                        // Compose will detect a double tap for you, through `onDoubleClick`. The
-                        // price is that EVERY SINGLE TAP IS THEN HELD BACK for the length of the
-                        // double-tap window, because until that window closes the tap might turn
-                        // out to be the first of two. Three hundred milliseconds is nothing in a
-                        // menu. In a stopwatch it is three tenths of a second of a measurement
-                        // that never happened, on every single start, forever — and this app
-                        // exists to measure things.
-                        //
-                        // SO THE TAP IS NEVER HELD. It acts immediately, and the second tap,
-                        // if one comes, resets ON TOP of whatever the first one did. That works
-                        // because the composition is harmless in both directions:
-                        //
-                        //     running, tap tap   pauses, then resets      -> zeros
-                        //     stopped, tap tap   starts, then resets      -> zeros
-                        //     counting in, tap tap  cancels, then resets  -> zeros
-                        //
-                        // Every path ends at zeros, which is what two taps mean. The
-                        // intermediate state exists for less than a third of a second and is the
-                        // correct answer to the first tap in its own right.
-                        //
-                        // A THIRD RAPID TAP RESETS AGAIN rather than starting a new measurement,
-                        // because `lastTapAt` is not cleared when a double fires. A burst of
-                        // panicky taps therefore ends at zeros instead of quietly starting the
-                        // clock, and of the two possible surprises that is the safe one.
-                        //
-                        // WHAT v1 REMOVED IS NOT BEING PUT BACK. Tap-anywhere was deleted
-                        // because its second state was destructive on a SINGLE STRAY TAP: touch
-                        // it once to start, touch it again an hour later and the measurement was
-                        // gone. Here a lone tap can only ever pause or start — recoverable, and
-                        // visible. Reset needs two taps inside a third of a second, which is a
-                        // thing a hand does on purpose and a pocket does not do at all.
-                        // ─────────────────────────────────────────────────────────────────
-                        onClick = {
-                            if (appMode == AppMode.CLOCK) return@combinedClickable
-                            val now = SystemClock.elapsedRealtime()
-                            if (isDoubleTap(lastTapAt, now)) {
-                                cancelPreroll()
-                                requestReset()
-                            } else onPlay()
-                            lastTapAt = now
-                        },
-                        // THE LONG PRESS MEANS ONE THING AGAIN, IN BOTH MODES, and getting back
-                        // to that is the quiet win in v46. It had to carry the way out of full
-                        // screen because nothing else could, which cost reset entirely while
-                        // full screen was on — written down at the time as a real loss. The
-                        // pinch now owns that door, so this goes back to reset everywhere, and
-                        // reset is reachable in full screen again.
-                        onLongClick = {
-                            if (appMode == AppMode.CLOCK) return@combinedClickable
+                    .fillMaxWidth(),
+                onTap = if (appMode == AppMode.CLOCK) null else {
+                    {
+                        val now = SystemClock.elapsedRealtime()
+                        if (isDoubleTap(lastTapAt, now)) {
+                            cancelPreroll()
                             requestReset()
-                        },
-                    ),
+                        } else onPlay()
+                        lastTapAt = now
+                    }
+                },
             )
             // EVERY CONTROL LEAVES AT ONCE, OR NONE OF THEM DOES. The condition is on the row
             // and not on the three glyphs inside it, and that is the difference between this and
@@ -2739,6 +2692,7 @@ private fun Digits(
     width: Dp,
     height: Dp,
     modifier: Modifier = Modifier,
+    onTap: (() -> Unit)? = null,
 ) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
@@ -2765,6 +2719,14 @@ private fun Digits(
     }
 
     Box(modifier, contentAlignment = Alignment.Center) {
-        Text(text = text, style = style.copy(fontSize = fontSize), maxLines = 1, softWrap = false)
+        Text(
+            text = text,
+            style = style.copy(fontSize = fontSize),
+            maxLines = 1,
+            softWrap = false,
+            modifier = if (onTap == null) Modifier else Modifier.pointerInput(onTap) {
+                detectTapGestures(onTap = { onTap() })
+            },
+        )
     }
 }
