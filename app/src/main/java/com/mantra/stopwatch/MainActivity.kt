@@ -54,10 +54,12 @@ import androidx.compose.material.icons.filled.StayCurrentPortrait
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.PowerSettingsNew
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -237,7 +239,9 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     // measures time, and the one thing that model has never done in twenty versions is let
     // anything but a transition touch startedAt and accumulated.
     var laps by remember { mutableIntStateOf(0) }
+    var counter by remember { mutableIntStateOf(0) }
     var settingsOpen by remember { mutableStateOf(false) }
+    var resetPending by remember { mutableStateOf(false) }
 
     // VOICE. The switch is a preference; the microphone follows it and the app's own lifecycle.
     var listening by remember { mutableStateOf(store.listening) }
@@ -346,6 +350,11 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     }
 
     fun onPlay() {
+        if (appMode == AppMode.COUNTER) {
+            counter = counterAdvance(counter)
+            flashes++
+            return
+        }
         // THE CLOCK HAS NOTHING TO START. A tap on the time must not quietly run a stopwatch
         // behind it that nobody can see.
         if (appMode == AppMode.CLOCK) return
@@ -359,6 +368,18 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         }
         val next = state.press(Control.PLAY, SystemClock.elapsedRealtime())
         if (!(next.phase == Phase.RUNNING && beginPreroll())) commit(next)
+    }
+
+    fun performReset() {
+        cancelPreroll()
+        laps = 0
+        counter = 0
+        commit(state.stop())
+        resetPending = false
+    }
+
+    fun requestReset() {
+        resetPending = true
     }
 
     // THE TIMER ENDS ITSELF, and says so with the same word that starts a measurement. A timer
@@ -475,6 +496,17 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         VoiceHub.onCommand = cmd@{ control ->
             // The clock has nothing to start, pause or stop, spoken or pressed.
             if (appMode == AppMode.CLOCK) return@cmd
+            if (appMode == AppMode.COUNTER) {
+                when (control) {
+                    Control.PLAY -> {
+                        counter = counterAdvance(counter)
+                        flashes++
+                    }
+                    Control.STOP -> requestReset()
+                    else -> Unit
+                }
+                return@cmd
+            }
             // Lap is a command but not a transport control, so it is routed here rather than
             // pressed into the model.
             if (control == Control.LAP) {
@@ -484,6 +516,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 state.phase != Phase.RUNNING && !settingsOpen && beginPreroll()
             ) {
                 flashes++
+            } else if (control == Control.STOP && state.phase == Phase.PAUSED && !settingsOpen) {
+                requestReset()
             } else if (!settingsOpen) {
                 // DETECTION ONLY WHILE THE PANEL IS OPEN: the word lights, the clock does not
                 // move. And a spoken command cancels a countdown for the same reason a pressed
@@ -710,9 +744,13 @@ private fun Screen(store: Store, activity: ComponentActivity) {
         // accumulated over twenty-nine versions holds for both modes without being proven twice.
         val lengthMs = timerSeconds * 1000L
         val shown = if (appMode == AppMode.TIMER) timerRemaining(lengthMs, elapsed) else elapsed
-        val text = if (appMode == AppMode.CLOCK) Face.clock(wall.hour, wall.minute)
-                   else Face.format(shown, display)
-        val countdown = prerollLabel(prerollEndsAt - prerollNow).takeIf { prerollEndsAt > 0L }
+        val text = when (appMode) {
+            AppMode.CLOCK -> Face.clock(wall.hour, wall.minute)
+            AppMode.COUNTER -> counter.toString()
+            else -> Face.format(shown, display)
+        }
+        val countdown = if (appMode == AppMode.COUNTER) null
+            else prerollLabel(prerollEndsAt - prerollNow).takeIf { prerollEndsAt > 0L }
 
         val button = if (landscape) 56.dp else 72.dp
 
@@ -750,7 +788,11 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             // measurement. Giving them equal weight would make you look twice to find out which
             // number is which, and the one you came for is the one below.
             // Not over the clock: a lap count above the time of day is a number with no meaning.
-            lapLabel(laps, lapOn && appMode != AppMode.CLOCK, lapMetres)?.let { label ->
+            lapLabel(
+                laps,
+                lapOn && appMode != AppMode.CLOCK && appMode != AppMode.COUNTER,
+                lapMetres,
+            )?.let { label ->
                 Digits(
                     text = label,
                     colour = Color(if (flashing) Palette.flashOf(colour) else colour),
@@ -830,14 +872,10 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                         onClick = {
                             if (appMode == AppMode.CLOCK) return@combinedClickable
                             val now = SystemClock.elapsedRealtime()
-                            onPlay()
                             if (isDoubleTap(lastTapAt, now)) {
                                 cancelPreroll()
-                                // `stop()` builds a fresh zeroed clock and ignores its receiver,
-                                // so it does not matter that `state` here was captured before
-                                // onPlay() committed over it.
-                                commit(state.stop())
-                            }
+                                requestReset()
+                            } else onPlay()
                             lastTapAt = now
                         },
                         // THE LONG PRESS MEANS ONE THING AGAIN, IN BOTH MODES, and getting back
@@ -848,8 +886,7 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                         // reset is reachable in full screen again.
                         onLongClick = {
                             if (appMode == AppMode.CLOCK) return@combinedClickable
-                            cancelPreroll()
-                            commit(state.stop())
+                            requestReset()
                         },
                     ),
             )
@@ -877,12 +914,45 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                 // nothing moves under the thumb when the letter changes; the glyphs simply have
                 // nothing to do, and look it.
                 val transportLive = appMode != AppMode.CLOCK
-                Transport(Icons.Default.PlayArrow, Control.PLAY, state, button, transportLive) { _ -> onPlay() }
-                Transport(Icons.Default.Pause, Control.PAUSE, state, button, transportLive) { next ->
+                Transport(
+                    Icons.Default.PlayArrow,
+                    Control.PLAY,
+                    state,
+                    button,
+                    transportLive,
+                    counter = if (appMode == AppMode.COUNTER) counter else null,
+                    onCounter = {
+                        counter = counterAdvance(counter)
+                        flashes++
+                    },
+                    commit = { _ -> onPlay() },
+                )
+                Transport(
+                    Icons.Default.Pause,
+                    Control.PAUSE,
+                    state,
+                    button,
+                    transportLive,
+                    counter = if (appMode == AppMode.COUNTER) counter else null,
+                    onCounter = { },
+                ) { next ->
                     cancelPreroll(); commit(next)
                 }
-                Transport(Icons.Default.Stop, Control.STOP, state, button, transportLive) { next ->
-                    cancelPreroll(); commit(next)
+                Transport(
+                    Icons.Default.Stop,
+                    Control.STOP,
+                    state,
+                    button,
+                    transportLive,
+                    counter = if (appMode == AppMode.COUNTER) counter else null,
+                    onCounter = { if (it == Control.STOP) requestReset() },
+                ) { next ->
+                    if (state.phase == Phase.PAUSED && next.phase == Phase.STOPPED) {
+                        requestReset()
+                    } else {
+                        cancelPreroll()
+                        commit(next)
+                    }
                 }
             }
         }
@@ -1002,7 +1072,8 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                     .align(Alignment.TopCenter)
                     .padding(EDGE)
                     .offset(x = -(screenW / 4 - 16.dp))
-                    .size(40.dp)
+                    .width(120.dp)
+                    .height(40.dp)
                     .clickable {
                         // Changing which way the clock runs mid-measurement would leave a figure on
                         // screen that means something different from the one that was there a moment
@@ -1010,20 +1081,35 @@ private fun Screen(store: Store, activity: ComponentActivity) {
                         // S, T, R and round again. One letter, one press, one step.
                         appMode = appMode.next()
                         store.appMode = appMode
+                        counter = 0
                         commit(state.stop())
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = appMode.letter,
-                    style = TextStyle(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = if (appMode != AppMode.STOPWATCH) Color(colour) else GLYPH,
-                        fontSize = 18.sp,
-                    ),
-                    maxLines = 1,
-                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = appMode.letter,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = if (appMode != AppMode.STOPWATCH) Color(colour) else GLYPH,
+                            fontSize = 18.sp,
+                        ),
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = appMode.displayName,
+                        style = TextStyle(
+                            fontFamily = FontFamily.Monospace,
+                            color = if (appMode != AppMode.STOPWATCH) Color(colour) else GLYPH,
+                            fontSize = 9.sp,
+                        ),
+                        maxLines = 1,
+                    )
+                }
             }
 
             Glyph(
@@ -1170,6 +1256,20 @@ private fun Screen(store: Store, activity: ComponentActivity) {
             )
         }
     }
+
+    if (resetPending) {
+        AlertDialog(
+            onDismissRequest = { resetPending = false },
+            title = { Text("Reset?") },
+            text = { Text("Are you sure you want to reset?") },
+            confirmButton = {
+                TextButton(onClick = ::performReset) { Text("Yes") }
+            },
+            dismissButton = {
+                TextButton(onClick = { resetPending = false }) { Text("No") }
+            },
+        )
+    }
 }
 
 /**
@@ -1185,14 +1285,29 @@ private fun Transport(
     state: Stopwatch,
     size: Dp,
     live: Boolean,
+    counter: Int? = null,
+    onCounter: (Control) -> Unit = {},
     commit: (Stopwatch) -> Unit,
 ) {
+    val tone = if (!live) {
+        Tone.DEAD
+    } else if (counter != null) {
+        when (control) {
+            Control.PLAY -> Tone.PRIMARY
+            Control.STOP -> if (counter > 0) Tone.SECONDARY else Tone.DEAD
+            else -> Tone.DEAD
+        }
+    } else state.tone(control)
+
     Glyph(
         icon = icon,
         label = control.spoken,
-        tone = if (live) state.tone(control) else Tone.DEAD,
+        tone = tone,
         size = size,
-    ) { commit(state.press(control, SystemClock.elapsedRealtime())) }
+    ) {
+        if (counter != null) onCounter(control)
+        else commit(state.press(control, SystemClock.elapsedRealtime()))
+    }
 }
 
 /**

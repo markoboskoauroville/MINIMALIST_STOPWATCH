@@ -38,11 +38,21 @@ class StopwatchTest {
     }
 
     @Test
-    fun theLetterGoesRoundSThenTThenR() {
+    fun theLetterGoesRoundSThenTThenRThenC() {
         assertEquals(AppMode.TIMER, AppMode.STOPWATCH.next())
         assertEquals(AppMode.CLOCK, AppMode.TIMER.next())
-        assertEquals(AppMode.STOPWATCH, AppMode.CLOCK.next())
-        assertEquals(listOf("S", "T", "R"), AppMode.entries.map { it.letter })
+        assertEquals(AppMode.COUNTER, AppMode.CLOCK.next())
+        assertEquals(AppMode.STOPWATCH, AppMode.COUNTER.next())
+        assertEquals(listOf("S", "T", "R", "C"), AppMode.entries.map { it.letter })
+        assertEquals(listOf("stopwatch", "timer", "clock", "counter"), AppMode.entries.map { it.displayName })
+    }
+
+    @Test
+    fun counterStartsAtZeroAndAdvancesOneAtATime() {
+        var counter = 0
+        repeat(5) { counter = counterAdvance(counter) }
+        assertEquals(5, counter)
+        assertEquals(Int.MAX_VALUE, counterAdvance(Int.MAX_VALUE))
     }
 
     @Test

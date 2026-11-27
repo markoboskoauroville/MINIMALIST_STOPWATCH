@@ -2,7 +2,7 @@
 
 # Minimalist Stopwatch
 
-A stopwatch, a timer and a clock. Black screen, enormous digits, three transport buttons, an orientation
+A stopwatch, a timer, a clock and a counter. Black screen, enormous digits, three transport buttons, an orientation
 lock, a full-screen button and a gear. Nothing else, ever — and with one press or one pinch, not
 even those.
 
@@ -41,6 +41,9 @@ R    real time: the time of day, hours and minutes in twenty-four hours (14:30, 
 R is only a clock. The transport buttons go dark and the digits ignore taps, because there is
 nothing to start or stop.
 
+C is a counter. It opens at zero and every tap adds one, so it can count pool lengths. A double
+tap or long press asks for confirmation before returning it to zero.
+
 ## The gestures
 
 ```
@@ -53,6 +56,9 @@ pinch in     the controls come back
 
 They work in both modes, on the stopwatch and on the timer alike, because "reset the thing on the
 screen" is one idea and a gesture that meant two would be two gestures wearing one shape.
+
+Every reset now asks "Are you sure you want to reset?" with Yes and No, including reset from the
+transport button and voice command. Reset is not applied unless Yes is pressed.
 
 **A single tap can only ever pause or start**, and that is deliberate. The first version of this
 app had tap-anywhere and it was removed, because its second state was destructive: touch once to

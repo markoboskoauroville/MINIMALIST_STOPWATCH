@@ -89,6 +89,7 @@ class Store(private val context: Context) {
     // in the mode it was left in. The clock flag is read first because it is the newer word.
     var appMode: AppMode
         get() = when {
+            p.getBoolean(Keys.K_COUNTER, false) -> AppMode.COUNTER
             p.getBoolean(Keys.K_CLOCK, false) -> AppMode.CLOCK
             p.getBoolean(Keys.K_TIMER, false) -> AppMode.TIMER
             else -> AppMode.STOPWATCH
@@ -96,6 +97,7 @@ class Store(private val context: Context) {
         set(v) = p.edit()
             .putBoolean(Keys.K_TIMER, v == AppMode.TIMER)
             .putBoolean(Keys.K_CLOCK, v == AppMode.CLOCK)
+            .putBoolean(Keys.K_COUNTER, v == AppMode.COUNTER)
             .apply()
 
     /** The duration in force, in seconds. A preset writes it; the plus and minus nudge it. */
@@ -302,6 +304,7 @@ class Store(private val context: Context) {
         const val K_NAME = "name_"
         const val K_TIMER = "timerMode"
         const val K_CLOCK = "clockMode"
+        const val K_COUNTER = "counterMode"
         const val K_SECONDS = "timerSeconds"
         // READ, NEVER WRITTEN, from v45 on. It is the single preset v44 kept, and it is here
         // only so that the first read of K_PRESETS can inherit it. Deleting it would silently

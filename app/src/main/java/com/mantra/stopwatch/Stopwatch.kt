@@ -131,9 +131,9 @@ enum class Display { MULTI, SINGLE }
  * the reboot rules, the process death, the never-adding-deltas — holds for both modes because
  * both modes are the same measurement read two ways.
  */
-enum class AppMode(val letter: String) {
-    STOPWATCH("S"),
-    TIMER("T"),
+enum class AppMode(val letter: String, val displayName: String) {
+    STOPWATCH("S", "stopwatch"),
+    TIMER("T", "timer"),
 
     /**
      * R, REAL TIME. Baba, 26.9.2026: "Third mode, R. R means real time ... the real time clock
@@ -144,11 +144,19 @@ enum class AppMode(val letter: String) {
      * second, and the transport has nothing to start, pause or stop in it. The same screen, the
      * same digits, the same colour and weight — only the number comes from somewhere else.
      */
-    CLOCK("R");
+    CLOCK("R", "clock"),
+
+    /**
+     * C, COUNTER. One tap advances the number by one, with no clock running underneath it.
+     */
+    COUNTER("C", "counter");
 
     /** The next letter round the ring, S to T to R and back to S. One press, one step. */
     fun next(): AppMode = entries[(ordinal + 1) % entries.size]
 }
+
+/** Advance a counter once, without allowing an overflow to wrap back to a negative number. */
+fun counterAdvance(value: Int): Int = if (value == Int.MAX_VALUE) value else value + 1
 
 /**
  * THE BUILT-IN PRESETS ARE GONE, at Baba's word on 21.9.2026: "all timer presets are defined by

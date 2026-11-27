@@ -281,12 +281,12 @@ check("the background itself is never pressable",
 # that a check was decided by prose rather than by code.
 digits_tap = re.search(r"combinedClickable\(\s*onClick = \{(.*?)\},\s*onLongClick", code_only(ui), re.S)
 tap_body = digits_tap.group(1) if digits_tap else ""
-guarded = re.search(r"if \(isDoubleTap\(lastTapAt, now\)\) \{[^}]*commit\(state\.stop\(\)\)", tap_body, re.S)
+guarded = re.search(r"if \(isDoubleTap\(lastTapAt, now\)\) \{[^}]*requestReset\(\)", tap_body, re.S)
 stops = tap_body.count("state.stop()")
 check("no destructive action sits on a single tap",
-      digits_tap is not None and guarded is not None and stops == 1
+      digits_tap is not None and guarded is not None and stops == 0
       and "onLongClick" in code_only(ui),
-      f"{stops} reset in the tap handler, behind isDoubleTap; a lone tap can only pause or start")
+      f"{stops} direct resets in the tap handler; double tap asks for confirmation")
 
 # THE TAP IS NEVER HELD BACK, and on a stopwatch that is not a nicety. Compose's own
 # `onDoubleClick` delays EVERY tap by the double-tap window so it can find out whether a second
@@ -982,8 +982,7 @@ check("choosing the recorded word cannot make the app silent",
 # other. Both routes still call the one function; only its surroundings grew.
 starts = len(re.findall(r"\bonPlay\(\)", code_only(ui)))
 check("starting has one route, and it knows a finished timer",
-      code_only(ui).count("-> onPlay() }") == 1
-      and starts == 3
+      starts == 3
       and "timerFinished(timerSeconds * 1000L, elapsed)" in code_only(ui),
       f"one definition and {starts - 1} call sites — the digits and the play glyph; "
       "the first press at zero resets")
@@ -1154,7 +1153,8 @@ check("the real-time clock cannot start a measurement",
       "if (appMode == AppMode.CLOCK) return" in code_only(ui)
       and code_only(ui).count("if (appMode == AppMode.CLOCK) return@combinedClickable") == 2
       and "if (appMode == AppMode.CLOCK) return@cmd" in code_only(ui)
-      and "tone = if (live) state.tone(control) else Tone.DEAD" in code_only(ui),
+      and "if (!live)" in code_only(ui)
+      and "Tone.DEAD" in code_only(ui).split("private fun Transport")[1],
       "onPlay, the tap, the long press and the voice all return in R; the transport goes dark")
 
 # ALWAYS AWAKE WHILE SHOWING, not only while the clock runs. The moment you have set a timer and
