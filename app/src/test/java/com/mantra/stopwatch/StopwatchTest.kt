@@ -44,7 +44,7 @@ class StopwatchTest {
         assertEquals(AppMode.COUNTER, AppMode.CLOCK.next())
         assertEquals(AppMode.STOPWATCH, AppMode.COUNTER.next())
         assertEquals(listOf("S", "T", "R", "C"), AppMode.entries.map { it.letter })
-        assertEquals(listOf("stopwatch", "timer", "clock", "counter"), AppMode.entries.map { it.displayName })
+        assertEquals(listOf("stopwatch", "timer", "real time", "counter"), AppMode.entries.map { it.displayName })
     }
 
     @Test

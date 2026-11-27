@@ -144,7 +144,7 @@ enum class AppMode(val letter: String, val displayName: String) {
      * second, and the transport has nothing to start, pause or stop in it. The same screen, the
      * same digits, the same colour and weight — only the number comes from somewhere else.
      */
-    CLOCK("R", "clock"),
+    CLOCK("R", "real time"),
 
     /**
      * C, COUNTER. One tap advances the number by one, with no clock running underneath it.

@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.PowerSettingsNew
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -1260,14 +1261,42 @@ private fun Screen(store: Store, activity: ComponentActivity) {
     if (resetPending) {
         AlertDialog(
             onDismissRequest = { resetPending = false },
-            title = { Text("Reset?") },
-            text = { Text("Are you sure you want to reset?") },
+            modifier = Modifier.border(1.dp, Color(colour), RoundedCornerShape(4.dp)),
+            title = {
+                Text(
+                    "Reset?",
+                    color = Color(colour),
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = if (weight == Weight.BOLD) FontWeight.Bold else FontWeight.Normal,
+                    ),
+                )
+            },
+            text = {
+                Text(
+                    "Are you sure you want to reset?",
+                    color = Color(colour),
+                    style = TextStyle(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = if (weight == Weight.BOLD) FontWeight.Bold else FontWeight.Normal,
+                    ),
+                )
+            },
             confirmButton = {
-                TextButton(onClick = ::performReset) { Text("Yes") }
+                TextButton(
+                    onClick = ::performReset,
+                    colors = ButtonDefaults.textButtonColors(contentColor = Color(colour)),
+                ) { Text("Yes", fontFamily = FontFamily.Monospace) }
             },
             dismissButton = {
-                TextButton(onClick = { resetPending = false }) { Text("No") }
+                TextButton(
+                    onClick = { resetPending = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = GLYPH),
+                ) { Text("No", fontFamily = FontFamily.Monospace) }
             },
+            containerColor = PANEL_IDLE,
+            tonalElevation = 0.dp,
+            shape = RoundedCornerShape(4.dp),
         )
     }
 }
